@@ -1,0 +1,56 @@
+name: 📰 Big4 Job Newsletter
+
+on:
+  schedule:
+    - cron: "30 5 * * *"   # ogni giorno alle 07:30 ora italiana (UTC+2 CEST / UTC+1 CET → 05:30 UTC copre entrambi)
+  workflow_dispatch:
+
+jobs:
+  newsletter:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright + Chromium
+        run: |
+          playwright install chromium
+          sudo $(which playwright) install-deps chromium
+
+      # ── Scarica il file seen_jobs.json dall'artifact dell'ultima run ──
+      - name: Download seen_jobs artifact
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          name: seen-jobs
+          path: .
+          if_no_artifact_found: ignore   # prima esecuzione: nessun artifact, ok
+
+      - name: Run newsletter script
+        env:
+          GMAIL_MITTENTE:     ${{ secrets.GMAIL_MITTENTE }}
+          GMAIL_PASSWORD:     ${{ secrets.GMAIL_PASSWORD }}
+          EMAIL_DESTINATARIO: ${{ secrets.EMAIL_DESTINATARIO }}
+        run: python job_newsletter.py
+
+      # ── Salva il seen_jobs.json aggiornato come artifact (90 giorni) ──
+      - name: Upload seen_jobs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: seen-jobs
+          path: seen_jobs.json
+          retention-days: 90
