@@ -2,8 +2,12 @@ name: 📰 Big4 Job Newsletter
 
 on:
   schedule:
-    - cron: "30 5 * * *"   # ogni giorno alle 07:30 ora italiana (UTC+2 CEST / UTC+1 CET → 05:30 UTC copre entrambi)
+    - cron: "30 5 * * *"   # ogni giorno alle 07:30 ora italiana
   workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
 
 jobs:
   newsletter:
@@ -34,11 +38,11 @@ jobs:
 
       # ── Scarica il file seen_jobs.json dall'artifact dell'ultima run ──
       - name: Download seen_jobs artifact
-        uses: dawidd6/action-download-artifact@v6
+        uses: actions/download-artifact@v4
         with:
           name: seen-jobs
           path: .
-          if_no_artifact_found: ignore   # prima esecuzione: nessun artifact, ok
+        continue-on-error: true   # prima esecuzione: nessun artifact, ok
 
       - name: Run newsletter script
         env:
@@ -54,3 +58,4 @@ jobs:
           name: seen-jobs
           path: seen_jobs.json
           retention-days: 90
+          overwrite: true
