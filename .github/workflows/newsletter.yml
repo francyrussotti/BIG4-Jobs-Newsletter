@@ -6,7 +6,7 @@ schedule:
 workflow_dispatch:
 
 permissions:
-contents: write   # fondamentale per fare push
+contents: write
 
 jobs:
 newsletter:
@@ -17,7 +17,7 @@ steps:
   - name: Checkout repo
     uses: actions/checkout@v4
     with:
-      persist-credentials: true   # serve per il push
+      persist-credentials: true
 
   - name: Setup Python
     uses: actions/setup-python@v5
@@ -38,18 +38,16 @@ steps:
       playwright install chromium
       sudo $(which playwright) install-deps chromium
 
-  # (opzionale ma utile) debug per verificare file presenti
   - name: Debug files before run
     run: ls -la
 
   - name: Run newsletter script
     env:
-      GMAIL_MITTENTE:     ${{ secrets.GMAIL_MITTENTE }}
-      GMAIL_PASSWORD:     ${{ secrets.GMAIL_PASSWORD }}
+      GMAIL_MITTENTE: ${{ secrets.GMAIL_MITTENTE }}
+      GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
       EMAIL_DESTINATARIO: ${{ secrets.EMAIL_DESTINATARIO }}
     run: python job_newsletter.py
 
-  # verifica che il file sia stato creato/aggiornato
   - name: Debug files after run
     run: ls -la
 
