@@ -2,7 +2,7 @@ name: 📰 Big4 Job Newsletter
 
 on:
 schedule:
-- cron: "30 5 * * *"   # ogni giorno alle 07:30 ora italiana
+- cron: "30 5 * * *"
 workflow_dispatch:
 
 permissions:
