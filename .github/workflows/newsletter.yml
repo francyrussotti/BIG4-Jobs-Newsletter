@@ -1,61 +1,63 @@
 name: 📰 Big4 Job Newsletter
 
 on:
-  schedule:
-    - cron: "30 5 * * *"   # ogni giorno alle 07:30 ora italiana
-  workflow_dispatch:
+schedule:
+- cron: "30 5 * * *"   # ogni giorno alle 07:30 ora italiana
+workflow_dispatch:
 
 permissions:
-  actions: write
-  contents: read
+contents: write   # fondamentale per fare push
 
 jobs:
-  newsletter:
-    runs-on: ubuntu-latest
+newsletter:
+runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+```
+steps:
+  - name: Checkout repo
+    uses: actions/checkout@v4
+    with:
+      persist-credentials: true   # serve per il push
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+  - name: Setup Python
+    uses: actions/setup-python@v5
+    with:
+      python-version: "3.11"
 
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+  - name: Cache pip
+    uses: actions/cache@v4
+    with:
+      path: ~/.cache/pip
+      key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
 
-      - name: Install Python dependencies
-        run: pip install -r requirements.txt
+  - name: Install Python dependencies
+    run: pip install -r requirements.txt
 
-      - name: Install Playwright + Chromium
-        run: |
-          playwright install chromium
-          sudo $(which playwright) install-deps chromium
+  - name: Install Playwright + Chromium
+    run: |
+      playwright install chromium
+      sudo $(which playwright) install-deps chromium
 
-      # ── Scarica il file seen_jobs.json dall'artifact dell'ultima run ──
-      - name: Download seen_jobs artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: seen-jobs
-          path: .
-        continue-on-error: true   # prima esecuzione: nessun artifact, ok
+  # (opzionale ma utile) debug per verificare file presenti
+  - name: Debug files before run
+    run: ls -la
 
-      - name: Run newsletter script
-        env:
-          GMAIL_MITTENTE:     ${{ secrets.GMAIL_MITTENTE }}
-          GMAIL_PASSWORD:     ${{ secrets.GMAIL_PASSWORD }}
-          EMAIL_DESTINATARIO: ${{ secrets.EMAIL_DESTINATARIO }}
-        run: python job_newsletter.py
+  - name: Run newsletter script
+    env:
+      GMAIL_MITTENTE:     ${{ secrets.GMAIL_MITTENTE }}
+      GMAIL_PASSWORD:     ${{ secrets.GMAIL_PASSWORD }}
+      EMAIL_DESTINATARIO: ${{ secrets.EMAIL_DESTINATARIO }}
+    run: python job_newsletter.py
 
-      # ── Salva il seen_jobs.json aggiornato come artifact (90 giorni) ──
-      - name: Upload seen_jobs artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: seen-jobs
-          path: seen_jobs.json
-          retention-days: 90
-          overwrite: true
+  # verifica che il file sia stato creato/aggiornato
+  - name: Debug files after run
+    run: ls -la
+
+  - name: Commit seen_jobs.json
+    run: |
+      git config --global user.name "github-actions"
+      git config --global user.email "actions@github.com"
+      git add seen_jobs.json
+      git commit -m "update seen jobs" || echo "no changes"
+      git push
+```
