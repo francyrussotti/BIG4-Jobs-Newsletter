@@ -27,7 +27,7 @@ except ImportError:
 
 GMAIL_MITTENTE     = os.environ.get("GMAIL_MITTENTE",     "")
 GMAIL_PASSWORD     = os.environ.get("GMAIL_PASSWORD",     "")
-EMAIL_DESTINATARIO = os.environ.get("EMAIL_DESTINATARIO", "")
+EMAIL_DESTINATARIO = [e.strip() for e in os.environ.get("EMAIL_DESTINATARIO", "").split(",") if e.strip()]
 
 # File locale dove vengono salvati gli ID delle offerte già inviate
 SEEN_FILE = "seen_jobs.json"
@@ -548,13 +548,13 @@ def invia_email(html_body, totale):
     msg            = MIMEMultipart("alternative")
     msg["Subject"] = f"📰 Big4 Jobs {datetime.now():%d/%m/%Y} — {totale} nuove offerte"
     msg["From"]    = GMAIL_MITTENTE
-    msg["To"]      = EMAIL_DESTINATARIO
+    msg["To"]      = ", ".join(EMAIL_DESTINATARIO)
     msg.attach(MIMEText(html_body, "html", "utf-8"))
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
             s.login(GMAIL_MITTENTE, GMAIL_PASSWORD)
             s.sendmail(GMAIL_MITTENTE, EMAIL_DESTINATARIO, msg.as_string())
-        print(f"✅ Email inviata a {EMAIL_DESTINATARIO}")
+        print(f"✅ Email inviata a {', '.join(EMAIL_DESTINATARIO)}")
     except smtplib.SMTPAuthenticationError:
         print("❌ Errore autenticazione → rigenera App Password su myaccount.google.com")
     except Exception as e:
