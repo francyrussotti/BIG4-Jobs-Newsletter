@@ -27,7 +27,7 @@ except ImportError:
 
 GMAIL_MITTENTE     = os.environ.get("GMAIL_MITTENTE",     "")
 GMAIL_PASSWORD     = os.environ.get("GMAIL_PASSWORD",     "")
-EMAIL_DESTINATARIO = [e.strip() for e in os.environ.get("EMAIL_DESTINATARIO", "").split(",") if e.strip()]
+EMAIL_DESTINATARIO = os.environ.get("EMAIL_DESTINATARIO", "")
 
 # File locale dove vengono salvati gli ID delle offerte già inviate
 SEEN_FILE = "seen_jobs.json"
@@ -46,7 +46,6 @@ def _job_id(azienda: str, offerta: dict) -> str:
     return hashlib.md5(raw.encode()).hexdigest()
 
 def carica_seen() -> set:
-    """Carica gli ID già visti dal file JSON (se esiste)."""
     if os.path.exists(SEEN_FILE):
         try:
             with open(SEEN_FILE, "r", encoding="utf-8") as f:
@@ -61,7 +60,6 @@ def carica_seen() -> set:
     return set()
 
 def salva_seen(seen: set):
-    """Salva gli ID visti aggiornati nel file JSON."""
     try:
         with open(SEEN_FILE, "w", encoding="utf-8") as f:
             json.dump({"ids": list(seen), "aggiornato": datetime.now().isoformat()}, f, indent=2)
@@ -70,10 +68,6 @@ def salva_seen(seen: set):
         print(f"⚠️  Errore scrittura {SEEN_FILE}: {e}")
 
 def filtra_nuove(azienda: str, offerte: list, seen: set) -> tuple[list, set]:
-    """
-    Ritorna solo le offerte non ancora viste e aggiorna il set seen.
-    Restituisce (offerte_nuove, seen_aggiornato).
-    """
     nuove = []
     nuovi_ids = set()
     for o in offerte:
@@ -177,74 +171,74 @@ def _pw_intercept_json(url, api_pattern, wait_ms=8000):
                len(d.get("jobs") or d.get("positions") or d.get("jobList") or []))
 
 # ============================================================
-# 🏢  EY  —  Yello (Playwright)
+# 🏢  EY  —  Yello ATS  (requests + paginazione)
+#
+#  ATS: Yello. Filtro per paese via field_245[]:
+#    Italia  = 30015
+#    Belgio  = 29960
+#  Paginazione: ?field_245[]=30015&page=N
+#  Ogni pagina restituisce 25 job. Fine quando la pagina è vuota.
+#  La data è nel campo .search-results__post-time ("NEW", "2d", "5d"…)
 # ============================================================
 
 def scrape_ey():
-    print("🔍 EY (Playwright)...")
-    EY_URL = "https://eyglobal.yello.co/job_boards/c1riT--B2O-KySgYWsZO1Q?locale=it"
+    print("🔍 EY (Yello, requests)...")
+    BASE = "https://eyglobal.yello.co/job_boards/c1riT--B2O-KySgYWsZO1Q"
+    # Italia id=30015, Belgio id=29960
+    COUNTRIES = [(30015, "Italia"), (29960, "Belgio")]
     risultati = []
 
-    if not PLAYWRIGHT_OK:
-        print("    ⚠️  Playwright necessario per EY — saltato")
-        return risultati
+    ey_headers = {**HEADERS, "X-Requested-With": "XMLHttpRequest",
+                  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
 
-    def _parse_html(html):
-        out  = []
-        soup = BeautifulSoup(html, "lxml")
-        for script in soup.find_all("script"):
-            raw = script.string or ""
-            if "posted_at" in raw or "job_board" in raw:
-                for pat in [r'"jobs"\s*:\s*(\[.+?\])\s*[,}]',
-                            r'"postings"\s*:\s*(\[.+?\])\s*[,}]']:
-                    m = re.search(pat, raw, re.DOTALL)
-                    if m:
-                        try:
-                            jobs = json.loads(m.group(1))
-                            for j in jobs:
-                                if not isinstance(j, dict): continue
-                                jid = j.get("id") or j.get("slug") or ""
-                                out.append({
-                                    "titolo":   j.get("title") or j.get("name") or "N/D",
-                                    "location": j.get("location") or j.get("city") or "",
-                                    "url":      f"https://eyglobal.yello.co/jobs/{jid}" if jid else EY_URL,
-                                    "data":     (j.get("posted_at") or "")[:10],
-                                })
-                            if out: return out
-                        except: pass
-        for card in soup.select("a[href*='/jobs/']"):
-            titolo_el = card.select_one("h2,h3,[class*='title'],[class*='name']") or card
-            titolo = titolo_el.get_text(strip=True)
-            if not titolo or len(titolo) < 5: continue
-            href = card.get("href","")
-            if not href.startswith("http"): href = "https://eyglobal.yello.co" + href
-            loc_el = card.select_one("[class*='location'],[class*='city']")
-            out.append({"titolo": titolo,
-                         "location": loc_el.get_text(strip=True) if loc_el else "",
-                         "url": href, "data": ""})
-        return out
+    for country_id, country_name in COUNTRIES:
+        page = 1
+        while True:
+            url = f"{BASE}/search?field_245[]={country_id}&page={page}"
+            r = http_get(url, headers=ey_headers)
+            if not r:
+                break
+            soup = BeautifulSoup(r.text, "lxml")
+            items = soup.select("li.search-results__item")
+            if not items:
+                break
+            for item in items:
+                a = item.select_one("a.search-results__req_title")
+                if not a:
+                    continue
+                title = a.get_text(strip=True)
+                href  = a.get("href", "")
+                if href and not href.startswith("http"):
+                    href = "https://eyglobal.yello.co" + href
+                # req ID numerico (usato come ID stabile)
+                span = item.select_one("div span")
+                req_id = span.get_text(strip=True) if span else ""
+                # data pubblicazione
+                posted_el = item.select_one(".search-results__post-time")
+                posted = posted_el.get_text(strip=True) if posted_el else ""
+                risultati.append({
+                    "titolo":   title,
+                    "location": f"EY {country_name}",
+                    "url":      href or BASE,
+                    "data":     posted,
+                    "_req_id":  req_id,
+                })
+            page += 1
+            time.sleep(0.3)
 
-    print("    → Playwright intercept XHR EY...")
-    data = _pw_intercept_json(EY_URL, api_pattern=r"(yello\.co/api|job_boards.*jobs)", wait_ms=8000)
-    if data:
-        jobs = data if isinstance(data, list) else \
-               data.get("jobs") or data.get("postings") or data.get("data") or []
-        for j in jobs:
-            jid = j.get("id") or j.get("slug") or ""
-            risultati.append({
-                "titolo":   j.get("title") or j.get("name") or "N/D",
-                "location": j.get("location") or j.get("city") or "",
-                "url":      f"https://eyglobal.yello.co/jobs/{jid}" if jid else EY_URL,
-                "data":     (j.get("posted_at") or j.get("created_at") or "")[:10],
-            })
+    # De-duplica per req_id (stesso job può apparire in entrambi i paesi)
+    seen_req = set()
+    deduped = []
+    for j in risultati:
+        rid = j.pop("_req_id", "")
+        if rid and rid in seen_req:
+            continue
+        if rid:
+            seen_req.add(rid)
+        deduped.append(j)
 
-    if not risultati:
-        print("    → Playwright HTML EY...")
-        html = _pw_get_html(EY_URL, wait_selector="a[href*='/jobs/']", wait_ms=6000)
-        if html: risultati = _parse_html(html)
-
-    print(f"   → {len(risultati)} offerte trovate")
-    return risultati
+    print(f"   → {len(deduped)} offerte trovate")
+    return deduped
 
 # ============================================================
 # 🏢  PwC ITALIA  —  Phenom People (Playwright)
@@ -320,61 +314,74 @@ def scrape_pwc_italia():
     return risultati
 
 # ============================================================
-# 🏢  PwC BELGIO  —  portale globale PwC
+# 🏢  PwC BELGIO  —  var jsondata inline nella pagina
+#
+#  ATS: Workday (pwc.wd3.myworkdayjobs.com).
+#  La pagina pwc.be/en/careers/students-graduates.html contiene
+#  un array JSON inline: var jsondata = [{...}, ...] ;
+#  Ogni oggetto ha: id, jobreqid, title, location, date, apply (URL Workday)
+#  Nessuna paginazione: tutti i job sono in un'unica variabile JS.
 # ============================================================
 
 def scrape_pwc_belgio():
-    print("🔍 PwC Belgio...")
-    PWC_BEL_URL = (
-        "https://www.pwc.com/gx/en/careers/job-results.html"
-        "?wdcountry=BEL&wdjobsite=Global_Campus_Careers"
-        "&flds=jobreqid,title,location,los,specialism,grade,apply"
-    )
-
-    def _da_html(html):
-        found = []
-        soup  = BeautifulSoup(html, "lxml")
-        for script in soup.find_all("script"):
-            raw = script.string or ""
-            m   = re.search(r'(\[\s*\{[^<]{80,}\}\s*\])', raw, re.DOTALL)
-            if m:
-                try:
-                    jobs = json.loads(m.group(1))
-                    for j in (jobs if isinstance(jobs, list) else []):
-                        if not isinstance(j, dict) or "title" not in j: continue
-                        found.append({"titolo": j.get("title") or "N/D",
-                                       "location": j.get("location") or "Belgium",
-                                       "url": j.get("apply") or j.get("url") or PWC_BEL_URL,
-                                       "data": ""})
-                except: pass
-        if not found:
-            for row in soup.select("tr[class*='job'],li[class*='job'],"
-                                   "div[class*='job-result'],div[class*='jobCard']"):
-                t = row.select_one("a,[class*='title']")
-                if not t: continue
-                href = t.get("href","") if t.name=="a" else ""
-                if not href:
-                    a = t.find("a"); href = a.get("href","") if a else ""
-                if href and not href.startswith("http"):
-                    href = "https://www.pwc.com" + href
-                found.append({"titolo": t.get_text(strip=True),
-                               "location": "Belgium", "url": href, "data": ""})
-        return found
-
+    print("🔍 PwC Belgio (jsondata inline)...")
+    URL = "https://www.pwc.be/en/careers/students-graduates.html"
     risultati = []
-    r = http_get(PWC_BEL_URL)
-    if r: risultati = _da_html(r.text)
 
-    if not risultati and PLAYWRIGHT_OK:
-        print("    → Playwright PwC Belgio...")
-        html = _pw_get_html(PWC_BEL_URL, wait_selector="tr,[class*='job']", wait_ms=6000)
-        if html: risultati = _da_html(html)
+    r = http_get(URL)
+    if not r:
+        print("    ⚠️  Impossibile scaricare la pagina PwC Belgio")
+        return risultati
+
+    # Estrai var jsondata = [...] dalla pagina
+    m = re.search(r'var\s+jsondata\s*=\s*(\[.+?\])\s*;', r.text, re.DOTALL)
+    if m:
+        try:
+            jobs = json.loads(m.group(1))
+            for j in jobs:
+                if not isinstance(j, dict):
+                    continue
+                apply_url = j.get("apply") or j.get("url") or URL
+                risultati.append({
+                    "titolo":   j.get("title") or "N/D",
+                    "location": j.get("location") or j.get("region") or "Belgio",
+                    "url":      apply_url,
+                    "data":     j.get("date") or "",
+                })
+            print(f"   → {len(risultati)} offerte trovate")
+            return risultati
+        except Exception as e:
+            print(f"    ⚠️  Errore parsing jsondata: {e}")
+
+    # Fallback Playwright se requests non trova jsondata
+    if PLAYWRIGHT_OK:
+        print("    → Playwright fallback PwC Belgio...")
+        html = _pw_get_html(URL, wait_ms=6000)
+        if html:
+            m2 = re.search(r'var\s+jsondata\s*=\s*(\[.+?\])\s*;', html, re.DOTALL)
+            if m2:
+                try:
+                    jobs = json.loads(m2.group(1))
+                    for j in jobs:
+                        if not isinstance(j, dict): continue
+                        risultati.append({
+                            "titolo":   j.get("title") or "N/D",
+                            "location": j.get("location") or j.get("region") or "Belgio",
+                            "url":      j.get("apply") or URL,
+                            "data":     j.get("date") or "",
+                        })
+                except Exception as e:
+                    print(f"    ⚠️  Errore parsing jsondata (Playwright): {e}")
 
     print(f"   → {len(risultati)} offerte trovate")
     return risultati
 
 # ============================================================
 # 🏢  DELOITTE ITALIA  —  Avature ATS
+#
+#  Paginazione: jobOffset += 50 (il sito accetta max 50 per pagina)
+#  Selettore: h3 a[href*='/careers/JobDetail/']
+#  Fine: quando non ci sono più card.
 # ============================================================
 
 def scrape_deloitte():
@@ -411,51 +418,66 @@ def scrape_deloitte():
 
 # ============================================================
 # 🏢  KPMG ITALIA  —  SAP SuccessFactors
+#
+#  ATS: SAP SuccessFactors. Lista HTML a tabella.
+#  Paginazione: startrow=0, 5, 10, 15... (5 offerte per pagina)
+#  Fine: quando la pagina non contiene più righe nella tabella.
+#  Data: campo colDate nella colonna della tabella.
+#  Selettore: table#searchresults tbody tr
 # ============================================================
 
 def scrape_kpmg():
-    print("🔍 KPMG Italia...")
+    print("🔍 KPMG Italia (SAP SuccessFactors)...")
+    BASE_URL  = "https://careers.kpmg.it/search/"
+    STEP      = 5
     risultati = []
+    startrow  = 0
 
-    for api in [
-        "https://careers.kpmg.it/api/apply/v2/jobs?domain=careers.kpmg.it&start=0&num=100&sort_by=newest",
-        "https://careers.kpmg.it/api/jobs?start=0&num=100&sort_by=newest",
-    ]:
-        r = http_get(api)
-        if not r: continue
-        try:
-            data = r.json()
-            jobs = data.get("positions") or data.get("jobs") or data.get("results") or []
-            if not jobs: continue
-            for j in jobs:
-                pub = j.get("t_create") or j.get("startDate") or j.get("postedDate") or ""
-                if isinstance(pub, (int, float)) or (isinstance(pub, str) and pub.isdigit()):
-                    pub = ts_ms_to_str(pub)
-                jid  = j.get("jobId") or j.get("id") or j.get("positionId") or ""
-                link = j.get("applyUrl") or (f"https://careers.kpmg.it/job/{jid}" if jid else "https://careers.kpmg.it")
-                risultati.append({"titolo": j.get("title") or j.get("jobTitle") or "N/D",
-                                   "location": j.get("city") or j.get("location") or "Italia",
-                                   "url": link,
-                                   "data": pub[:10] if isinstance(pub, str) else ""})
+    while True:
+        url = (f"{BASE_URL}?q=&sortColumn=referencedate&sortDirection=desc"
+               f"&startrow={startrow}")
+        r = http_get(url)
+        if not r:
             break
-        except: continue
+        soup = BeautifulSoup(r.text, "lxml")
+        rows = soup.select("table#searchresults tbody tr")
+        if not rows:
+            # Prova selettore alternativo
+            rows = soup.select("table.table tbody tr")
+        if not rows:
+            break
 
-    if not risultati:
-        print("    → fallback HTML KPMG...")
-        r2 = http_get("https://careers.kpmg.it/search/?q=&sortColumn=referencedate&sortDirection=desc")
-        if r2:
-            soup = BeautifulSoup(r2.text, "lxml")
-            for row in soup.select("table tbody tr"):
-                cols = row.select("td")
-                if len(cols) < 2: continue
-                link_el = cols[0].select_one("a")
-                if not link_el: continue
-                href = link_el.get("href","")
-                if href and not href.startswith("http"): href = "https://careers.kpmg.it" + href
-                risultati.append({"titolo": link_el.get_text(strip=True),
-                                   "location": cols[1].get_text(strip=True) if len(cols) >= 2 else "",
-                                   "url": href,
-                                   "data": cols[-1].get_text(strip=True) if len(cols) >= 3 else ""})
+        for row in rows:
+            cols = row.select("td")
+            if len(cols) < 2:
+                continue
+            link_el = cols[0].select_one("a")
+            if not link_el:
+                continue
+            href = link_el.get("href", "")
+            if href and not href.startswith("http"):
+                href = "https://careers.kpmg.it" + href
+            # Data: cerca il campo colDate (tipicamente ultima colonna)
+            data = ""
+            for col in cols:
+                cls = " ".join(col.get("class", []))
+                if "date" in cls.lower() or "colDate" in cls:
+                    data = col.get_text(strip=True)
+                    break
+            if not data and len(cols) >= 3:
+                data = cols[-1].get_text(strip=True)
+
+            risultati.append({
+                "titolo":   link_el.get_text(strip=True),
+                "location": cols[1].get_text(strip=True) if len(cols) >= 2 else "Italia",
+                "url":      href,
+                "data":     data,
+            })
+
+        startrow += STEP
+        if len(rows) < STEP:
+            break
+        time.sleep(0.3)
 
     print(f"   → {len(risultati)} offerte trovate")
     return risultati
@@ -548,13 +570,13 @@ def invia_email(html_body, totale):
     msg            = MIMEMultipart("alternative")
     msg["Subject"] = f"📰 Big4 Jobs {datetime.now():%d/%m/%Y} — {totale} nuove offerte"
     msg["From"]    = GMAIL_MITTENTE
-    msg["To"]      = ", ".join(EMAIL_DESTINATARIO)
+    msg["To"]      = EMAIL_DESTINATARIO
     msg.attach(MIMEText(html_body, "html", "utf-8"))
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
             s.login(GMAIL_MITTENTE, GMAIL_PASSWORD)
             s.sendmail(GMAIL_MITTENTE, EMAIL_DESTINATARIO, msg.as_string())
-        print(f"✅ Email inviata a {', '.join(EMAIL_DESTINATARIO)}")
+        print(f"✅ Email inviata a {EMAIL_DESTINATARIO}")
     except smtplib.SMTPAuthenticationError:
         print("❌ Errore autenticazione → rigenera App Password su myaccount.google.com")
     except Exception as e:
@@ -569,7 +591,6 @@ def main():
     print(f"  BIG4 JOB NEWSLETTER  {datetime.now():%d/%m/%Y %H:%M}")
     print(f"{'='*55}\n")
 
-    # --- Carica gli ID già visti ---
     seen = carica_seen()
 
     scrapers = [
@@ -580,8 +601,8 @@ def main():
         ("KPMG",       scrape_kpmg),
     ]
 
-    tutte_trovate = {}   # tutte le offerte scraped
-    tutte_nuove   = {}   # solo quelle mai viste prima
+    tutte_trovate = {}
+    tutte_nuove   = {}
 
     for nome, fn in scrapers:
         try:
@@ -595,7 +616,6 @@ def main():
             print(f"   ❌ {nome}: {e}")
         time.sleep(1)
 
-    # --- Salva gli ID aggiornati ---
     salva_seen(seen)
 
     totale_trovate = sum(len(v) for v in tutte_trovate.values())
