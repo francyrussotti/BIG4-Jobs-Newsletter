@@ -27,7 +27,7 @@ except ImportError:
 
 GMAIL_MITTENTE     = os.environ.get("GMAIL_MITTENTE",     "")
 GMAIL_PASSWORD     = os.environ.get("GMAIL_PASSWORD",     "")
-EMAIL_DESTINATARIO = [e.strip() for e in os.environ.get("EMAIL_DESTINATARIO", "").split(",") if e.strip()]
+EMAIL_DESTINATARIO = os.environ.get("EMAIL_DESTINATARIO", "")
 
 # File locale dove vengono salvati gli ID delle offerte già inviate
 SEEN_FILE = "seen_jobs.json"
@@ -545,18 +545,20 @@ def genera_html(tutte, totale_trovate):
 # ============================================================
 
 def invia_email(html_body, totale):
-    subject = f"📰 Big4 Jobs {datetime.now():%d/%m/%Y} — {totale} nuove offerte"
+    # Supporta più destinatari separati da virgola nel secret EMAIL_DESTINATARIO
+    # Es: "primo@email.com,secondo@email.com,terzo@email.com"
+    destinatari = [d.strip() for d in EMAIL_DESTINATARIO.split(",") if d.strip()]
+
+    msg            = MIMEMultipart("alternative")
+    msg["Subject"] = f"📰 Big4 Jobs {datetime.now():%d/%m/%Y} — {totale} nuove offerte"
+    msg["From"]    = GMAIL_MITTENTE
+    msg["To"]      = ", ".join(destinatari)
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
             s.login(GMAIL_MITTENTE, GMAIL_PASSWORD)
-            for dest in EMAIL_DESTINATARIO:
-                msg = MIMEMultipart("alternative")
-                msg["Subject"] = subject
-                msg["From"]    = GMAIL_MITTENTE
-                msg["To"]      = dest
-                msg.attach(MIMEText(html_body, "html", "utf-8"))
-                s.sendmail(GMAIL_MITTENTE, dest, msg.as_string())
-                print(f"✅ Email inviata a {dest}")
+            s.sendmail(GMAIL_MITTENTE, destinatari, msg.as_string())
+        print(f"✅ Email inviata a {destinatari}")
     except smtplib.SMTPAuthenticationError:
         print("❌ Errore autenticazione → rigenera App Password su myaccount.google.com")
     except Exception as e:
