@@ -101,7 +101,8 @@ def ts_ms_to_str(ts):
 
 def http_get(url, **kw):
     try:
-        r = requests.get(url, headers=HEADERS, timeout=15, **kw)
+        headers = {**HEADERS, **kw.pop("headers", {})}
+        r = requests.get(url, headers=headers, timeout=15, **kw)
         r.raise_for_status()
         return r
     except Exception as e:
@@ -110,7 +111,8 @@ def http_get(url, **kw):
 
 def http_post(url, **kw):
     try:
-        r = requests.post(url, headers=HEADERS, timeout=15, **kw)
+        headers = {**HEADERS, **kw.pop("headers", {})}
+        r = requests.post(url, headers=headers, timeout=15, **kw)
         r.raise_for_status()
         return r
     except Exception as e:
@@ -198,7 +200,12 @@ def scrape_ey():
             r = http_get(url, headers=ey_headers)
             if not r:
                 break
-            soup = BeautifulSoup(r.text, "lxml")
+            # L'endpoint restituisce un JSON {"html": "...", ...}, non HTML grezzo
+            try:
+                html_frammento = r.json().get("html", "")
+            except ValueError:
+                html_frammento = r.text  # fallback se un giorno tornasse HTML puro
+            soup = BeautifulSoup(html_frammento, "lxml")
             items = soup.select("li.search-results__item")
             if not items:
                 break
@@ -219,7 +226,7 @@ def scrape_ey():
                 risultati.append({
                     "titolo":   title,
                     "location": f"EY {country_name}",
-                    "url":      href or BASE,
+                    "url":      href,  # vuoto se manca -> fa scattare il fallback titolo+location in _job_id()
                     "data":     posted,
                     "_req_id":  req_id,
                 })
@@ -253,18 +260,35 @@ def scrape_pwc_italia():
         print("    ⚠️  Playwright necessario per PwC Italia — saltato")
         return risultati
 
+    def _estrai_array_bilanciato(testo, chiave):
+        # Il vecchio regex non-greedy si fermava alla prima "]" incontrata,
+        # troncando il JSON quando i job contengono array annidati (es. "ml_skills": [...]).
+        # Qui invece si conta l'apertura/chiusura delle parentesi quadre per
+        # trovare la fine reale dell'array, senza introdurre nuove dipendenze.
+        m = re.search(r'"%s"\s*:\s*\[' % re.escape(chiave), testo)
+        if not m:
+            return None
+        start = m.end() - 1  # posizione della '[' di apertura
+        depth = 0
+        for i in range(start, len(testo)):
+            if testo[i] == '[':
+                depth += 1
+            elif testo[i] == ']':
+                depth -= 1
+                if depth == 0:
+                    return testo[start:i + 1]
+        return None
+
     def _da_html(html):
         out  = []
         soup = BeautifulSoup(html, "lxml")
         for script in soup.find_all("script"):
             raw = script.string or ""
-            for pat in [r'"jobs"\s*:\s*(\[.+?\])\s*[,}]',
-                        r'"jobList"\s*:\s*(\[.+?\])\s*[,}]',
-                        r'"positions"\s*:\s*(\[.+?\])\s*[,}]']:
-                m = re.search(pat, raw, re.DOTALL)
-                if m:
+            for chiave in ["jobs", "jobList", "positions"]:
+                array_raw = _estrai_array_bilanciato(raw, chiave)
+                if array_raw:
                     try:
-                        jobs = json.loads(m.group(1))
+                        jobs = json.loads(array_raw)
                         for j in jobs:
                             if not isinstance(j, dict): continue
                             link = j.get("applyUrl") or j.get("url") or j.get("jobUrl") or ""
@@ -341,7 +365,7 @@ def scrape_pwc_belgio():
             for j in jobs:
                 if not isinstance(j, dict):
                     continue
-                apply_url = j.get("apply") or j.get("url") or URL
+                apply_url = j.get("apply") or j.get("url") or ""
                 risultati.append({
                     "titolo":   j.get("title") or "N/D",
                     "location": j.get("location") or j.get("region") or "Belgio",
@@ -367,7 +391,7 @@ def scrape_pwc_belgio():
                         risultati.append({
                             "titolo":   j.get("title") or "N/D",
                             "location": j.get("location") or j.get("region") or "Belgio",
-                            "url":      j.get("apply") or URL,
+                            "url":      j.get("apply") or j.get("url") or "",
                             "data":     j.get("date") or "",
                         })
                 except Exception as e:
@@ -508,7 +532,7 @@ def genera_html(tutte, totale_trovate):
             righe += f"""
             <tr>
               <td style="padding:11px 16px;border-bottom:1px solid #f0f0f0;vertical-align:top;">
-                <a href="{o['url']}" style="color:#1a1a2e;font-weight:600;text-decoration:none;
+                <a href="{o.get('url') or '#'}" style="color:#1a1a2e;font-weight:600;text-decoration:none;
                    font-size:14px;line-height:1.4;display:block;">{o['titolo']}</a>
                 <div style="margin-top:3px;font-size:12px;">{loc}{data}</div>
               </td>
