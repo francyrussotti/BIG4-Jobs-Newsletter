@@ -28,9 +28,16 @@ jobs:
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('requirements.txt') }}
       - name: Install Python dependencies
         run: pip install -r requirements.txt
       - name: Install Playwright + Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: |
           playwright install chromium
           sudo $(which playwright) install-deps chromium
@@ -45,9 +52,26 @@ jobs:
       - name: Debug files after run
         run: ls -la
       - name: Commit seen_jobs.json
+        if: always()   # deve girare anche se lo script esce con codice 1 (health check fallito),
+                       # altrimenti si perderebbero gli ID già visti e lo storico dei conteggi
         run: |
+          set -e
           git config --global user.name "github-actions"
           git config --global user.email "actions@github.com"
           git add seen_jobs.json
-          git commit -m "update seen jobs" || echo "no changes"
-          git push
+          if git diff --staged --quiet; then
+            echo "Nessuna modifica a seen_jobs.json"
+            exit 0
+          fi
+          git commit -m "update seen jobs"
+          # Se nel frattempo il branch è cambiato, riallinea invece di fallire
+          for tentativo in 1 2 3; do
+            if git push; then
+              echo "Push riuscito al tentativo $tentativo"
+              exit 0
+            fi
+            echo "Push fallito (tentativo $tentativo) — riallineo con il remoto..."
+            git pull --rebase --autostash
+          done
+          echo "❌ Push di seen_jobs.json fallito dopo 3 tentativi"
+          exit 1
