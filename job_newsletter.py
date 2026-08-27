@@ -805,6 +805,62 @@ def scrape_digital360():
     print(f"   → {len(risultati)} offerte trovate")
     return risultati
 
+# ============================================================
+# 🏢  CAPGEMINI ITALIA  —  API custom (requests, API REST diretta)
+#
+#  Endpoint scoperto ispezionando il bundle JS del plugin di
+#  ricerca offerte del sito (cg-jobs-search-frontend.build.js).
+#  ATTENZIONE: il parametro country_code va passato minuscolo e
+#  con trattino ("it-it"), NON "IT" (maiuscolo) né "it" da solo —
+#  entrambi restituiscono silenziosamente 0 risultati senza errore.
+#  Paginazione: page/size, ci si ferma al "total" dichiarato.
+# ============================================================
+
+def scrape_capgemini():
+    print("🔍 Capgemini Italia...")
+    URL  = "https://cg-jobstream-api.azurewebsites.net/api/job-search"
+    SIZE = 50
+    risultati = []
+
+    headers = {**HEADERS, "Accept": "application/json"}
+    page = 1
+    totale_dichiarato = None
+    while True:
+        params = {"country_code": "it-it", "page": page, "size": SIZE}
+        try:
+            r = requests.get(URL, headers=headers, params=params, timeout=15)
+            r.raise_for_status()
+            dati = r.json()
+        except Exception as e:
+            print(f"    ⚠️  GET Capgemini → {e}")
+            break
+
+        if totale_dichiarato is None:
+            totale_dichiarato = dati.get("total", 0)
+
+        jobs = dati.get("data", [])
+        if not jobs:
+            break
+        for j in jobs:
+            risultati.append({
+                "titolo":   j.get("title") or "N/D",
+                "location": f"Capgemini · {j.get('location','')}".rstrip(" ·"),
+                "url":      j.get("apply_job_url", ""),
+                "data":     "",
+            })
+
+        page += 1
+        if len(risultati) >= totale_dichiarato:
+            break
+        time.sleep(0.2)
+
+    print(f"   → {len(risultati)} offerte trovate")
+    return risultati
+
+# ============================================================
+# 📧  GENERAZIONE EMAIL HTML
+# ============================================================
+
 BRAND_COLORS = {
     "EY":         ("#FFE600", "#1a1a1a"),
     "PwC Italia": ("#E0301E", "#ffffff"),
@@ -815,6 +871,7 @@ BRAND_COLORS = {
     "NTT DATA":   ("#FF0033", "#ffffff"),
     "Bip":        ("#1a1a2e", "#ffffff"),
     "Digital360": ("#0d1b2a", "#ffffff"),
+    "Capgemini":  ("#0070AD", "#ffffff"),
 }
 
 def genera_html(tutte, totale_trovate, problemi=None):
@@ -960,6 +1017,7 @@ def main():
         ("NTT DATA",   scrape_nttdata),
         ("Bip",        scrape_bip),
         ("Digital360", scrape_digital360),
+        ("Capgemini",  scrape_capgemini),
     ]
 
     tutte_trovate = {}
