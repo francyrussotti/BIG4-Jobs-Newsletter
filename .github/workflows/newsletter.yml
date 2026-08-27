@@ -2,7 +2,10 @@ name: 📰 Big4 Job Newsletter
 
 on:
   schedule:
-    - cron: "0 3 * * *"
+    # GitHub Actions usa sempre UTC e non applica l'ora legale.
+    # 05:30 UTC = 07:30 CEST (ora legale, in vigore da fine marzo a fine ottobre).
+    # In ora solare (CET) scatterà alle 06:30 locali: limite noto del cron GitHub, che non gestisce il DST.
+    - cron: "30 5 * * *"
   workflow_dispatch:
 
 permissions:
