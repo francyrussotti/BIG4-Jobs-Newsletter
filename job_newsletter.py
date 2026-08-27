@@ -602,8 +602,208 @@ def scrape_kpmg():
     return risultati
 
 # ============================================================
-# 📧  GENERAZIONE EMAIL HTML
+# 🏢  ACCENTURE ITALIA  —  Workday (requests, API REST diretta)
+#
+#  ATS: Workday. L'endpoint pubblico restituisce JSON pulito,
+#  niente Playwright necessario.
+#  Filtro paese: facet "locationCountry", ID Italia fisso
+#  (verificato — questi ID Workday sono stabili nel tempo).
+#  Paginazione: offset crescente di 20, ci si ferma al "total"
+#  dichiarato dalla prima risposta.
 # ============================================================
+
+def scrape_accenture():
+    print("🔍 Accenture Italia (Workday)...")
+    URL = "https://accenture.wd103.myworkdayjobs.com/wday/cxs/accenture/AccentureCareers/jobs"
+    ITALIA_ID = "8cd04a563fd94da7b06857a79faaf815"
+    BASE_JOB_URL = "https://accenture.wd103.myworkdayjobs.com/en-US/AccentureCareers"
+    LIMIT = 20
+    risultati = []
+
+    headers = {**HEADERS, "Content-Type": "application/json", "Accept": "application/json"}
+    offset = 0
+    totale_dichiarato = None
+    while True:
+        body = {"appliedFacets": {"locationCountry": [ITALIA_ID]}, "limit": LIMIT,
+                "offset": offset, "searchText": ""}
+        try:
+            r = requests.post(URL, headers=headers, json=body, timeout=15)
+            r.raise_for_status()
+            dati = r.json()
+        except Exception as e:
+            print(f"    ⚠️  POST Workday Accenture → {e}")
+            break
+
+        if totale_dichiarato is None:
+            totale_dichiarato = dati.get("total", 0)
+
+        jobs = dati.get("jobPostings", [])
+        if not jobs:
+            break
+        for j in jobs:
+            titolo = j.get("title") or "N/D"
+            path   = j.get("externalPath", "")
+            bullet = j.get("bulletFields", [])
+            luogo  = bullet[1] if len(bullet) > 1 else ""
+            risultati.append({
+                "titolo":   titolo,
+                "location": f"Accenture Italia" + (f" · {luogo}" if luogo and luogo != "Location Negotiable" else ""),
+                "url":      f"{BASE_JOB_URL}{path}" if path else "",
+                "data":     j.get("postedOn", ""),
+            })
+
+        offset += LIMIT
+        if offset >= totale_dichiarato:
+            break
+        time.sleep(0.2)
+
+    print(f"   → {len(risultati)} offerte trovate")
+    return risultati
+
+# ============================================================
+# 🏢  NTT DATA ITALIA  —  requests + paginazione HTML classica
+#
+#  Sito server-side (nessun ATS terzo esposto via API).
+#  Paginazione: /career/posizioni-aperte/page/N.
+#  Selettore: a.job-detail-link.
+# ============================================================
+
+def scrape_nttdata():
+    print("🔍 NTT DATA Italia...")
+    BASE = "https://it.nttdata.com/career/posizioni-aperte"
+    risultati = []
+    page = 1
+
+    while True:
+        url = f"{BASE}/page/{page}" if page > 1 else BASE
+        r = http_get(url)
+        if not r:
+            break
+        soup  = BeautifulSoup(r.text, "lxml")
+        cards = soup.select("a.job-detail-link")
+        if not cards:
+            break
+        for a in cards:
+            titolo_el = a.select_one(".is-h5")
+            loc_el    = a.select_one(".is-small")
+            href      = a.get("href", "")
+            if href and not href.startswith("http"):
+                href = "https://it.nttdata.com" + href
+            risultati.append({
+                "titolo":   titolo_el.get_text(strip=True) if titolo_el else "N/D",
+                "location": f"NTT DATA · {loc_el.get_text(strip=True)}" if loc_el else "NTT DATA Italia",
+                "url":      href,
+                "data":     "",
+            })
+        page += 1
+        time.sleep(0.3)
+
+    print(f"   → {len(risultati)} offerte trovate")
+    return risultati
+
+# ============================================================
+# 🏢  BIP  —  Oracle Recruiting Cloud (requests, API REST diretta)
+#
+#  ATS: Oracle Recruiting Cloud (fa-etjb-saasfaprod1...).
+#  Ogni offerta include già PrimaryLocationCountry: il filtro
+#  Italia è affidabile (a differenza del trucco fragile usato per EY).
+#  Paginazione: offset crescente di 25, fino al TotalJobsCount.
+# ============================================================
+
+def scrape_bip():
+    print("🔍 Bip (Oracle Recruiting Cloud)...")
+    BASE = "https://fa-etjb-saasfaprod1.fa.ocs.oraclecloud.com"
+    API  = f"{BASE}/hcmRestApi/resources/latest/recruitingCEJobRequisitions"
+    LIMIT = 25
+    risultati = []
+
+    headers = {**HEADERS, "Accept": "application/json"}
+    offset = 0
+    totale_dichiarato = None
+    while True:
+        finder = (f"findReqs;siteNumber=CX_1,limit={LIMIT},offset={offset},"
+                  f"sortBy=POSTING_DATES_DESC")
+        params = {"onlyData": "true", "expand": "requisitionList", "finder": finder}
+        try:
+            r = requests.get(API, headers=headers, params=params, timeout=15)
+            r.raise_for_status()
+            dati = r.json()["items"][0]
+        except Exception as e:
+            print(f"    ⚠️  GET Oracle Bip → {e}")
+            break
+
+        if totale_dichiarato is None:
+            totale_dichiarato = dati.get("TotalJobsCount", 0)
+
+        reqs = dati.get("requisitionList", [])
+        if not reqs:
+            break
+        for j in reqs:
+            if j.get("PrimaryLocationCountry") != "IT":
+                continue
+            job_id = j.get("Id", "")
+            risultati.append({
+                "titolo":   j.get("Title") or "N/D",
+                "location": "Bip Italia",
+                "url":      f"{BASE}/hcmUI/CandidateExperience/en/sites/CX_1/job/{job_id}" if job_id else "",
+                "data":     j.get("PostedDate", ""),
+            })
+
+        offset += LIMIT
+        if offset >= totale_dichiarato:
+            break
+        time.sleep(0.2)
+
+    print(f"   → {len(risultati)} offerte trovate")
+    return risultati
+
+# ============================================================
+# 🏢  DIGITAL360 (Digital360, P4I, FPA, Digital360 GOV, Cryptonet Labs)
+#
+#  Sito HubSpot server-side. Paginazione: ?page=N, si ferma da
+#  sola quando una pagina non ha più card.
+#  ATTENZIONE: alcuni annunci (stesso ruolo, sedi diverse) condividono
+#  LO STESSO URL — per non farli collassare in un solo ID nella
+#  deduplica, si aggiunge la città come frammento (#città): resta un
+#  link valido e cliccabile, ma rende l'hash univoco per sede.
+# ============================================================
+
+def scrape_digital360():
+    print("🔍 Digital360 (gruppo: Digital360, P4I, FPA, GOV, Cryptonet Labs)...")
+    BASE = "https://www.digital360.it/posizioni-aperte"
+    risultati = []
+    page = 1
+
+    while True:
+        r = http_get(BASE, params={"page": page})
+        if not r:
+            break
+        soup  = BeautifulSoup(r.text, "lxml")
+        cards = soup.select("div.positions-item")
+        if not cards:
+            break
+        for c in cards:
+            tag_el = c.select(".item-pre-heading p")
+            azienda  = tag_el[0].get_text(strip=True) if len(tag_el) > 0 else "Digital360"
+            citta    = tag_el[1].get_text(strip=True) if len(tag_el) > 1 else ""
+            modalita = tag_el[2].get_text(strip=True) if len(tag_el) > 2 else ""
+            h3 = c.select_one("h3.item-heading")
+            a  = c.select_one(".item-actions a")
+            href = a.get("href", "") if a else ""
+            # vedi nota sopra: frammento città per evitare collisioni di ID
+            if href and citta:
+                href = f"{href}#{citta.lower().replace(' ', '-')}"
+            risultati.append({
+                "titolo":   h3.get_text(strip=True) if h3 else "N/D",
+                "location": f"{azienda} · {citta}" + (f" ({modalita})" if modalita else ""),
+                "url":      href,
+                "data":     "",
+            })
+        page += 1
+        time.sleep(0.3)
+
+    print(f"   → {len(risultati)} offerte trovate")
+    return risultati
 
 BRAND_COLORS = {
     "EY":         ("#FFE600", "#1a1a1a"),
@@ -611,6 +811,10 @@ BRAND_COLORS = {
     "PwC Belgio": ("#E0301E", "#ffffff"),
     "Deloitte":   ("#86BC25", "#1a1a1a"),
     "KPMG":       ("#00338D", "#ffffff"),
+    "Accenture":  ("#A100FF", "#ffffff"),
+    "NTT DATA":   ("#FF0033", "#ffffff"),
+    "Bip":        ("#1a1a2e", "#ffffff"),
+    "Digital360": ("#0d1b2a", "#ffffff"),
 }
 
 def genera_html(tutte, totale_trovate, problemi=None):
@@ -752,6 +956,10 @@ def main():
         ("PwC Belgio", scrape_pwc_belgio),
         ("Deloitte",   scrape_deloitte),
         ("KPMG",       scrape_kpmg),
+        ("Accenture",  scrape_accenture),
+        ("NTT DATA",   scrape_nttdata),
+        ("Bip",        scrape_bip),
+        ("Digital360", scrape_digital360),
     ]
 
     tutte_trovate = {}
