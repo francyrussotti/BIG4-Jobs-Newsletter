@@ -195,20 +195,42 @@ def scrape_ey():
 
     for country_id, country_name in COUNTRIES:
         page = 1
+        max_pages = None       # calcolato dalla prima pagina in base al totale reale
+        req_ids_pagina_prec = None  # per rilevare se l'API "clona" l'ultima pagina all'infinito
         while True:
             url = f"{BASE}/search?field_245[]={country_id}&page={page}"
             r = http_get(url, headers=ey_headers)
             if not r:
                 break
-            # L'endpoint restituisce un JSON {"html": "...", ...}, non HTML grezzo
+            # L'endpoint restituisce un JSON {"html": "...", "display_count_text": "N Results", ...}
             try:
-                html_frammento = r.json().get("html", "")
+                dati_json = r.json()
+                html_frammento = dati_json.get("html", "")
             except ValueError:
+                dati_json = {}
                 html_frammento = r.text  # fallback se un giorno tornasse HTML puro
             soup = BeautifulSoup(html_frammento, "lxml")
             items = soup.select("li.search-results__item")
             if not items:
                 break
+
+            # Limite di sicurezza calcolato sul totale reale dichiarato dal sito
+            # (l'endpoint, se si supera l'ultima pagina reale, RIPETE la pagina precedente
+            # invece di restituire una lista vuota — senza questo limite il ciclo non finirebbe mai)
+            if max_pages is None:
+                m_tot = re.search(r"(\d+)", dati_json.get("display_count_text", "") or "")
+                totale_dichiarato = int(m_tot.group(1)) if m_tot else None
+                max_pages = (totale_dichiarato // 25 + 2) if totale_dichiarato else 200
+
+            req_ids_pagina = tuple(
+                (item.select_one("div span").get_text(strip=True) if item.select_one("div span") else "")
+                for item in items
+            )
+            if req_ids_pagina == req_ids_pagina_prec:
+                # Stessa identica pagina della precedente: il sito ha smesso di avanzare, fermiamoci
+                break
+            req_ids_pagina_prec = req_ids_pagina
+
             for item in items:
                 a = item.select_one("a.search-results__req_title")
                 if not a:
@@ -231,6 +253,8 @@ def scrape_ey():
                     "_req_id":  req_id,
                 })
             page += 1
+            if page > max_pages:
+                break
             time.sleep(0.3)
 
     # De-duplica per req_id (stesso job può apparire in entrambi i paesi)
