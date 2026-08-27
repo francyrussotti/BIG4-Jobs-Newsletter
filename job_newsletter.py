@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-import json, time, re, os, hashlib
+import json, time, re, os, hashlib, sys
 
 try:
     from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
@@ -33,6 +33,20 @@ EMAIL_DESTINATARIO = os.environ.get("EMAIL_DESTINATARIO", "")
 SEEN_FILE = "seen_jobs.json"
 
 # ============================================================
+# 🩺  PARAMETRI DEL MONITORAGGIO
+# ============================================================
+
+# Quante run conservare nello storico dei conteggi (serve a calcolare la mediana)
+STORICO_MAX_RUN = 14
+# Quante run servono come minimo prima di poter dare un giudizio sul calo
+STORICO_MIN_RUN = 3
+# Sotto questa frazione della mediana storica, il calo è considerato sospetto
+SOGLIA_CALO = 0.5
+# Se la quota di "nuove" sul totale supera questo valore (con storico presente),
+# è probabile che la deduplica non stia funzionando
+SOGLIA_NUOVE_ANOMALE = 0.9
+
+# ============================================================
 # 👁️  FILTRO "GIÀ VISTI"
 # ============================================================
 
@@ -45,24 +59,30 @@ def _job_id(azienda: str, offerta: dict) -> str:
         raw = f"{azienda}|{offerta.get('titolo','').strip().lower()}|{offerta.get('location','').strip().lower()}"
     return hashlib.md5(raw.encode()).hexdigest()
 
-def carica_seen() -> set:
+def carica_seen() -> tuple[set, list]:
+    """Restituisce (ID già visti, storico dei conteggi per fonte)."""
     if os.path.exists(SEEN_FILE):
         try:
             with open(SEEN_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            ids = set(data.get("ids", []))
-            print(f"📂 Caricati {len(ids)} ID già visti da {SEEN_FILE}")
-            return ids
+            ids     = set(data.get("ids", []))
+            storico = data.get("storico_conteggi", [])
+            print(f"📂 Caricati {len(ids)} ID già visti da {SEEN_FILE} · storico: {len(storico)} run")
+            return ids, storico
         except Exception as e:
             print(f"⚠️  Errore lettura {SEEN_FILE}: {e}")
     else:
         print(f"📂 {SEEN_FILE} non trovato — prima esecuzione, tutte le offerte sono nuove")
-    return set()
+    return set(), []
 
-def salva_seen(seen: set):
+def salva_seen(seen: set, storico: list):
     try:
         with open(SEEN_FILE, "w", encoding="utf-8") as f:
-            json.dump({"ids": list(seen), "aggiornato": datetime.now().isoformat()}, f, indent=2)
+            json.dump({
+                "ids":               list(seen),
+                "aggiornato":        datetime.now().isoformat(),
+                "storico_conteggi":  storico[-STORICO_MAX_RUN:],   # solo le ultime N run
+            }, f, indent=2)
         print(f"💾 Salvati {len(seen)} ID in {SEEN_FILE}")
     except Exception as e:
         print(f"⚠️  Errore scrittura {SEEN_FILE}: {e}")
@@ -78,6 +98,53 @@ def filtra_nuove(azienda: str, offerte: list, seen: set) -> tuple[list, set]:
     seen_aggiornato = seen | nuovi_ids
     print(f"   → {len(offerte)} trovate · {len(nuove)} nuove · {len(offerte)-len(nuove)} già viste")
     return nuove, seen_aggiornato
+
+# ============================================================
+# 🩺  HEALTH CHECK — rileva scraper rotti e anomalie di deduplica
+#
+#  Serve perché un sito che cambia struttura NON produce un errore:
+#  lo scraper restituisce semplicemente 0 (o molte meno) offerte e
+#  il workflow resta verde. Qui i cali vengono resi espliciti.
+# ============================================================
+
+def _mediana(valori: list) -> float:
+    if not valori:
+        return 0.0
+    v = sorted(valori)
+    n = len(v)
+    return float(v[n // 2]) if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2
+
+def health_check(conteggi: dict, nuove_per_fonte: dict, storico: list) -> list:
+    """Confronta i conteggi di oggi con lo storico. Restituisce una lista di problemi:
+    ogni problema è (gravità, fonte, messaggio) con gravità 'bloccante' o 'sospetto'."""
+    problemi = []
+
+    for fonte, trovate in conteggi.items():
+        # Storico dei conteggi passati per questa fonte
+        passati = [run["conteggi"][fonte] for run in storico
+                   if isinstance(run.get("conteggi"), dict) and fonte in run["conteggi"]]
+
+        if trovate == 0:
+            problemi.append(("bloccante", fonte,
+                             "0 offerte trovate — scraper probabilmente rotto "
+                             "(selettori cambiati, sito irraggiungibile o filtro non più valido)"))
+            continue
+
+        if len(passati) >= STORICO_MIN_RUN:
+            med = _mediana(passati)
+            if med > 0 and trovate < med * SOGLIA_CALO:
+                problemi.append(("sospetto", fonte,
+                                 f"{trovate} offerte contro una mediana storica di {med:.0f} "
+                                 f"(-{100*(1-trovate/med):.0f}%) — possibile cambio di struttura del sito"))
+
+        # Deduplica: con uno storico già presente, quasi tutto "nuovo" è anomalo
+        nuove = nuove_per_fonte.get(fonte, 0)
+        if storico and trovate > 0 and (nuove / trovate) > SOGLIA_NUOVE_ANOMALE and nuove > 5:
+            problemi.append(("sospetto", fonte,
+                             f"{nuove} nuove su {trovate} trovate ({100*nuove/trovate:.0f}%) — "
+                             "possibile deduplica non funzionante (URL instabili o ID che cambiano)"))
+
+    return problemi
 
 # ============================================================
 # 🔧  UTILITIES HTTP
@@ -546,9 +613,26 @@ BRAND_COLORS = {
     "KPMG":       ("#00338D", "#ffffff"),
 }
 
-def genera_html(tutte, totale_trovate):
+def genera_html(tutte, totale_trovate, problemi=None):
     oggi_str = datetime.now().strftime("%d %B %Y")
     totale   = sum(len(v) for v in tutte.values())
+
+    # Banner diagnostico: compare solo se l'health check ha rilevato qualcosa
+    avviso = ""
+    if problemi:
+        righe_pb = ""
+        for gravita, fonte, msg in problemi:
+            icona = "🔴" if gravita == "bloccante" else "🟠"
+            righe_pb += (f'<li style="margin-bottom:5px;">{icona} <strong>{fonte}</strong>: {msg}</li>')
+        avviso = (
+            '<div style="background:#fff4e5;border-left:4px solid #ff9800;'
+            'padding:12px 18px;margin:0 0 18px;border-radius:6px;">'
+            '<div style="font-size:14px;font-weight:700;color:#8a4b00;margin-bottom:6px;">'
+            '⚠️ Controllo automatico: possibili scraper da verificare</div>'
+            f'<ul style="margin:0;padding-left:18px;font-size:12px;color:#8a4b00;">{righe_pb}</ul>'
+            '</div>'
+        )
+
     sezioni  = ""
     for azienda, offerte in tutte.items():
         if not offerte: continue
@@ -606,7 +690,7 @@ def genera_html(tutte, totale_trovate):
       🆕 <strong>{totale} nuove offerte</strong> su {totale_trovate} totali
       · EY · PwC ITA · PwC BEL · Deloitte · KPMG
     </div>
-    <div style="background:#f8f9fa;padding:20px 14px;">{body}</div>
+    <div style="background:#f8f9fa;padding:20px 14px;">{avviso}{body}</div>
     <div style="background:#0d1b2a;border-radius:0 0 12px 12px;padding:13px;
                 text-align:center;font-size:11px;color:#4a6fa5;">
       Newsletter automatica · Python 🐍 · {oggi_str}
@@ -619,6 +703,16 @@ def genera_html(tutte, totale_trovate):
 # ============================================================
 
 def invia_email(html_body, totale):
+    """Restituisce lo stato dell'invio: 'ok', 'auth' (credenziali rifiutate),
+    'config' (secret mancanti) o 'errore'. Serve al chiamante per decidere
+    se far fallire il workflow."""
+    if not GMAIL_MITTENTE or not GMAIL_PASSWORD or not EMAIL_DESTINATARIO:
+        mancanti = [n for n, v in [("GMAIL_MITTENTE", GMAIL_MITTENTE),
+                                    ("GMAIL_PASSWORD", GMAIL_PASSWORD),
+                                    ("EMAIL_DESTINATARIO", EMAIL_DESTINATARIO)] if not v]
+        print(f"❌ Secret mancanti o vuoti: {', '.join(mancanti)}")
+        return "config"
+
     # Supporta più destinatari separati da virgola nel secret EMAIL_DESTINATARIO
     # Es: "primo@email.com,secondo@email.com,terzo@email.com"
     destinatari = [d.strip() for d in EMAIL_DESTINATARIO.split(",") if d.strip()]
@@ -633,10 +727,13 @@ def invia_email(html_body, totale):
             s.login(GMAIL_MITTENTE, GMAIL_PASSWORD)
             s.sendmail(GMAIL_MITTENTE, destinatari, msg.as_string())
         print(f"✅ Email inviata a {destinatari}")
+        return "ok"
     except smtplib.SMTPAuthenticationError:
         print("❌ Errore autenticazione → rigenera App Password su myaccount.google.com")
+        return "auth"
     except Exception as e:
         print(f"❌ Errore invio: {e}")
+        return "errore"
 
 # ============================================================
 # 🚀  MAIN
@@ -647,7 +744,7 @@ def main():
     print(f"  BIG4 JOB NEWSLETTER  {datetime.now():%d/%m/%Y %H:%M}")
     print(f"{'='*55}\n")
 
-    seen = carica_seen()
+    seen, storico = carica_seen()
 
     scrapers = [
         ("EY",         scrape_ey),
@@ -659,6 +756,7 @@ def main():
 
     tutte_trovate = {}
     tutte_nuove   = {}
+    errori_scraper = {}   # scraper che hanno sollevato un'eccezione
 
     for nome, fn in scrapers:
         try:
@@ -670,22 +768,60 @@ def main():
                     tutte_nuove[nome] = nuove
         except Exception as e:
             print(f"   ❌ {nome}: {e}")
+            tutte_trovate[nome] = []
+            errori_scraper[nome] = str(e)
         time.sleep(1)
 
-    salva_seen(seen)
+    conteggi        = {n: len(tutte_trovate.get(n, [])) for n, _ in scrapers}
+    nuove_per_fonte = {n: len(tutte_nuove.get(n, []))   for n, _ in scrapers}
 
-    totale_trovate = sum(len(v) for v in tutte_trovate.values())
-    totale_nuove   = sum(len(v) for v in tutte_nuove.values())
+    # --- Health check: confronta con lo storico prima di aggiornarlo ---
+    problemi = health_check(conteggi, nuove_per_fonte, storico)
+    for nome, err in errori_scraper.items():
+        problemi.insert(0, ("bloccante", nome, f"eccezione durante lo scraping: {err}"))
+
+    # Lo storico si aggiorna comunque, così la mediana resta rappresentativa
+    storico = storico + [{"data": datetime.now().strftime("%Y-%m-%d"), "conteggi": conteggi}]
+    salva_seen(seen, storico)
+
+    totale_trovate = sum(conteggi.values())
+    totale_nuove   = sum(nuove_per_fonte.values())
 
     print(f"\n📊 Riepilogo:")
     for n in [s[0] for s in scrapers]:
-        trovate = len(tutte_trovate.get(n, []))
-        nuove   = len(tutte_nuove.get(n, []))
-        print(f"   {n:15s}→ {trovate:3d} trovate · {nuove:3d} nuove")
+        print(f"   {n:15s}→ {conteggi[n]:3d} trovate · {nuove_per_fonte[n]:3d} nuove")
     print(f"   {'TOTALE':15s}→ {totale_trovate:3d} trovate · {totale_nuove:3d} nuove\n")
 
-    html, totale = genera_html(tutte_nuove, totale_trovate)
-    invia_email(html, totale)
+    if problemi:
+        print("🩺 Health check — anomalie rilevate:")
+        for gravita, fonte, msg in problemi:
+            print(f"   {'🔴' if gravita=='bloccante' else '🟠'} [{gravita}] {fonte}: {msg}")
+    else:
+        print("🩺 Health check: tutte le fonti nella norma ✅")
+
+    html, totale = genera_html(tutte_nuove, totale_trovate, problemi)
+    stato_invio  = invia_email(html, totale)
     print("\n✨ Done!\n")
+
+    # --- Esito del workflow ---
+    # Si esce con codice 1 (run rossa su GitHub → notifica automatica via email)
+    # solo per i problemi che l'email da sola non può segnalare o che sono gravi.
+    motivi_fallimento = []
+    if stato_invio == "auth":
+        motivi_fallimento.append("autenticazione SMTP rifiutata (App Password Gmail scaduta o revocata)")
+    elif stato_invio == "config":
+        motivi_fallimento.append("secret GitHub mancanti o vuoti")
+    elif stato_invio == "errore":
+        motivi_fallimento.append("invio email fallito")
+    bloccanti = [p for p in problemi if p[0] == "bloccante"]
+    if bloccanti:
+        motivi_fallimento.append(f"{len(bloccanti)} scraper senza risultati: "
+                                 + ", ".join(p[1] for p in bloccanti))
+
+    if motivi_fallimento:
+        print("❌ Run marcata come FALLITA per:")
+        for m in motivi_fallimento:
+            print(f"   · {m}")
+        sys.exit(1)
 
 main()
