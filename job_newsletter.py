@@ -842,10 +842,14 @@ def scrape_capgemini():
         if not jobs:
             break
         for j in jobs:
+            # apply_job_url contiene "tcsource=apply", che sulla pagina Capgemini
+            # fa scattare subito il modulo di candidatura invece di mostrare prima
+            # l'annuncio. Lo rimuoviamo per linkare la pagina di dettaglio normale.
+            url_annuncio = (j.get("apply_job_url", "") or "").replace("&tcsource=apply", "")
             risultati.append({
                 "titolo":   j.get("title") or "N/D",
                 "location": f"Capgemini · {j.get('location','')}".rstrip(" ·"),
-                "url":      j.get("apply_job_url", ""),
+                "url":      url_annuncio,
                 "data":     "",
             })
 
