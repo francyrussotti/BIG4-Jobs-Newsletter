@@ -173,63 +173,70 @@ def _pw_intercept_json(url, api_pattern, wait_ms=8000):
                len(d.get("jobs") or d.get("positions") or d.get("jobList") or []))
 
 # ============================================================
-# 🏢  EY  —  Yello ATS  (requests + paginazione)
+#  🏢  EY  —  Yello ATS  (requests)
 #
-#  ATS: Yello. Filtro per paese via field_245[]:
-#    Italia  = 30015
-#    Belgio  = 29960
-#  Paginazione: ?field_245[]=30015&page=N
-#  Ogni pagina restituisce 25 job. Fine quando la pagina è vuota.
-#  La data è nel campo .search-results__post-time ("NEW", "2d", "5d"…)
+#  ATS: Yello.
+#  NOTA (agosto 2026): il filtro per paese via field_245[] NON funziona più
+#  — il server ignora il parametro e restituisce sempre il feed globale
+#  (1763 offerte, con "filters": [] nella risposta JSON).
+#  Anche &page=N viene ignorato: oltre la prima pagina il server RIPETE
+#  sempre gli stessi 25 risultati, quindi paginare porta a un ciclo infinito.
+#
+#  Soluzione adottata: si usa il parametro di ricerca testuale ?query=<città>,
+#  l'unico ancora funzionante, iterando sulle città EY di Italia e Belgio.
+#  Ogni query restituisce max 25 risultati (sufficienti: quasi tutte le città
+#  ne hanno meno). Le offerte vengono poi deduplicate per req ID.
+#
+#  L'endpoint risponde con JSON {"html": "...", "display_count_text": "N Risultati"}.
 # ============================================================
+
+# Città EY in Italia e Belgio usate come termini di ricerca.
+EY_CITTA = [
+    # Italia
+    ("milano", "Italia"), ("roma", "Italia"), ("torino", "Italia"),
+    ("bologna", "Italia"), ("napoli", "Italia"), ("padova", "Italia"),
+    ("firenze", "Italia"), ("genova", "Italia"), ("brescia", "Italia"),
+    ("verona", "Italia"), ("bari", "Italia"), ("treviso", "Italia"),
+    ("ancona", "Italia"), ("bergamo", "Italia"),
+    # Belgio
+    ("brussels", "Belgio"), ("bruxelles", "Belgio"), ("antwerp", "Belgio"),
+    ("antwerpen", "Belgio"), ("ghent", "Belgio"), ("gent", "Belgio"),
+    ("liege", "Belgio"), ("diegem", "Belgio"), ("hasselt", "Belgio"),
+]
 
 def scrape_ey():
     print("🔍 EY (Yello, requests)...")
     BASE = "https://eyglobal.yello.co/job_boards/c1riT--B2O-KySgYWsZO1Q"
-    # Italia id=30015, Belgio id=29960
-    COUNTRIES = [(30015, "Italia"), (29960, "Belgio")]
     risultati = []
 
     ey_headers = {**HEADERS, "X-Requested-With": "XMLHttpRequest",
                   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
 
-    for country_id, country_name in COUNTRIES:
-        page = 1
-        max_pages = None       # calcolato dalla prima pagina in base al totale reale
-        req_ids_pagina_prec = None  # per rilevare se l'API "clona" l'ultima pagina all'infinito
-        while True:
-            url = f"{BASE}/search?field_245[]={country_id}&page={page}"
+    # Città EY in Italia e Belgio usate come termini di ricerca.
+    # Milano e Diegem hanno più di 25 offerte (il tetto per singola ricerca),
+    # quindi per loro si aggiungono query più specifiche che recuperano il resto.
+    EY_QUERY_EXTRA = {
+        "milano": ["milano stage", "milano junior", "milano consulting", "milano audit"],
+        "diegem": ["diegem tax", "diegem consultant", "diegem junior", "diegem senior"],
+    }
+
+    for citta, paese in EY_CITTA:
+        queries = [citta] + EY_QUERY_EXTRA.get(citta, [])
+        for q in queries:
+            url = f"{BASE}/search?query={q.replace(' ', '+')}&locale=it"
             r = http_get(url, headers=ey_headers)
             if not r:
-                break
-            # L'endpoint restituisce un JSON {"html": "...", "display_count_text": "N Results", ...}
+                continue
+            # L'endpoint restituisce JSON {"html": "...", ...}, non HTML grezzo
             try:
-                dati_json = r.json()
-                html_frammento = dati_json.get("html", "")
+                html_frammento = r.json().get("html", "")
             except ValueError:
-                dati_json = {}
                 html_frammento = r.text  # fallback se un giorno tornasse HTML puro
-            soup = BeautifulSoup(html_frammento, "lxml")
+
+            soup  = BeautifulSoup(html_frammento, "lxml")
             items = soup.select("li.search-results__item")
             if not items:
-                break
-
-            # Limite di sicurezza calcolato sul totale reale dichiarato dal sito
-            # (l'endpoint, se si supera l'ultima pagina reale, RIPETE la pagina precedente
-            # invece di restituire una lista vuota — senza questo limite il ciclo non finirebbe mai)
-            if max_pages is None:
-                m_tot = re.search(r"(\d+)", dati_json.get("display_count_text", "") or "")
-                totale_dichiarato = int(m_tot.group(1)) if m_tot else None
-                max_pages = (totale_dichiarato // 25 + 2) if totale_dichiarato else 200
-
-            req_ids_pagina = tuple(
-                (item.select_one("div span").get_text(strip=True) if item.select_one("div span") else "")
-                for item in items
-            )
-            if req_ids_pagina == req_ids_pagina_prec:
-                # Stessa identica pagina della precedente: il sito ha smesso di avanzare, fermiamoci
-                break
-            req_ids_pagina_prec = req_ids_pagina
+                continue
 
             for item in items:
                 a = item.select_one("a.search-results__req_title")
@@ -239,27 +246,24 @@ def scrape_ey():
                 href  = a.get("href", "")
                 if href and not href.startswith("http"):
                     href = "https://eyglobal.yello.co" + href
-                # req ID numerico (usato come ID stabile)
-                span = item.select_one("div span")
+                # req ID numerico (usato per deduplicare tra ricerche diverse)
+                span   = item.select_one("div span")
                 req_id = span.get_text(strip=True) if span else ""
                 # data pubblicazione
                 posted_el = item.select_one(".search-results__post-time")
-                posted = posted_el.get_text(strip=True) if posted_el else ""
+                posted    = posted_el.get_text(strip=True) if posted_el else ""
                 risultati.append({
                     "titolo":   title,
-                    "location": f"EY {country_name}",
+                    "location": f"EY {paese} · {citta.capitalize()}",
                     "url":      href,  # vuoto se manca -> fa scattare il fallback titolo+location in _job_id()
                     "data":     posted,
                     "_req_id":  req_id,
                 })
-            page += 1
-            if page > max_pages:
-                break
-            time.sleep(0.3)
+            time.sleep(0.2)
 
-    # De-duplica per req_id (stesso job può apparire in entrambi i paesi)
+    # De-duplica per req_id (la stessa offerta può uscire da più ricerche città)
     seen_req = set()
-    deduped = []
+    deduped  = []
     for j in risultati:
         rid = j.pop("_req_id", "")
         if rid and rid in seen_req:
