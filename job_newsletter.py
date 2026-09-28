@@ -279,54 +279,66 @@ def scrape_ey():
     ey_headers = {**HEADERS, "X-Requested-With": "XMLHttpRequest",
                   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
 
-    # Città EY in Italia e Belgio usate come termini di ricerca.
-    # Milano e Diegem hanno più di 25 offerte (il tetto per singola ricerca),
-    # quindi per loro si aggiungono query più specifiche che recuperano il resto.
-    EY_QUERY_EXTRA = {
-        "milano": ["milano stage", "milano junior", "milano consulting", "milano audit"],
-        "diegem": ["diegem tax", "diegem consultant", "diegem junior", "diegem senior"],
-    }
+    # Ogni ricerca restituisce al massimo 25 risultati. Per le città che superano il tetto
+    # (oggi Milano, Roma, Diegem) si legge il totale dichiarato ("40 Risultati") e si
+    # aggiungono ricerche "<città> <parola>" finché non si raccoglie tutto (o si finiscono
+    # le parole). Prima Roma non aveva query extra e perdeva ~7 offerte.
+    EY_PAROLE = ["stage", "internship", "junior", "senior", "manager", "consulting", "audit",
+                 "tax", "assurance", "technology", "risk", "analyst", "consultant", "specialist",
+                 "director", "associate", "staff", "intern", "assistant", "legal", "finance",
+                 "strategy", "transaction", "data", "cyber", "sap", "people", "advisory",
+                 "experienced", "graduate", "trainee", "partner", "executive", "supervisor",
+                 "accountant", "engineer", "developer", "project", "business", "operations"]
+    TETTO = 25
+
+    def _ey_query(q, citta, paese):
+        """Esegue una ricerca. Ritorna (lista offerte, totale dichiarato o None)."""
+        url = f"{BASE}/search?query={q.replace(' ', '+')}&locale=it"
+        r = http_get(url, headers=ey_headers)
+        if not r:
+            return [], None
+        try:
+            j = r.json()
+            html_frammento = j.get("html", "")
+            m = re.search(r"(\d+)", j.get("display_count_text", "") or "")
+            dichiarato = int(m.group(1)) if m else None
+        except ValueError:
+            html_frammento, dichiarato = r.text, None
+        soup = BeautifulSoup(html_frammento, "lxml")
+        out = []
+        for item in soup.select("li.search-results__item"):
+            a = item.select_one("a.search-results__req_title")
+            if not a:
+                continue
+            href = a.get("href", "")
+            if href and not href.startswith("http"):
+                href = "https://eyglobal.yello.co" + href
+            span = item.select_one("div span")
+            posted_el = item.select_one(".search-results__post-time")
+            out.append({
+                "titolo":   a.get_text(strip=True),
+                "location": f"EY {paese} · {citta.capitalize()}",
+                "url":      href,
+                "data":     posted_el.get_text(strip=True) if posted_el else "",
+                "_req_id":  span.get_text(strip=True) if span else "",
+            })
+        time.sleep(0.2)
+        return out, dichiarato
 
     for citta, paese in EY_CITTA:
-        queries = [citta] + EY_QUERY_EXTRA.get(citta, [])
-        for q in queries:
-            url = f"{BASE}/search?query={q.replace(' ', '+')}&locale=it"
-            r = http_get(url, headers=ey_headers)
-            if not r:
-                continue
-            # L'endpoint restituisce JSON {"html": "...", ...}, non HTML grezzo
-            try:
-                html_frammento = r.json().get("html", "")
-            except ValueError:
-                html_frammento = r.text  # fallback se un giorno tornasse HTML puro
-
-            soup  = BeautifulSoup(html_frammento, "lxml")
-            items = soup.select("li.search-results__item")
-            if not items:
-                continue
-
-            for item in items:
-                a = item.select_one("a.search-results__req_title")
-                if not a:
-                    continue
-                title = a.get_text(strip=True)
-                href  = a.get("href", "")
-                if href and not href.startswith("http"):
-                    href = "https://eyglobal.yello.co" + href
-                # req ID numerico (usato per deduplicare tra ricerche diverse)
-                span   = item.select_one("div span")
-                req_id = span.get_text(strip=True) if span else ""
-                # data pubblicazione
-                posted_el = item.select_one(".search-results__post-time")
-                posted    = posted_el.get_text(strip=True) if posted_el else ""
-                risultati.append({
-                    "titolo":   title,
-                    "location": f"EY {paese} · {citta.capitalize()}",
-                    "url":      href,  # vuoto se manca -> fa scattare il fallback titolo+location in _job_id()
-                    "data":     posted,
-                    "_req_id":  req_id,
-                })
-            time.sleep(0.2)
+        trovate, dichiarato = _ey_query(citta, citta, paese)
+        risultati.extend(trovate)
+        if len(trovate) >= TETTO or (dichiarato and dichiarato > len(trovate)):
+            raccolti = {j["_req_id"] or j["url"] for j in trovate}
+            for parola in EY_PAROLE:
+                if dichiarato and len(raccolti) >= dichiarato:
+                    break
+                extra, _ = _ey_query(f"{citta} {parola}", citta, paese)
+                for j in extra:
+                    raccolti.add(j["_req_id"] or j["url"])
+                risultati.extend(extra)
+            if dichiarato and len(raccolti) < dichiarato:
+                print(f"    ⚠️  EY {citta}: raccolte {len(raccolti)} su {dichiarato} dichiarate")
 
     # De-duplica per req_id (la stessa offerta può uscire da più ricerche città)
     seen_req = set()
@@ -346,13 +358,75 @@ def scrape_ey():
 # 🏢  PwC ITALIA  —  Phenom People (Playwright)
 # ============================================================
 
+def _estrai_oggetto_json(testo, chiave):
+    """Estrae l'oggetto JSON {...} associato a "chiave": {...} contando le graffe
+    e rispettando le stringhe (quindi robusto ad annidamenti e parentesi nei testi)."""
+    m = re.search(r'"%s"\s*:\s*\{' % re.escape(chiave), testo)
+    if not m:
+        return None
+    start, depth, in_str, esc = m.end() - 1, 0, False, False
+    for i in range(start, len(testo)):
+        c = testo[i]
+        if in_str:
+            if esc: esc = False
+            elif c == "\\": esc = True
+            elif c == '"': in_str = False
+        else:
+            if c == '"': in_str = True
+            elif c == "{": depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(testo[start:i + 1])
+                    except Exception:
+                        return None
+    return None
+
+def _pwc_italia_requests(BASE):
+    """Phenom incorpora i risultati nella pagina (phApp.ddo.eagerLoadRefineSearch),
+    10 per pagina, paginabili con ?from=N. Non serve Playwright."""
+    out, visti, offset, totale = [], set(), 0, None
+    for _ in range(80):   # tetto di sicurezza: max ~800 offerte
+        r = http_get(f"{BASE}/it/it/search-results?from={offset}&s=1")
+        if not r:
+            break
+        d = _estrai_oggetto_json(r.text, "eagerLoadRefineSearch")
+        jobs = ((d or {}).get("data") or {}).get("jobs") or []
+        if totale is None:
+            totale = (d or {}).get("totalHits")
+        if not jobs:
+            break
+        nuovi = 0
+        for j in jobs:
+            link = j.get("applyUrl") or j.get("url") or ""
+            if link and not link.startswith("http"): link = BASE + link
+            chiave = j.get("jobId") or j.get("reqId") or link
+            if chiave in visti:
+                continue
+            visti.add(chiave); nuovi += 1
+            out.append({"titolo": j.get("title") or "N/D",
+                        "location": j.get("cityState") or j.get("city") or j.get("location") or "",
+                        "url": link,
+                        "data": (j.get("postedDate") or j.get("dateCreated") or "")[:10]})
+        if nuovi == 0:        # il server ripete gli stessi risultati → stop
+            break
+        offset += len(jobs)
+        if totale and offset >= totale:
+            break
+        time.sleep(0.4)
+    return out
+
 def scrape_pwc_italia():
-    print("🔍 PwC Italia (Playwright)...")
+    print("🔍 PwC Italia (requests + fallback Playwright)...")
     BASE = "https://jobs-it.pwc.com"
-    risultati = []
+    risultati = _pwc_italia_requests(BASE)
+    if risultati:
+        print(f"   → {len(risultati)} offerte trovate")
+        return risultati
 
     if not PLAYWRIGHT_OK:
-        print("    ⚠️  Playwright necessario per PwC Italia — saltato")
+        print("    ⚠️  requests senza risultati e Playwright non disponibile")
         return risultati
 
     def _estrai_array_bilanciato(testo, chiave):
@@ -442,10 +516,51 @@ def scrape_pwc_italia():
 #  Nessuna paginazione: tutti i job sono in un'unica variabile JS.
 # ============================================================
 
+def _pwc_belgio_workday():
+    """La pagina pwc.be risponde 403 ai bot: si interroga direttamente l'API Workday
+    (CXS) dei due career site PwC, filtrando per Belgio. Max 20 risultati a pagina."""
+    out, visti = [], set()
+    for site in ["Global_Campus_Careers", "Global_Experienced_Careers"]:
+        api = f"https://pwc.wd3.myworkdayjobs.com/wday/cxs/pwc/{site}/jobs"
+        offset, totale = 0, None
+        for _ in range(30):
+            try:
+                r = requests.post(api, headers={**HEADERS, "Content-Type": "application/json"},
+                                  json={"appliedFacets": {}, "limit": 20, "offset": offset,
+                                        "searchText": "Belgium"}, timeout=20)
+                r.raise_for_status()
+                d = r.json()
+            except Exception as e:
+                print(f"    ⚠️  Workday {site} offset {offset} → {e}")
+                break
+            posts = d.get("jobPostings") or []
+            if totale is None:
+                totale = d.get("total") or 0
+            if not posts:
+                break
+            for j in posts:
+                path = j.get("externalPath") or ""
+                if not path or path in visti:
+                    continue
+                visti.add(path)
+                out.append({"titolo": j.get("title") or "N/D",
+                            "location": j.get("locationsText") or "Belgio",
+                            "url": f"https://pwc.wd3.myworkdayjobs.com/{site}{path}/apply",
+                            "data": ""})
+            offset += len(posts)
+            if offset >= totale:
+                break
+            time.sleep(0.4)
+    return out
+
 def scrape_pwc_belgio():
-    print("🔍 PwC Belgio (jsondata inline)...")
+    print("🔍 PwC Belgio (Workday API)...")
     URL = "https://www.pwc.be/en/careers/students-graduates.html"
-    risultati = []
+    risultati = _pwc_belgio_workday()
+    if risultati:
+        print(f"   → {len(risultati)} offerte trovate")
+        return risultati
+    print("    → Workday senza risultati, provo la pagina pwc.be...")
 
     r = http_get(URL)
     if not r:
@@ -507,19 +622,32 @@ def scrape_deloitte():
     print("🔍 Deloitte Italia (Avature)...")
     base      = "https://deloittecm.avature.net"
     risultati = []
+    visti     = set()
     offset    = 0
+    totale    = None
 
-    while True:
+    # NOTA (set 2026): il server ignora jobRecordsPerPage=50 e serve solo 6 card per
+    # pagina. Il vecchio controllo "len(cards) < 50 → ultima pagina" si fermava quindi
+    # alla prima pagina (6 offerte su ~215). Ora l'offset avanza del numero REALE di
+    # card ricevute e ci si ferma sul totale dichiarato ("1-6 of 215") o quando
+    # la pagina non porta offerte nuove.
+    for _ in range(150):   # tetto di sicurezza (~900 offerte)
         url = (f"{base}/en_US/careers/SearchJobs/"
                "?729=5946&729_format=1565&731=%5B6470%2C6471%5D"
                f"&731_format=1567&listFilterMode=1&jobRecordsPerPage=50&jobOffset={offset}")
         r = http_get(url)
         if not r: break
+        if totale is None:
+            m = re.search(r"\d+\s*-\s*\d+\s*of\s*(\d+)", r.text)
+            totale = int(m.group(1)) if m else None
         soup  = BeautifulSoup(r.text, "lxml")
         cards = soup.select("h3 a[href*='/careers/JobDetail/']")
         if not cards: break
+        nuovi = 0
         for a in cards:
             href = base + a["href"] if a["href"].startswith("/") else a["href"]
+            if href in visti: continue
+            visti.add(href); nuovi += 1
             ctx  = a.find_parent("li") or a.find_parent("tr") or a.find_parent("div")
             loc  = ""
             if ctx:
@@ -528,10 +656,13 @@ def scrape_deloitte():
             risultati.append({"titolo": a.get_text(strip=True),
                                "location": loc or "Italia",
                                "url": href, "data": ""})
-        offset += 50
-        if len(cards) < 50: break
-        time.sleep(0.5)
+        if nuovi == 0: break
+        offset += len(cards)
+        if totale and offset >= totale: break
+        time.sleep(0.4)
 
+    if totale and len(risultati) < totale:
+        print(f"    ⚠️  Deloitte: raccolte {len(risultati)} su {totale} dichiarate")
     print(f"   → {len(risultati)} offerte trovate")
     return risultati
 
