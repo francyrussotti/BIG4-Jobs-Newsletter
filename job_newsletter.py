@@ -1157,13 +1157,20 @@ def invia_email(html_body, totale):
     msg            = MIMEMultipart("alternative")
     msg["Subject"] = f"📰 Big4 Jobs {datetime.now():%d/%m/%Y} — {totale} nuove offerte"
     msg["From"]    = GMAIL_MITTENTE
-    msg["To"]      = ", ".join(destinatari)
+    # Destinatari in CCN: nell'intestazione "A" compare solo il mittente e
+    # NON si scrive alcun header "Bcc" (altrimenti gli indirizzi sarebbero
+    # visibili nel sorgente del messaggio). I veri destinatari vengono
+    # passati solo a sendmail(), cioè a livello di trasporto SMTP.
+    msg["To"]      = GMAIL_MITTENTE
     msg.attach(MIMEText(html_body, "html", "utf-8"))
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
             s.login(GMAIL_MITTENTE, GMAIL_PASSWORD)
-            s.sendmail(GMAIL_MITTENTE, destinatari, msg.as_string())
-        print(f"✅ Email inviata a {destinatari}")
+            # Il mittente riceve anch'esso la copia (è nel campo "A"): lo si aggiunge
+            # una sola volta per non ricevere doppioni se è già tra i destinatari.
+            invio_a = list(dict.fromkeys([GMAIL_MITTENTE] + destinatari))
+            s.sendmail(GMAIL_MITTENTE, invio_a, msg.as_string())
+        print(f"✅ Email inviata in CCN a {len(destinatari)} destinatari")
         return "ok"
     except smtplib.SMTPAuthenticationError:
         print("❌ Errore autenticazione → rigenera App Password su myaccount.google.com")
