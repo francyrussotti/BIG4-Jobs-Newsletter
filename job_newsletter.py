@@ -51,6 +51,12 @@ SOGLIA_NUOVE_ANOMALE = 0.9
 # giorni successivi come false "nuove". Va segnalato.
 SOGLIA_COPERTURA = 0.95
 
+# Le offerte "nuove" per il tracker ma pubblicate da più di questi giorni NON
+# vengono mostrate nell'email (restano comunque salvate come viste). Capita con
+# annunci riaperti o resi visibili tardi, che mantengono la data originale.
+# Si applica solo alle fonti che forniscono una data. None = filtro disattivato.
+MAX_GIORNI_NUOVA = 30
+
 # Copertura per fonte: {fonte: (raccolte, dichiarate)}.
 # La riempiono gli scraper che conoscono il totale dichiarato dal sito.
 COPERTURA = {}
@@ -82,6 +88,52 @@ def _senza_apply(url: str) -> str:
     """Gli URL Workday che finiscono con /apply aprono direttamente il modulo
     di candidatura: togliendo il suffisso si apre la pagina dell'offerta."""
     return re.sub(r"/apply/?$", "", url or "")
+
+_MESI_ABBR = {"gen": 1, "feb": 2, "mar": 3, "apr": 4, "mag": 5, "giu": 6, "lug": 7,
+              "ago": 8, "set": 9, "ott": 10, "nov": 11, "dic": 12,
+              "jan": 1, "may": 5, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "oct": 10, "dec": 12}
+
+def _eta_giorni(data):
+    """Età in giorni di un'offerta a partire dal campo "data" delle varie fonti:
+    ISO "2026-09-30" (PwC Italia, Bip, EY), "2 ott 2026" (KPMG),
+    "Offerta pubblicata 9 giorni fa" / "ieri" / "oggi" (Accenture).
+    Ritorna None se la data manca o non è riconoscibile (→ l'offerta si mostra)."""
+    t = (data or "").strip().lower()
+    if not t:
+        return None
+    oggi = datetime.now().date()
+    try:
+        m = re.match(r"(\d{4})-(\d{2})-(\d{2})", t)
+        if m:
+            return (oggi - datetime(int(m[1]), int(m[2]), int(m[3])).date()).days
+        m = re.match(r"(\d{1,2})[ /.-]([a-z]{3})[a-z]*\.?[ /.-](\d{4})", t)
+        if m and m[2] in _MESI_ABBR:
+            return (oggi - datetime(int(m[3]), _MESI_ABBR[m[2]], int(m[1])).date()).days
+        m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{2,4})", t)
+        if m:
+            anno = int(m[3]) + (2000 if len(m[3]) == 2 else 0)
+            return (oggi - datetime(anno, int(m[2]), int(m[1])).date()).days
+    except ValueError:
+        return None
+    if "oggi" in t or "today" in t:
+        return 0
+    if "ieri" in t or "yesterday" in t:
+        return 1
+    m = re.search(r"(\d+)\+?\s*(giorni|days)", t)
+    if m:
+        return int(m[1]) + (1 if ("più di" in t or "+" in t) else 0)
+    return None
+
+def _workday_data(testo):
+    """Workday (PwC Belgio, Accenture) dà solo date relative: "Offerta pubblicata
+    24 giorni fa", "oggi", "ieri", "più di 30 giorni fa". Le date esatte si
+    convertono in AAAA-MM-GG come le altre fonti; "più di 30 giorni" resta testo
+    (la data reale non è nota), ma _eta_giorni lo riconosce comunque come vecchia."""
+    eta = _eta_giorni(testo)
+    t = (testo or "").lower()
+    if eta is None or "più di" in t or "+" in t:
+        return (testo or "").replace("Offerta pubblicata ", "")
+    return (datetime.now() - timedelta(days=eta)).strftime("%Y-%m-%d")
 
 def carica_seen() -> tuple[set, list]:
     """Restituisce (ID già visti, storico dei conteggi per fonte)."""
@@ -315,6 +367,28 @@ EY_SEDE_RE = re.compile(
                                                          "catania", "pescara", "perugia"},
                               key=len, reverse=True)) + r")\b", re.I)
 
+_MESI_IT = {"gennaio": 1, "febbraio": 2, "marzo": 3, "aprile": 4, "maggio": 5, "giugno": 6,
+            "luglio": 7, "agosto": 8, "settembre": 9, "ottobre": 10, "novembre": 11, "dicembre": 12}
+
+def _ey_data(testo):
+    """Yello mostra "Nuovo" per le offerte recentissime e "26 Marzo" (senza anno)
+    per le altre. Si converte in AAAA-MM-GG come le altre fonti; l'anno è quello
+    corrente, o il precedente se la data risulterebbe nel futuro."""
+    t = (testo or "").strip().lower()
+    oggi = datetime.now()
+    if t in ("nuovo", "new", "oggi", "today"):
+        return oggi.strftime("%Y-%m-%d")
+    m = re.match(r"(\d{1,2})\s+([a-zà-ü]+)", t)
+    if m and m.group(2) in _MESI_IT:
+        try:
+            d = datetime(oggi.year, _MESI_IT[m.group(2)], int(m.group(1)))
+            if d > oggi + timedelta(days=1):
+                d = d.replace(year=oggi.year - 1)
+            return d.strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    return testo or ""
+
 def scrape_ey():
     print("🔍 EY (Yello, requests)...")
     BASE = "https://eyglobal.yello.co/job_boards/c1riT--B2O-KySgYWsZO1Q"
@@ -373,7 +447,7 @@ def scrape_ey():
                     "titolo":   titolo,
                     "location": f"EY {paese} · {sede}",
                     "url":      href,
-                    "data":     posted_el.get_text(strip=True) if posted_el else "",
+                    "data":     _ey_data(posted_el.get_text(strip=True) if posted_el else ""),
                 }
                 nuovi += 1
             time.sleep(0.2)
@@ -398,8 +472,65 @@ def scrape_ey():
         deduped.append(offerta)
 
     registra_copertura("EY", tot_raccolte, tot_dichiarate)
-    print(f"   → {len(deduped)} offerte trovate")
-    return deduped
+
+    # NOTA (ottobre 2026): la ricerca per città è testuale, quindi trova anche
+    # offerte ESTERE che nominano la città nel testo (es. "Naples" → un MBA
+    # Intern negli USA uscito nella ricerca "napoli"). Si legge quindi la
+    # pagina di ogni offerta, che riporta paese ("Paese / regione") e sede
+    # precisa (es. "ITA-Roma"), e si tengono solo Italia e Belgio.
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        dettagli = list(pool.map(_ey_dettaglio, [o["url"] for o in deduped]))
+
+    filtrate, escluse, ignote = [], 0, 0
+    for offerta, (paese_det, sede_det) in zip(deduped, dettagli):
+        if paese_det is None:
+            ignote += 1                       # pagina non letta: si tiene l'offerta
+            filtrate.append(offerta)
+            continue
+        paese_it = EY_PAESI_OK.get(paese_det.strip().lower())
+        if not paese_it:
+            escluse += 1
+            continue
+        if sede_det:
+            offerta["location"] = f"EY {paese_it} · {sede_det}"
+        filtrate.append(offerta)
+    if escluse:
+        print(f"    → escluse {escluse} offerte fuori Italia/Belgio")
+    if ignote:
+        print(f"    ⚠️  EY: {ignote} pagine offerta non lette (tenute senza verifica del paese)")
+
+    print(f"   → {len(filtrate)} offerte trovate")
+    return filtrate
+
+# Nomi del paese come appaiono sulla pagina Yello (locale=it, con varianti inglesi).
+EY_PAESI_OK = {"italia": "Italia", "italy": "Italia",
+               "belgio": "Belgio", "belgium": "Belgio", "belgique": "Belgio", "belgië": "Belgio"}
+
+def _ey_dettaglio(url):
+    """Legge la pagina dell'offerta EY. Ritorna (paese, sede) oppure (None, None)
+    se la pagina non è leggibile. Sede: es. "ITA-Roma, ITA-Milano" → "Roma, Milano"."""
+    for tentativo in range(2):
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=20)
+            r.raise_for_status()
+            soup = BeautifulSoup(r.text, "lxml")
+            paese = None
+            for g in soup.select(".secondary-details__group"):
+                t = g.select_one(".secondary-details__title")
+                c = g.select_one(".secondary-details__content")
+                if t and c and re.search(r"paese|country", t.get_text(), re.I):
+                    paese = c.get_text(" ", strip=True)
+            spans = soup.select(".details-top__title span")
+            sede = spans[1].get_text(strip=True) if len(spans) > 1 else ""
+            sede = ", ".join(dict.fromkeys(
+                re.sub(r"^[A-Z]{3}-", "", x.strip()) for x in sede.split(",") if x.strip()))
+            if paese:
+                return paese, sede
+        except Exception:
+            pass
+        time.sleep(1)
+    return None, None
 
 # ============================================================
 # 🏢  PwC ITALIA  —  Phenom People
@@ -611,7 +742,7 @@ def _pwc_belgio_workday():
                             "location": j.get("locationsText") or "Belgio",
                             "url": _senza_apply(url_apply),   # pagina dell'offerta
                             "_id_src": url_apply,             # ID invariato rispetto al passato
-                            "data": ""})
+                            "data": _workday_data(j.get("postedOn"))})
             offset += len(posts)
             if offset >= totale:
                 break
@@ -834,7 +965,7 @@ def scrape_accenture():
                 "titolo":   titolo,
                 "location": f"Accenture Italia" + (f" · {luogo}" if luogo and luogo != "Location Negotiable" else ""),
                 "url":      f"{BASE_JOB_URL}{path}" if path else "",
-                "data":     j.get("postedOn", ""),
+                "data":     _workday_data(j.get("postedOn")),
             })
 
         offset += LIMIT
@@ -1051,7 +1182,7 @@ BRAND_COLORS = {
     "Capgemini":  ("#0070AD", "#ffffff"),
 }
 
-def genera_html(tutte, totale_trovate, problemi=None, fonti=None):
+def genera_html(tutte, totale_trovate, problemi=None, fonti=None, nascoste=None):
     oggi_str = datetime.now().strftime("%d %B %Y")
     totale   = sum(len(v) for v in tutte.values())
     elenco_fonti = " · ".join(fonti or BRAND_COLORS.keys())
@@ -1091,15 +1222,26 @@ def genera_html(tutte, totale_trovate, problemi=None, fonti=None):
         sezioni += f"""
         <div style="margin-bottom:24px;border-radius:8px;overflow:hidden;
                     box-shadow:0 2px 8px rgba(0,0,0,.08);">
-          <div style="background:{bg};padding:11px 16px;display:flex;
-                      justify-content:space-between;align-items:center;">
-            <span style="color:{fg};font-size:16px;font-weight:700;">{azienda}</span>
-            <span style="color:{fg};font-size:12px;opacity:.8;">
-              {len(offerte)} nuov{'a' if len(offerte)==1 else 'e'}
-            </span>
-          </div>
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:{bg};">
+            <tr>
+              <td style="padding:11px 16px;color:{fg};font-size:16px;font-weight:700;">{azienda}</td>
+              <td align="right" style="padding:11px 16px;color:{fg};font-size:12px;opacity:.8;white-space:nowrap;">
+                {len(offerte)} nuov{'a' if len(offerte)==1 else 'e'}
+              </td>
+            </tr>
+          </table>
           <table width="100%" cellpadding="0" cellspacing="0" style="background:#fff;">{righe}</table>
         </div>"""
+
+    nota_nascoste = ""
+    if nascoste:
+        n = sum(nascoste.values())
+        nota_nascoste = (
+            '<p style="text-align:center;font-size:11px;color:#999;margin:4px 0 0;">'
+            f'{n} offert{"a" if n == 1 else "e"} compars{"a" if n == 1 else "e"} oggi ma '
+            f'pubblicat{"a" if n == 1 else "e"} da più di {MAX_GIORNI_NUOVA} giorni non '
+            f'{"è mostrata" if n == 1 else "sono mostrate"} ('
+            + ", ".join(f"{k} {v}" for k, v in nascoste.items()) + ').</p>')
 
     if not sezioni:
         body = (
@@ -1129,7 +1271,7 @@ def genera_html(tutte, totale_trovate, problemi=None, fonti=None):
       🆕 <strong>{totale} nuove offerte</strong> su {totale_trovate} totali
       <div style="font-size:11px;margin-top:3px;opacity:.8;">{elenco_fonti}</div>
     </div>
-    <div style="background:#f8f9fa;padding:20px 14px;">{avviso}{body}</div>
+    <div style="background:#f8f9fa;padding:20px 14px;">{avviso}{body}{nota_nascoste}</div>
     <div style="background:#0d1b2a;border-radius:0 0 12px 12px;padding:13px;
                 text-align:center;font-size:11px;color:#4a6fa5;">
       Newsletter automatica · Python 🐍 · {oggi_str}
@@ -1152,7 +1294,10 @@ def invia_email(html_body, totale):
         return "config"
 
     # Supporta più destinatari separati da virgola nel secret EMAIL_DESTINATARIO
-    destinatari = [d.strip() for d in EMAIL_DESTINATARIO.split(",") if d.strip()]
+    # Separatori ammessi: virgola, punto e virgola, spazio, a capo.
+    # dict.fromkeys rimuove eventuali doppioni mantenendo l'ordine.
+    destinatari = list(dict.fromkeys(
+        d.strip() for d in re.split(r"[,;\s]+", EMAIL_DESTINATARIO) if d.strip()))
 
     msg            = MIMEMultipart("alternative")
     msg["Subject"] = f"📰 Big4 Jobs {datetime.now():%d/%m/%Y} — {totale} nuove offerte"
@@ -1206,6 +1351,7 @@ def main():
     tutte_trovate = {}
     tutte_nuove   = {}
     errori_scraper = {}   # scraper che hanno sollevato un'eccezione
+    nascoste       = {}   # fonte → n. offerte nuove ma pubblicate da troppo tempo
 
     for nome, fn in scrapers:
         try:
@@ -1213,6 +1359,14 @@ def main():
             tutte_trovate[nome] = offerte
             if offerte:
                 nuove, seen = filtra_nuove(nome, offerte, seen)
+                if MAX_GIORNI_NUOVA is not None:
+                    recenti = [o for o in nuove
+                               if (_eta_giorni(o.get("data")) or 0) <= MAX_GIORNI_NUOVA]
+                    if len(recenti) < len(nuove):
+                        nascoste[nome] = len(nuove) - len(recenti)
+                        print(f"   → {nascoste[nome]} non mostrate: pubblicate da più di "
+                              f"{MAX_GIORNI_NUOVA} giorni")
+                    nuove = recenti
                 if nuove:
                     tutte_nuove[nome] = nuove
         except Exception as e:
@@ -1252,8 +1406,12 @@ def main():
     else:
         print("🩺 Health check: tutte le fonti nella norma ✅")
 
+    if nascoste:
+        print(f"   ({sum(nascoste.values())} offerte non mostrate perché pubblicate da più di "
+              f"{MAX_GIORNI_NUOVA} giorni: " + ", ".join(f"{k} {v}" for k, v in nascoste.items()) + ")")
+
     html, totale = genera_html(tutte_nuove, totale_trovate, problemi,
-                               fonti=[n for n, _ in scrapers])
+                               fonti=[n for n, _ in scrapers], nascoste=nascoste)
     stato_invio  = invia_email(html, totale)
     print("\n✨ Done!\n")
 
