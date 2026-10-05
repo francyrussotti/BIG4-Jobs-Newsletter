@@ -66,13 +66,22 @@ def registra_copertura(fonte, raccolte, dichiarate):
 # ============================================================
 
 def _job_id(azienda: str, offerta: dict) -> str:
-    """Genera un ID stabile per un'offerta: URL > titolo+location come fallback."""
-    url = offerta.get("url", "").strip()
+    """Genera un ID stabile per un'offerta: URL > titolo+location come fallback.
+    Se lo scraper fornisce "_id_src", l'ID si calcola da quello invece che
+    dall'URL mostrato: così si può cambiare il link nell'email (es. pagina
+    dell'offerta invece del modulo di candidatura) senza invalidare gli ID
+    già salvati in seen_jobs.json."""
+    url = (offerta.get("_id_src") or offerta.get("url", "")).strip()
     if url:
         raw = url
     else:
         raw = f"{azienda}|{offerta.get('titolo','').strip().lower()}|{offerta.get('location','').strip().lower()}"
     return hashlib.md5(raw.encode()).hexdigest()
+
+def _senza_apply(url: str) -> str:
+    """Gli URL Workday che finiscono con /apply aprono direttamente il modulo
+    di candidatura: togliendo il suffisso si apre la pagina dell'offerta."""
+    return re.sub(r"/apply/?$", "", url or "")
 
 def carica_seen() -> tuple[set, list]:
     """Restituisce (ID già visti, storico dei conteggi per fonte)."""
@@ -297,6 +306,15 @@ EY_CITTA = [
     ("liege", "Belgio"), ("diegem", "Belgio"), ("hasselt", "Belgio"),
 ]
 
+EY_BOARD_ID = "c1riT--B2O-KySgYWsZO1Q"
+
+# Riconosce la sede nel titolo dell'offerta (solo parole intere: "roma" non
+# deve scattare su "Romania", "gent" non su "agent").
+EY_SEDE_RE = re.compile(
+    r"\b(" + "|".join(sorted({c for c, _ in EY_CITTA} | {"trieste", "cagliari", "palermo",
+                                                         "catania", "pescara", "perugia"},
+                              key=len, reverse=True)) + r")\b", re.I)
+
 def scrape_ey():
     print("🔍 EY (Yello, requests)...")
     BASE = "https://eyglobal.yello.co/job_boards/c1riT--B2O-KySgYWsZO1Q"
@@ -330,7 +348,15 @@ def scrape_ey():
                 if not a:
                     continue
                 href = a.get("href", "")
-                if href and not href.startswith("http"):
+                # NOTA (ottobre 2026): Yello restituisce lo STESSO annuncio a volte
+                # con "&locale=it" nell'href e a volte senza. Poiché l'ID si calcola
+                # dall'URL, l'offerta cambiava ID e tornava come falsa "nuova".
+                # Si ricostruisce quindi sempre l'URL in forma canonica dallo slug.
+                m_slug = re.search(r"/jobs/([^/?#]+)", href)
+                if m_slug:
+                    href = (f"https://eyglobal.yello.co/jobs/{m_slug.group(1)}"
+                            f"?job_board_id={EY_BOARD_ID}&locale=it")
+                elif href and not href.startswith("http"):
                     href = "https://eyglobal.yello.co" + href
                 span      = item.select_one("div span")
                 posted_el = item.select_one(".search-results__post-time")
@@ -338,9 +364,14 @@ def scrape_ey():
                 chiave    = req_id or href
                 if chiave in raccolti:
                     continue
+                titolo = a.get_text(strip=True)
+                # La ricerca per città trova anche offerte di altre sedi (la città
+                # compare nel testo): se il titolo nomina una sede, si usa quella.
+                m_sede = EY_SEDE_RE.search(titolo)
+                sede   = m_sede.group(1).capitalize() if m_sede else citta.capitalize()
                 raccolti[chiave] = {
-                    "titolo":   a.get_text(strip=True),
-                    "location": f"EY {paese} · {citta.capitalize()}",
+                    "titolo":   titolo,
+                    "location": f"EY {paese} · {sede}",
                     "url":      href,
                     "data":     posted_el.get_text(strip=True) if posted_el else "",
                 }
@@ -414,7 +445,8 @@ def _pwc_italia_requests(BASE):
         visti.add(chiave)
         out.append({"titolo": j.get("title") or "N/D",
                     "location": j.get("cityState") or j.get("city") or j.get("location") or "",
-                    "url": link,
+                    "url": _senza_apply(link),   # pagina dell'offerta
+                    "_id_src": link,             # ID invariato rispetto al passato
                     "data": (j.get("postedDate") or j.get("dateCreated") or "")[:10]})
     registra_copertura("PwC Italia", len(out), totale)
     return out
@@ -464,7 +496,8 @@ def scrape_pwc_italia():
                             if link and not link.startswith("http"): link = BASE + link
                             out.append({"titolo": j.get("title") or j.get("jobTitle") or "N/D",
                                          "location": j.get("city") or j.get("location") or "",
-                                         "url": link, "data": ""})
+                                         "url": _senza_apply(link), "_id_src": link,
+                                         "data": ""})
                         if out: return out
                     except: pass
         for card in soup.select("[data-ph-at-id*='job'],[class*='job-list-item'],"
@@ -492,7 +525,7 @@ def scrape_pwc_italia():
             if link and not link.startswith("http"): link = BASE + link
             risultati.append({"titolo": j.get("title") or j.get("jobTitle") or "N/D",
                                "location": j.get("city") or j.get("location") or "",
-                               "url": link, "data": ""})
+                               "url": _senza_apply(link), "_id_src": link, "data": ""})
 
     if not risultati:
         print("    → Playwright HTML PwC Italia...")
@@ -514,17 +547,49 @@ def scrape_pwc_italia():
 #  l'API Workday (CXS) dei due career site PwC, filtrando per Belgio.
 # ============================================================
 
+# Sedi belghe riconosciute nel facet "locations" di Workday (parole intere).
+PWC_BE_SEDI = re.compile(
+    r"\b(brussels|bruxelles|brussel|diegem|zaventem|antwerp|antwerpen|anvers|ghent|gent|"
+    r"gand|li[eè]ge|luik|hasselt|kortrijk|courtrai|namur|namen|leuven|louvain|mechelen|"
+    r"malines|charleroi|mons|bruges|brugge|belgium|belgique|belgi[eë])\b", re.I)
+
 def _pwc_belgio_workday():
-    """Max 20 risultati a pagina."""
+    """API Workday (CXS) dei due career site PwC, max 20 risultati a pagina.
+
+    NOTA (ottobre 2026): prima si filtrava con searchText="Belgium", che
+    perdeva ~20 offerte belghe su ~95 (es. 41 su 57 a Bruxelles) e includeva
+    offerte estere (es. Brno). Ora si legge il facet "locations" e si
+    selezionano gli ID delle sedi belghe: filtro esatto e completo.
+    Se il facet non è leggibile si torna al vecchio filtro testuale."""
     out, visti = [], set()
+    tot_dichiarate = 0
+    h = {**HEADERS, "Content-Type": "application/json", "Accept": "application/json"}
     for site in ["Global_Campus_Careers", "Global_Experienced_Careers"]:
         api = f"https://pwc.wd3.myworkdayjobs.com/wday/cxs/pwc/{site}/jobs"
+
+        # 1) ID delle sedi belghe dal facet "locations"
+        filtro = {"appliedFacets": {}, "searchText": "Belgium"}   # fallback
+        try:
+            r = requests.post(api, headers=h, timeout=20,
+                              json={"appliedFacets": {}, "limit": 1, "offset": 0, "searchText": ""})
+            r.raise_for_status()
+            ids = [v["id"]
+                   for f in r.json().get("facets", []) if f.get("facetParameter") == "locationMainGroup"
+                   for g in f.get("values", []) if g.get("facetParameter") == "locations"
+                   for v in g.get("values", []) if PWC_BE_SEDI.search(v.get("descriptor", ""))]
+            if ids:
+                filtro = {"appliedFacets": {"locations": ids}, "searchText": ""}
+            else:
+                print(f"    ⚠️  Workday {site}: nessuna sede belga nel facet, uso il filtro testuale")
+        except Exception as e:
+            print(f"    ⚠️  Workday {site} facet → {e} (uso il filtro testuale)")
+
+        # 2) Paginazione
         offset, totale = 0, None
         for _ in range(30):
             try:
-                r = requests.post(api, headers={**HEADERS, "Content-Type": "application/json"},
-                                  json={"appliedFacets": {}, "limit": 20, "offset": offset,
-                                        "searchText": "Belgium"}, timeout=20)
+                r = requests.post(api, headers=h, timeout=20,
+                                  json={**filtro, "limit": 20, "offset": offset})
                 r.raise_for_status()
                 d = r.json()
             except Exception as e:
@@ -533,6 +598,7 @@ def _pwc_belgio_workday():
             posts = d.get("jobPostings") or []
             if totale is None:
                 totale = d.get("total") or 0
+                tot_dichiarate += totale
             if not posts:
                 break
             for j in posts:
@@ -540,14 +606,17 @@ def _pwc_belgio_workday():
                 if not path or path in visti:
                     continue
                 visti.add(path)
+                url_apply = f"https://pwc.wd3.myworkdayjobs.com/{site}{path}/apply"
                 out.append({"titolo": j.get("title") or "N/D",
                             "location": j.get("locationsText") or "Belgio",
-                            "url": f"https://pwc.wd3.myworkdayjobs.com/{site}{path}/apply",
+                            "url": _senza_apply(url_apply),   # pagina dell'offerta
+                            "_id_src": url_apply,             # ID invariato rispetto al passato
                             "data": ""})
             offset += len(posts)
             if offset >= totale:
                 break
             time.sleep(0.4)
+    registra_copertura("PwC Belgio", len(out), tot_dichiarate)
     return out
 
 def scrape_pwc_belgio():
@@ -576,7 +645,8 @@ def scrape_pwc_belgio():
                 risultati.append({
                     "titolo":   j.get("title") or "N/D",
                     "location": j.get("location") or j.get("region") or "Belgio",
-                    "url":      apply_url,
+                    "url":      _senza_apply(apply_url),
+                    "_id_src":  apply_url,
                     "data":     j.get("date") or "",
                 })
             print(f"   → {len(risultati)} offerte trovate")
@@ -598,7 +668,8 @@ def scrape_pwc_belgio():
                         risultati.append({
                             "titolo":   j.get("title") or "N/D",
                             "location": j.get("location") or j.get("region") or "Belgio",
-                            "url":      j.get("apply") or j.get("url") or "",
+                            "url":      _senza_apply(j.get("apply") or j.get("url") or ""),
+                            "_id_src":  j.get("apply") or j.get("url") or "",
                             "data":     j.get("date") or "",
                         })
                 except Exception as e:
