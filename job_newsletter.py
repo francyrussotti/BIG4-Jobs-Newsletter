@@ -33,6 +33,12 @@ EMAIL_DESTINATARIO = os.environ.get("EMAIL_DESTINATARIO", "")
 # File locale dove vengono salvati gli ID delle offerte già inviate
 SEEN_FILE = "seen_jobs.json"
 
+# Modalità prova (env var DRY_RUN=1/true/yes/si): fa lo scraping completo ma
+# NON invia l'email e NON scrive SEEN_FILE. L'HTML dell'email viene salvato in
+# DRY_RUN_HTML per poterlo aprire nel browser. Per provare in locale in sicurezza.
+DRY_RUN      = os.environ.get("DRY_RUN", "").strip().lower() in ("1", "true", "yes", "si", "sì")
+DRY_RUN_HTML = "anteprima_newsletter.html"
+
 # ============================================================
 # 🩺  PARAMETRI DEL MONITORAGGIO
 # ============================================================
@@ -152,6 +158,9 @@ def carica_seen() -> tuple[set, list]:
     return set(), []
 
 def salva_seen(seen: set, storico: list):
+    if DRY_RUN:
+        print(f"🧪 DRY_RUN: {SEEN_FILE} NON aggiornato ({len(seen)} ID sarebbero stati salvati)")
+        return
     try:
         with open(SEEN_FILE, "w", encoding="utf-8") as f:
             json.dump({
@@ -1285,7 +1294,16 @@ def genera_html(tutte, totale_trovate, problemi=None, fonti=None, nascoste=None)
 
 def invia_email(html_body, totale):
     """Restituisce lo stato dell'invio: 'ok', 'auth' (credenziali rifiutate),
-    'config' (secret mancanti) o 'errore'."""
+    'config' (secret mancanti), 'errore' o 'dry_run' (invio saltato)."""
+    if DRY_RUN:
+        try:
+            with open(DRY_RUN_HTML, "w", encoding="utf-8") as f:
+                f.write(html_body)
+            print(f"🧪 DRY_RUN: email NON inviata ({totale} nuove offerte) · anteprima in {DRY_RUN_HTML}")
+        except Exception as e:
+            print(f"🧪 DRY_RUN: email NON inviata · errore scrittura {DRY_RUN_HTML}: {e}")
+        return "dry_run"
+
     if not GMAIL_MITTENTE or not GMAIL_PASSWORD or not EMAIL_DESTINATARIO:
         mancanti = [n for n, v in [("GMAIL_MITTENTE", GMAIL_MITTENTE),
                                     ("GMAIL_PASSWORD", GMAIL_PASSWORD),
@@ -1332,6 +1350,8 @@ def main():
     print(f"\n{'='*55}")
     print(f"  BIG4 JOB NEWSLETTER  {datetime.now():%d/%m/%Y %H:%M}")
     print(f"{'='*55}\n")
+    if DRY_RUN:
+        print(f"🧪 DRY_RUN attivo: nessuna email inviata, {SEEN_FILE} non verrà modificato\n")
 
     seen, storico = carica_seen()
 
