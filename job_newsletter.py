@@ -13,6 +13,7 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import json, time, re, os, hashlib, sys
+import html as html_lib
 
 try:
     from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
@@ -56,6 +57,24 @@ SOGLIA_COPERTURA = 0.95
 # annunci riaperti o resi visibili tardi, che mantengono la data originale.
 # Si applica solo alle fonti che forniscono una data. None = filtro disattivato.
 MAX_GIORNI_NUOVA = 30
+
+# Etichette mostrate accanto a ogni offerta nell'email, dedotte dal titolo.
+# Per ciascun gruppo vince la PRIMA regola che corrisponde (l'ordine conta);
+# se nessuna corrisponde, l'etichetta del gruppo non compare.
+ETICHETTE_LIVELLO = [
+    ("Stage",   r"\b(stage|stagiaire|intern(ship)?|tirocini[oa])\b"),
+    ("Junior",  r"\b(junior|jr\.?|graduate|neolaureat[oie]|entry[ -]level|assistant)\b"),
+    ("Manager", r"\b(manager|director|partner|head of|lead)\b"),
+    ("Senior",  r"\b(senior|sr\.?|experienced)\b"),
+]
+ETICHETTE_AREA = [
+    ("Audit",      r"\b(audit|assurance|revisione)\b"),
+    ("Tax & Legal", r"\b(tax|fiscal\w*|tributari\w*|legal|legale)\b"),
+    ("Deals",      r"\b(deals?|m&a|valuation|transaction\w*|corporate finance)\b"),
+    ("Tech",       r"\b(developer|engineer\w*|sap|cloud|data|cyber\w*|software|architect|devops|"
+                   r"java|python|it)\b"),
+    ("Consulting", r"\b(consult\w*|advisory|strategy|business analyst)\b"),
+]
 
 # Copertura per fonte: {fonte: (raccolte, dichiarate)}.
 # La riempiono gli scraper che conoscono il totale dichiarato dal sito.
@@ -1182,101 +1201,185 @@ BRAND_COLORS = {
     "Capgemini":  ("#0070AD", "#ffffff"),
 }
 
+_GIORNI_SETT = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
+_MESI_NOME   = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio",
+                "agosto", "settembre", "ottobre", "novembre", "dicembre"]
+
+def _data_estesa(d):
+    """'giovedì 15 ottobre 2026' senza dipendere dal locale del sistema
+    (su GitHub Actions %B darebbe il mese in inglese)."""
+    return f"{_GIORNI_SETT[d.weekday()]} {d.day} {_MESI_NOME[d.month - 1]} {d.year}"
+
+def _data_relativa(data):
+    """Rende uniformi le date delle varie fonti: 'oggi', 'ieri', '3 giorni fa',
+    oltre la settimana '2 ott'. Se la data non è riconoscibile la mostra com'è."""
+    eta = _eta_giorni(data)
+    if eta is None:
+        return re.sub(r"(?i)^offerta pubblicata\s+", "", (data or "").strip())
+    if eta <= 0:
+        return "oggi"
+    if eta == 1:
+        return "ieri"
+    if eta < 7:
+        return f"{eta} giorni fa"
+    d = datetime.now() - timedelta(days=eta)
+    return f"{d.day} {_MESI_NOME[d.month - 1][:3]}"
+
+def _ancora(azienda):
+    return "f-" + re.sub(r"[^a-z0-9]+", "-", azienda.lower()).strip("-")
+
+def _etichette(titolo):
+    """Livello e area dedotti dal titolo con ETICHETTE_LIVELLO / ETICHETTE_AREA."""
+    t = titolo or ""
+    risultato = []
+    for regole in (ETICHETTE_LIVELLO, ETICHETTE_AREA):
+        for nome, pattern in regole:
+            if re.search(pattern, t, re.I):
+                risultato.append(nome)
+                break
+    return risultato
+
 def genera_html(tutte, totale_trovate, problemi=None, fonti=None, nascoste=None):
-    oggi_str = datetime.now().strftime("%d %B %Y")
+    # Stile editoriale: pagina bianca, titoli serif, niente riquadri.
+    # Layout a tabelle con stili inline: è l'unico modo affidabile per
+    # Gmail, Outlook e Apple Mail (niente flex, gradienti o ombre).
+    esc      = html_lib.escape
+    oggi_str = _data_estesa(datetime.now())
     totale   = sum(len(v) for v in tutte.values())
     elenco_fonti = " · ".join(fonti or BRAND_COLORS.keys())
+    sans  = "font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;"
+    serif = "font-family:Georgia,'Times New Roman',serif;"
+    inchiostro, grigio, chiaro, linea = "#111827", "#6b7280", "#9ca3af", "#e5e7eb"
 
-    # Banner diagnostico: compare solo se l'health check ha rilevato qualcosa
+    # Avviso diagnostico: compare solo se l'health check ha rilevato qualcosa
     avviso = ""
     if problemi:
-        righe_pb = ""
-        for gravita, fonte, msg in problemi:
-            icona = "🔴" if gravita == "bloccante" else "🟠"
-            righe_pb += (f'<li style="margin-bottom:5px;">{icona} <strong>{fonte}</strong>: {msg}</li>')
-        avviso = (
-            '<div style="background:#fff4e5;border-left:4px solid #ff9800;'
-            'padding:12px 18px;margin:0 0 18px;border-radius:6px;">'
-            '<div style="font-size:14px;font-weight:700;color:#8a4b00;margin-bottom:6px;">'
-            '⚠️ Controllo automatico: possibili scraper da verificare</div>'
-            f'<ul style="margin:0;padding-left:18px;font-size:12px;color:#8a4b00;">{righe_pb}</ul>'
-            '</div>'
-        )
+        righe_pb = "".join(
+            f'<div style="margin-top:4px;">{"🔴" if g == "bloccante" else "🟠"}&nbsp;'
+            f'<strong>{esc(f)}</strong>: {esc(m)}</div>'
+            for g, f, m in problemi)
+        avviso = f"""
+      <tr><td style="padding:0 32px 8px;">
+        <div style="border-left:3px solid #f59e0b;padding:4px 0 4px 14px;{sans}
+                    font-size:13px;line-height:1.5;color:#92400e;">
+          <strong>Controllo automatico: fonti da verificare</strong>{righe_pb}
+        </div>
+      </td></tr>"""
 
-    sezioni  = ""
+    # Sommario: "EY 3 · PwC Italia 2 · …" con link alle sezioni
+    sommario = " &nbsp;·&nbsp; ".join(
+        f'<a href="#{_ancora(az)}" style="color:{inchiostro};text-decoration:none;">'
+        f'{esc(az)}&nbsp;<strong>{len(of)}</strong></a>'
+        for az, of in tutte.items() if of)
+
+    sezioni = ""
     for azienda, offerte in tutte.items():
         if not offerte: continue
-        bg, fg = BRAND_COLORS.get(azienda, ("#1a1a2e", "#ffffff"))
-        righe  = ""
-        for o in offerte:
-            loc  = f'<span style="color:#888;">📍 {o["location"]}</span>&ensp;' if o.get("location") else ""
-            data = f'<span style="color:#aaa;">📅 {o["data"]}</span>' if o.get("data") else ""
-            righe += f"""
-            <tr>
-              <td style="padding:11px 16px;border-bottom:1px solid #f0f0f0;vertical-align:top;">
-                <a href="{o.get('url') or '#'}" style="color:#1a1a2e;font-weight:600;text-decoration:none;
-                   font-size:14px;line-height:1.4;display:block;">{o['titolo']}</a>
-                <div style="margin-top:3px;font-size:12px;">{loc}{data}</div>
-              </td>
-            </tr>"""
+        accento = BRAND_COLORS.get(azienda, ("#6b7280",))[0]
+        # Prima le più recenti; quelle senza data in fondo
+        ordinate = sorted(offerte, key=lambda o: (_eta_giorni(o.get("data")) is None,
+                                                  _eta_giorni(o.get("data")) or 0))
+        voci = ""
+        for o in ordinate:
+            quando = _data_relativa(o.get("data"))
+            fresca = quando in ("oggi", "ieri")
+            url    = esc(o.get("url") or "#")
+            meta = []
+            if o.get("location"):
+                meta.append(f'<strong style="color:{inchiostro};font-weight:600;">'
+                            f'{esc(o["location"])}</strong>')
+            if quando:
+                meta.append(f'<span style="color:#047857;font-weight:600;">{quando}</span>'
+                            if fresca else esc(quando))
+            etichette = "".join(
+                f'<span style="display:inline-block;margin:0 4px 0 0;padding:1px 7px;'
+                f'border:1px solid {linea};border-radius:10px;font-size:11px;'
+                f'color:{grigio};white-space:nowrap;">{e}</span>'
+                for e in _etichette(o.get("titolo")))
+            voci += f"""
+          <tr><td style="padding:14px 0;border-top:1px solid {linea};">
+            <a href="{url}" style="{serif}font-size:18px;line-height:1.35;color:{inchiostro};
+               text-decoration:none;">{esc(o['titolo'])}</a>
+            <div style="margin-top:6px;{sans}font-size:13px;line-height:1.6;color:{grigio};">
+              {' &nbsp;·&nbsp; '.join(meta)}</div>
+            <div style="margin-top:6px;{sans}font-size:13px;line-height:1.8;">
+              {etichette}<a href="{url}" style="color:{inchiostro};font-weight:600;
+                 text-decoration:underline;white-space:nowrap;">Candidati&nbsp;→</a></div>
+          </td></tr>"""
         sezioni += f"""
-        <div style="margin-bottom:24px;border-radius:8px;overflow:hidden;
-                    box-shadow:0 2px 8px rgba(0,0,0,.08);">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:{bg};">
-            <tr>
-              <td style="padding:11px 16px;color:{fg};font-size:16px;font-weight:700;">{azienda}</td>
-              <td align="right" style="padding:11px 16px;color:{fg};font-size:12px;opacity:.8;white-space:nowrap;">
-                {len(offerte)} nuov{'a' if len(offerte)==1 else 'e'}
-              </td>
-            </tr>
-          </table>
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#fff;">{righe}</table>
-        </div>"""
+      <tr><td id="{_ancora(azienda)}" style="padding:28px 32px 0;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr><td style="padding:0 0 10px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+              <td style="{sans}font-size:13px;font-weight:700;letter-spacing:2px;
+                         text-transform:uppercase;color:{inchiostro};">
+                <span style="display:inline-block;width:10px;height:10px;margin-right:8px;
+                             background:{accento};border-radius:2px;"></span>{esc(azienda)}</td>
+              <td align="right" style="{sans}font-size:12px;color:{chiaro};white-space:nowrap;">
+                {len(offerte)} nuov{'a' if len(offerte) == 1 else 'e'}</td>
+            </tr></table>
+          </td></tr>{voci}
+        </table>
+      </td></tr>"""
 
     nota_nascoste = ""
     if nascoste:
         n = sum(nascoste.values())
         nota_nascoste = (
-            '<p style="text-align:center;font-size:11px;color:#999;margin:4px 0 0;">'
             f'{n} offert{"a" if n == 1 else "e"} compars{"a" if n == 1 else "e"} oggi ma '
             f'pubblicat{"a" if n == 1 else "e"} da più di {MAX_GIORNI_NUOVA} giorni non '
             f'{"è mostrata" if n == 1 else "sono mostrate"} ('
-            + ", ".join(f"{k} {v}" for k, v in nascoste.items()) + ').</p>')
+            + esc(", ".join(f"{k} {v}" for k, v in nascoste.items())) + ').<br>')
 
-    if not sezioni:
-        body = (
-            '<div style="text-align:center;padding:40px 0;color:#aaa;">'
-            '<p style="font-size:40px;">✅</p>'
-            '<p style="font-size:16px;font-weight:600;">Nessuna offerta nuova oggi.</p>'
-            f'<p style="font-size:13px;">{totale_trovate} offerte totali già tutte viste.</p></div>'
-        )
+    if sezioni:
+        titolo = f"{totale} nuov{'a offerta' if totale == 1 else 'e offerte'} oggi"
+        corpo  = sezioni
     else:
-        body = sezioni
+        titolo = "Nessuna offerta nuova oggi"
+        corpo  = f"""
+      <tr><td style="padding:16px 32px 0;{sans}font-size:15px;line-height:1.6;color:{grigio};">
+        Le {totale_trovate} offerte monitorate sono già state tutte segnalate nei giorni scorsi.
+      </td></tr>"""
+
+    anteprima = (f"{totale} nuove offerte: " + ", ".join(
+        f"{az} {len(of)}" for az, of in tutte.items() if of)) if totale else \
+        "Nessuna offerta nuova oggi"
+    riga_sommario = (f'<div style="margin-top:14px;{sans}font-size:14px;line-height:1.7;'
+                     f'color:{inchiostro};">{sommario}</div>') if sommario else ""
 
     return f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f0f2f5;
-             font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
-  <div style="max-width:640px;margin:28px auto;padding:0 12px;">
-    <div style="background:linear-gradient(135deg,#0d1b2a,#1b3a5c);
-                border-radius:12px 12px 0 0;padding:26px 24px 20px;text-align:center;">
-      <div style="font-size:34px;margin-bottom:6px;">🏦</div>
-      <h1 style="color:#fff;margin:0;font-size:21px;letter-spacing:1px;">BIG4 JOB NEWSLETTER</h1>
-      <p style="color:#7eb8e0;margin:6px 0 0;font-size:13px;">{oggi_str}</p>
-    </div>
-    <div style="background:#dbeafe;padding:11px 20px;
-                border-left:4px solid #2563eb;border-right:4px solid #2563eb;
-                text-align:center;font-size:14px;color:#1e3a5f;">
-      🆕 <strong>{totale} nuove offerte</strong> su {totale_trovate} totali
-      <div style="font-size:11px;margin-top:3px;opacity:.8;">{elenco_fonti}</div>
-    </div>
-    <div style="background:#f8f9fa;padding:20px 14px;">{avviso}{body}{nota_nascoste}</div>
-    <div style="background:#0d1b2a;border-radius:0 0 12px 12px;padding:13px;
-                text-align:center;font-size:11px;color:#4a6fa5;">
-      Newsletter automatica · Python 🐍 · {oggi_str}
-    </div>
-  </div>
+<html lang="it"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light">
+</head>
+<body style="margin:0;padding:0;background:#ffffff;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">{esc(anteprima)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff"
+       style="background:#ffffff;">
+  <tr><td align="center" style="padding:16px 0 32px;">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0"
+           style="width:100%;max-width:600px;">
+      <tr><td style="padding:24px 32px 20px;border-bottom:2px solid {inchiostro};">
+        <div style="{sans}font-size:12px;font-weight:700;letter-spacing:3px;color:{inchiostro};">
+          BIG4 JOBS</div>
+        <div style="margin-top:2px;{sans}font-size:12px;color:{grigio};">
+          {oggi_str} · Italia e Belgio</div>
+        <div style="margin-top:18px;{serif}font-size:32px;line-height:1.15;color:{inchiostro};">
+          {titolo}</div>
+        {riga_sommario}
+      </td></tr>
+      <tr><td style="height:16px;line-height:16px;font-size:0;">&nbsp;</td></tr>
+      {avviso}{corpo}
+      <tr><td style="padding:36px 32px 0;">
+        <div style="border-top:1px solid {linea};padding-top:14px;{sans}font-size:11px;
+                    line-height:1.6;color:{chiaro};">
+          {nota_nascoste}{totale_trovate} offerte monitorate · Fonti: {esc(elenco_fonti)}<br>
+          Le etichette (livello e area) sono dedotte automaticamente dal titolo.
+        </div>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
 </body></html>""", totale
 
 # ============================================================
