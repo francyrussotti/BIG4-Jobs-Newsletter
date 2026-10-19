@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Non Premere</title>
+<title>Don’t Press</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="shared.css">
@@ -42,69 +42,69 @@
 </style>
 </head>
 <body>
-<header class="topbar"><a class="back" href="index.html">← La Ludoteca</a><span class="best"></span></header>
+<header class="topbar"><a class="back" href="index.html">← The Playroom</a><span class="best"></span></header>
 <main class="stage">
-  <h1 class="game-title">Non Premere</h1>
-  <p class="msg" id="msg" aria-live="polite">Non premere il bottone.</p>
+  <h1 class="game-title">Don’t Press</h1>
+  <p class="msg" id="msg" aria-live="polite">Don’t press the button.</p>
   <div class="arena" id="arena">
-    <button class="big-btn" id="btn">NON<br>PREMERE</button>
+    <button class="big-btn" id="btn">DON’T<br>PRESS</button>
   </div>
-  <p class="count" id="count">Premuto 0 volte</p>
-  <button class="restart" id="restart" hidden>Ricomincia da capo</button>
+  <p class="count" id="count">Pressed 0 times</p>
+  <button class="restart" id="restart" hidden>Start over</button>
 </main>
 <script>
 'use strict';
 const msg = document.getElementById('msg'), btn = document.getElementById('btn'), arena = document.getElementById('arena');
 const countEl = document.getElementById('count'), restartBtn = document.getElementById('restart');
 
-/* Il "copione": ogni pressione mostra il messaggio successivo e, se c'è, applica un effetto.
-   Per allungare il gioco basta aggiungere righe qui. */
+/* The "script": each press shows the next message and, if there is one, applies an effect.
+   To make the game longer, just add lines here. */
 const STEPS = [
-  ['Ehi. C’era scritto di non premerlo.'],
-  ['Va bene, una volta può capitare.'],
-  ['Due volte non capita per sbaglio.'],
-  ['Ok, ti sposto il bottone.', 'move'],
-  ['Insisti, eh?', 'move'],
-  ['Lo rimpicciolisco. Così impari.', 'small'],
-  ['Ancora più piccolo.', 'tiny'],
-  ['Va bene, torna normale. Facciamo pace?', 'reset'],
-  ['Non era un sì.'],
-  ['Adesso il bottone è triste.', 'sad'],
-  ['Contento? Ora è ancora più triste.', 'sad'],
-  ['Basta, lo nascondo.', 'hide'],
-  ['L’hai trovato lo stesso. Impressionante.', 'reset'],
-  ['Caricamento della punizione…', 'load'],
-  ['La punizione è: nessuna. Ti ho fatto paura?'],
-  ['Giro la pagina. Letteralmente.', 'flip'],
-  ['Raddrizzo tutto. Mi stai stancando.', 'unflip'],
-  ['Facciamo un patto: altre 5 volte e smetto di parlare.'],
+  ['Hey. It said not to press it.'],
+  ['Fine, once can happen.'],
+  ['Twice is not an accident.'],
+  ['Okay, I’m moving the button.', 'move'],
+  ['Persistent, huh?', 'move'],
+  ['I’m shrinking it. That’ll teach you.', 'small'],
+  ['Even smaller.', 'tiny'],
+  ['Fine, back to normal. Truce?', 'reset'],
+  ['That wasn’t a yes.'],
+  ['Now the button is sad.', 'sad'],
+  ['Happy? Now it’s even sadder.', 'sad'],
+  ['That’s it, I’m hiding it.', 'hide'],
+  ['You found it anyway. Impressive.', 'reset'],
+  ['Loading your punishment…', 'load'],
+  ['Your punishment is: nothing. Scared you?'],
+  ['I’m turning the page. Literally.', 'flip'],
+  ['Turning it back. You’re wearing me out.', 'unflip'],
+  ['Deal: 5 more presses and I’ll stop talking.'],
   ['4…'], ['3…'], ['2…'], ['1…'], ['…'],
-  ['Ok, ho mentito. Non so stare zitto.'],
-  ['Lo sai che non succede niente, vero?'],
-  ['Il bottone ha chiamato il suo avvocato.', 'shake'],
-  ['L’avvocato dice che puoi continuare. Che delusione.'],
-  ['Ultimo avviso.', 'shake'],
-  ['Hai finito il bottone. Non c’è altro. Davvero.', 'end'],
+  ['Okay, I lied. I can’t stay quiet.'],
+  ['You know nothing happens, right?'],
+  ['The button has called its lawyer.', 'shake'],
+  ['The lawyer says you can keep going. How disappointing.'],
+  ['Final warning.', 'shake'],
+  ['You’ve finished the button. There’s nothing else. Really.', 'end'],
 ];
-const AFTER_END = ['Davvero, è finito.', 'Sul serio.', 'Non c’è un finale segreto.', 'Forse.', 'No, non c’è.', 'Vai a giocare a qualcos’altro.'];
+const AFTER_END = ['Really, it’s over.', 'Seriously.', 'There’s no secret ending.', 'Maybe.', 'No, there isn’t.', 'Go play something else.'];
 let step = 0, presses = 0, busy = false;
 
 const FX = {
   move() { btn.style.left = `${15 + Math.random() * 70}%`; btn.style.top = `${22 + Math.random() * 56}%`; },
   small() { btn.style.setProperty('--s', '0.6'); },
   tiny() { btn.style.setProperty('--s', '0.3'); },
-  reset() { btn.className = 'big-btn'; btn.style.cssText = ''; btn.innerHTML = 'NON<br>PREMERE'; },
+  reset() { btn.className = 'big-btn'; btn.style.cssText = ''; btn.innerHTML = 'DON’T<br>PRESS'; },
   sad() { btn.classList.add('sad'); btn.textContent = ':('; },
   hide() { btn.style.opacity = '0.07'; },
   flip() { arena.classList.add('flipped'); },
   unflip() { arena.classList.remove('flipped'); },
   shake() { btn.classList.remove('shake'); void btn.offsetWidth; btn.classList.add('shake'); },
-  end() { FX.reset(); btn.classList.add('off'); btn.textContent = 'FINE'; restartBtn.hidden = false; },
-  load() {                                                 // finto caricamento: il bottone si blocca per 3 secondi
+  end() { FX.reset(); btn.classList.add('off'); btn.textContent = 'THE END'; restartBtn.hidden = false; },
+  load() {                                                 // fake loading: the button locks for 3 seconds
     busy = true; btn.disabled = true; let k = 0;
     const id = setInterval(() => {
-      k++; msg.textContent = `Caricamento della punizione${'.'.repeat(k % 4)} ${Math.min(100, k * 17)}%`;
-      if (k >= 6) { clearInterval(id); busy = false; btn.disabled = false; msg.textContent = 'Punizione pronta. Premi per riceverla.'; }
+      k++; msg.textContent = `Loading your punishment${'.'.repeat(k % 4)} ${Math.min(100, k * 17)}%`;
+      if (k >= 6) { clearInterval(id); busy = false; btn.disabled = false; msg.textContent = 'Punishment ready. Press to receive it.'; }
     }, 500);
   },
 };
@@ -112,7 +112,7 @@ const FX = {
 btn.addEventListener('click', () => {
   if (busy) return;
   presses++;
-  countEl.textContent = `Premuto ${presses} ${presses === 1 ? 'volta' : 'volte'}`;
+  countEl.textContent = `Pressed ${presses} ${presses === 1 ? 'time' : 'times'}`;
   if (step < STEPS.length) {
     const [text, fx] = STEPS[step++];
     msg.textContent = text;
@@ -123,7 +123,7 @@ btn.addEventListener('click', () => {
 });
 restartBtn.addEventListener('click', () => {
   step = 0; presses = 0; FX.reset(); FX.unflip(); restartBtn.hidden = true;
-  msg.textContent = 'Non premere il bottone.'; countEl.textContent = 'Premuto 0 volte';
+  msg.textContent = 'Don’t press the button.'; countEl.textContent = 'Pressed 0 times';
 });
 </script>
 </body>

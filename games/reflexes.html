@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Riflessi</title>
+<title>Reflexes</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="shared.css">
@@ -34,63 +34,63 @@
 </style>
 </head>
 <body>
-<header class="topbar"><a class="back" href="index.html">← La Ludoteca</a><span class="best" id="best"></span></header>
+<header class="topbar"><a class="back" href="index.html">← The Playroom</a><span class="best" id="best"></span></header>
 <main class="stage">
-  <h1 class="game-title">Riflessi</h1>
-  <p class="lead">Quando il riquadro diventa verde, clicca più in fretta che puoi. Cinque tentativi, poi vedi la tua media.</p>
+  <h1 class="game-title">Reflexes</h1>
+  <p class="lead">When the box turns green, click as fast as you can. Five tries, then you get your average.</p>
   <button class="pad" id="pad" data-state="idle">
-    <span class="big" id="big">Clicca per iniziare</span>
-    <span class="small" id="small">oppure premi Spazio</span>
+    <span class="big" id="big">Click to start</span>
+    <span class="small" id="small">or press Space</span>
   </button>
-  <ol class="tries" id="tries" aria-label="Tentativi"></ol>
-  <div class="scale" aria-label="Scala dei risultati">
-    <div><b>&lt; 200 ms</b>Fulmine</div>
-    <div><b>200–250 ms</b>Felino</div>
-    <div><b>250–300 ms</b>Pilota della domenica</div>
-    <div><b>300–360 ms</b>Nella media</div>
-    <div><b>360–450 ms</b>Un po’ assonnato</div>
-    <div><b>&gt; 450 ms</b>Bradipo certificato</div>
+  <ol class="tries" id="tries" aria-label="Tries"></ol>
+  <div class="scale" aria-label="Result scale">
+    <div><b>&lt; 200 ms</b>Lightning</div>
+    <div><b>200–250 ms</b>Cat-like</div>
+    <div><b>250–300 ms</b>Sunday driver</div>
+    <div><b>300–360 ms</b>Average</div>
+    <div><b>360–450 ms</b>A bit sleepy</div>
+    <div><b>&gt; 450 ms</b>Certified sloth</div>
   </div>
 </main>
 <script>
 'use strict';
 const N = 5;
-const RATINGS = [[200, 'Fulmine'], [250, 'Felino'], [300, 'Pilota della domenica'], [360, 'Nella media'], [450, 'Un po’ assonnato'], [Infinity, 'Bradipo certificato']];
+const RATINGS = [[200, 'Lightning'], [250, 'Cat-like'], [300, 'Sunday driver'], [360, 'Average'], [450, 'A bit sleepy'], [Infinity, 'Certified sloth']];
 const pad = document.getElementById('pad'), big = document.getElementById('big'), small = document.getElementById('small');
 const triesEl = document.getElementById('tries'), bestEl = document.getElementById('best');
 let state = 'idle', t0 = 0, timer = null, times = [];
 
-// Record salvato solo nel browser di chi gioca (se lo storage non c'è, si gioca lo stesso)
-const BEST_KEY = 'ludoteca.riflessi.best';
+// High score is kept only in the player's browser (the game still works without storage)
+const BEST_KEY = 'playroom.reflexes.best';
 const readBest = () => { try { return Number(localStorage.getItem(BEST_KEY)) || 0; } catch (_) { return 0; } };
-const showBest = () => { const b = readBest(); bestEl.textContent = b ? `Record: ${b} ms` : ''; };
+const showBest = () => { const b = readBest(); bestEl.textContent = b ? `Best: ${b} ms` : ''; };
 showBest();
 
 function setState(s, b, sm = '') { state = s; pad.dataset.state = s; big.textContent = b; small.textContent = sm; }
 function renderTries() { triesEl.innerHTML = times.map(ms => `<li>${ms} ms</li>`).join(''); }
 
 function startWait() {
-  setState('wait', 'Aspetta il verde…');
-  timer = setTimeout(() => { t0 = performance.now(); setState('go', 'ORA!'); }, 1200 + Math.random() * 2800);
+  setState('wait', 'Wait for green…');
+  timer = setTimeout(() => { t0 = performance.now(); setState('go', 'NOW!'); }, 1200 + Math.random() * 2800);
 }
 
 function act() {
   if (state === 'idle' || state === 'result' || state === 'early') return startWait();
   if (state === 'done') { times = []; renderTries(); return startWait(); }
-  if (state === 'wait') {                                   // clic prima del verde
+  if (state === 'wait') {                                   // clicked before green
     clearTimeout(timer);
-    return setState('early', 'Troppo presto!', 'Il tentativo non conta. Clicca per riprovare.');
+    return setState('early', 'Too soon!', 'That try doesn’t count. Click to try again.');
   }
   if (state === 'go') {
     const ms = Math.round(performance.now() - t0);
     times.push(ms); renderTries();
-    if (times.length < N) return setState('result', `${ms} ms`, `Tentativo ${times.length} di ${N} · clicca per continuare`);
+    if (times.length < N) return setState('result', `${ms} ms`, `Try ${times.length} of ${N} · click to continue`);
     const avg = Math.round(times.reduce((a, b) => a + b, 0) / N);
     const rating = RATINGS.find(([max]) => avg < max)[1];
     const best = readBest();
     if (!best || avg < best) { try { localStorage.setItem(BEST_KEY, String(avg)); } catch (_) {} }
     showBest();
-    setState('done', `${avg} ms di media`, `${rating}${!best || avg < best ? ' · nuovo record!' : ''} · clicca per rigiocare`);
+    setState('done', `${avg} ms average`, `${rating}${!best || avg < best ? ' · new best!' : ''} · click to play again`);
   }
 }
 

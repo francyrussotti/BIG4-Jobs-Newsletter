@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Piazza Calda</title>
+<title>Piazza Panic</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
-  /* Layout: un unico "cabinato" centrato; il gioco ha un look scuro fisso (single-theme). */
+  /* Layout: one centered "arcade cabinet"; the game keeps a fixed dark look (single theme). */
   :root {
     --bg: #14161b;
     --fg: #e8e4da;
@@ -53,41 +53,41 @@
 </style>
 </head>
 <body>
-<a class="back" href="index.html">← La Ludoteca</a>
-<canvas id="game" width="960" height="640" tabindex="0" aria-label="Piazza Calda, gioco arcade"></canvas>
-<p class="note">Valdoria e i suoi gruppi sono inventati. Il danno riguarda solo arredo urbano e oggetti. P = pausa · Esc = menu</p>
+<a class="back" href="index.html">← The Playroom</a>
+<canvas id="game" width="960" height="640" tabindex="0" aria-label="Piazza Panic, arcade game"></canvas>
+<p class="note">Valdoria and its groups are made up. Only street furniture and objects take damage. P = pause · Esc = menu</p>
 
 <script>
 'use strict';
 /* =====================================================================
-   PIAZZA CALDA — prototipo arcade top-down (HTML5 Canvas, zero librerie)
-   Struttura:
-     1. Configurazione e utilità
+   PIAZZA PANIC — top-down arcade prototype (HTML5 Canvas, no libraries)
+   Structure:
+     1. Config and utilities
      2. Input
-     3. Mappa e oggetti distruttibili
-     4. Entità e avvio partita
-     5. IA (folla, facinorosi, polizia) e controlli del giocatore
-     6. Fisica (movimento, collisioni, separazione, cordone)
-     7. Fermi, condizioni di fine, punteggio
-     8. Rendering (mondo, HUD, menu, fine partita)
-     9. Loop principale
+     3. Map and destructible objects
+     4. Entities and game start
+     5. AI (crowd, troublemakers, police) and player controls
+     6. Physics (movement, collisions, separation, cordon)
+     7. Arrests, end conditions, scoring
+     8. Rendering (world, HUD, menu, game over)
+     9. Main loop
    ===================================================================== */
 
-/* ---------- 1. CONFIGURAZIONE ---------- */
+/* ---------- 1. CONFIG ---------- */
 const W = 960, H = 640;
-const TOP = 70, BOTTOM = H - 70;          // facciate dei palazzi sopra e sotto
-const VAN = { x: 60, y: 320 };            // furgone della polizia (spawn e destinazione dei fermati)
+const TOP = 70, BOTTOM = H - 70;          // building fronts above and below
+const VAN = { x: 60, y: 320 };            // police van (spawn point and drop-off for detainees)
 
 const CFG = {
   police: { time: 180, rioters: 6, squad: 6, crowd: 45, maxDamagePct: 60 },
   rioter: { time: 150, police: 4, maxPolice: 10, reinforceEvery: 25, aiRioters: 2, crowd: 50 },
   speed:  { crowd: 34, rioter: 62, police: 60, commander: 84, player: 72, sprint: 118 },
-  playerHit: 10, playerHitCD: 0.35,       // danno e cadenza del manifestante giocatore
-  aiHit: 6, aiHitCD: 0.8,                 // danno e cadenza dei facinorosi IA
-  reach: 14,                              // distanza utile per colpire un oggetto
-  arrestTime: 1.6,                        // secondi di contatto (1 agente) per completare un fermo
+  playerHit: 10, playerHitCD: 0.35,       // damage and hit rate of the player protester
+  aiHit: 6, aiHitCD: 0.8,                 // damage and hit rate of AI troublemakers
+  reach: 14,                              // how close you must be to hit an object
+  arrestTime: 1.6,                        // seconds of contact (1 officer) to complete an arrest
   megaphoneCD: 6, megaphoneR: 150,
-  revealTime: 5,                          // secondi in cui chi danneggia resta "riconoscibile"
+  revealTime: 5,                          // seconds a vandal stays "recognizable"
 };
 
 const COL = {
@@ -107,7 +107,7 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 function norm(x, y) { const d = Math.hypot(x, y) || 1; return { x: x / d, y: y / d }; }
 function closestOnRect(px, py, o) { return { x: clamp(px, o.x, o.x + o.w), y: clamp(py, o.y, o.y + o.h) }; }
 function distToRect(px, py, o) { const c = closestOnRect(px, py, o); return Math.hypot(px - c.x, py - c.y); }
-const euro = v => '€' + Math.round(v).toLocaleString('it-IT');
+const euro = v => '€' + Math.round(v).toLocaleString('en-US');
 
 /* ---------- 2. INPUT ---------- */
 const canvas = document.getElementById('game');
@@ -131,20 +131,20 @@ canvas.addEventListener('mousemove', setMouse);
 canvas.addEventListener('mousedown', e => { setMouse(e); mouse.down = true; mouse.clicked = true; canvas.focus(); });
 addEventListener('mouseup', () => { mouse.down = false; });
 
-/* ---------- 3. MAPPA E OGGETTI DISTRUTTIBILI ---------- */
-// Per aggiungere un nuovo arredo basta una riga qui e una posizione in buildMap().
+/* ---------- 3. MAP AND DESTRUCTIBLE OBJECTS ---------- */
+// To add a new object type: one line here plus a position in buildMap().
 const OBJ_TYPES = {
-  vetrina:    { hp: 40,  value: 300, blocks: false, debris: '#bfe6f5' },
-  auto:       { hp: 120, value: 900, blocks: true,  debris: '#d0d0d0' },
-  panchina:   { hp: 50,  value: 150, blocks: true,  debris: '#a0703c' },
-  cassonetto: { hp: 30,  value: 90,  blocks: true,  debris: '#3a8f4a' },
-  lampione:   { hp: 45,  value: 220, blocks: true,  debris: '#e8d27a' },
-  edicola:    { hp: 100, value: 600, blocks: true,  debris: '#4c7a8c' },
-  fioriera:   { hp: 35,  value: 120, blocks: true,  debris: '#6a9a4a' },
-  pensilina:  { hp: 70,  value: 400, blocks: true,  debris: '#bfe6f5' },
+  window:   { hp: 40,  value: 300, blocks: false, debris: '#bfe6f5' },
+  car:      { hp: 120, value: 900, blocks: true,  debris: '#d0d0d0' },
+  bench:    { hp: 50,  value: 150, blocks: true,  debris: '#a0703c' },
+  bin:      { hp: 30,  value: 90,  blocks: true,  debris: '#3a8f4a' },
+  lamp:     { hp: 45,  value: 220, blocks: true,  debris: '#e8d27a' },
+  kiosk:    { hp: 100, value: 600, blocks: true,  debris: '#4c7a8c' },
+  planter:  { hp: 35,  value: 120, blocks: true,  debris: '#6a9a4a' },
+  shelter:  { hp: 70,  value: 400, blocks: true,  debris: '#bfe6f5' },
 };
-const SHOPS = ['FORNO', 'BAR', 'LIBRI', 'OTTICA', 'FIORI', 'SARTO', 'BANCA', 'GELATI', 'MERCERIA', 'CAFFÈ',
-               'DROGHERIA', 'MODA', 'POSTA', 'TABACCHI', 'PANE', 'DISCHI', 'CARTOLERIA', 'FARMACIA', 'SCARPE', 'PIZZA'];
+const SHOPS = ['BAKERY', 'BAR', 'BOOKS', 'OPTICIAN', 'FLOWERS', 'TAILOR', 'BANK', 'GELATO', 'FABRICS', 'CAFÉ',
+               'GROCER', 'FASHION', 'POST', 'TOBACCO', 'BREAD', 'RECORDS', 'STATIONERY', 'PHARMACY', 'SHOES', 'PIZZA'];
 
 function makeObj(type, x, y, w, h, extra = {}) {
   const t = OBJ_TYPES[type];
@@ -154,27 +154,27 @@ function makeObj(type, x, y, w, h, extra = {}) {
 }
 
 function buildMap() {
-  // Ostacoli fissi e indistruttibili: fontana e furgone
+  // Fixed, indestructible obstacles: fountain and van
   G.walls = [
-    { x: 440, y: 280, w: 80, h: 80, kind: 'fontana' },
-    { x: 10, y: 290, w: 40, h: 62, kind: 'furgone' },
+    { x: 440, y: 280, w: 80, h: 80, kind: 'fountain' },
+    { x: 10, y: 290, w: 40, h: 62, kind: 'van' },
   ];
   const o = [];
   for (let i = 0; i < 10; i++) {
-    o.push(makeObj('vetrina', 30 + i * 92, TOP - 10, 62, 10, { shop: SHOPS[i], awning: COL.awnings[i % 6] }));
-    o.push(makeObj('vetrina', 30 + i * 92, BOTTOM, 62, 10, { shop: SHOPS[i + 10], awning: COL.awnings[(i + 3) % 6] }));
+    o.push(makeObj('window', 30 + i * 92, TOP - 10, 62, 10, { shop: SHOPS[i], awning: COL.awnings[i % 6] }));
+    o.push(makeObj('window', 30 + i * 92, BOTTOM, 62, 10, { shop: SHOPS[i + 10], awning: COL.awnings[(i + 3) % 6] }));
   }
   const carColors = ['#c44536', '#3d6ea8', '#e2b33c', '#5f8f5f', '#9a6fb0', '#d97b3a', '#6c7a89', '#b84f7a'];
   [140, 300, 600, 760].forEach((x, i) => {
-    o.push(makeObj('auto', x, TOP + 26, 58, 30, { color: carColors[i] }));
-    o.push(makeObj('auto', x, BOTTOM - 56, 58, 30, { color: carColors[i + 4] }));
+    o.push(makeObj('car', x, TOP + 26, 58, 30, { color: carColors[i] }));
+    o.push(makeObj('car', x, BOTTOM - 56, 58, 30, { color: carColors[i + 4] }));
   });
-  [[360, 240], [550, 240], [360, 392], [550, 392]].forEach(([x, y]) => o.push(makeObj('panchina', x, y, 50, 14)));
-  [[300, 312], [644, 312], [230, 180], [714, 450]].forEach(([x, y]) => o.push(makeObj('cassonetto', x, y, 16, 16)));
-  [[220, 250], [730, 250], [220, 390], [730, 390]].forEach(([x, y]) => o.push(makeObj('lampione', x, y, 10, 10)));
-  [[400, 160], [530, 160], [400, 466], [530, 466]].forEach(([x, y]) => o.push(makeObj('fioriera', x, y, 30, 18)));
-  o.push(makeObj('edicola', 150, 420, 54, 40));
-  o.push(makeObj('pensilina', 760, 170, 70, 18));
+  [[360, 240], [550, 240], [360, 392], [550, 392]].forEach(([x, y]) => o.push(makeObj('bench', x, y, 50, 14)));
+  [[300, 312], [644, 312], [230, 180], [714, 450]].forEach(([x, y]) => o.push(makeObj('bin', x, y, 16, 16)));
+  [[220, 250], [730, 250], [220, 390], [730, 390]].forEach(([x, y]) => o.push(makeObj('lamp', x, y, 10, 10)));
+  [[400, 160], [530, 160], [400, 466], [530, 466]].forEach(([x, y]) => o.push(makeObj('planter', x, y, 30, 18)));
+  o.push(makeObj('kiosk', 150, 420, 54, 40));
+  o.push(makeObj('shelter', 760, 170, 70, 18));
   G.objs = o;
   G.totalValue = o.reduce((s, x) => s + x.value, 0);
 }
@@ -182,7 +182,7 @@ function buildMap() {
 function damageValue() { return G.objs.reduce((s, o) => s + (o.maxHp - o.hp) / o.maxHp * o.value, 0); }
 function damagePct() { return damageValue() / G.totalValue * 100; }
 
-// Applica danno a un oggetto; restituisce il valore in € del danno inflitto.
+// Damages an object; returns the € value of the damage dealt.
 function damageObject(o, amount, byPlayer) {
   const real = Math.min(o.hp, amount);
   if (real <= 0) return 0;
@@ -199,7 +199,7 @@ function damageObject(o, amount, byPlayer) {
   return val;
 }
 
-/* ---------- 4. ENTITÀ E AVVIO PARTITA ---------- */
+/* ---------- 4. ENTITIES AND GAME START ---------- */
 const G = {
   screen: 'menu', mode: null, paused: false, time: 0, ending: 0, result: null,
   ents: [], objs: [], walls: [], solids: [], particles: [], texts: [], rings: [],
@@ -237,7 +237,7 @@ function startGame(mode) {
   for (let i = 0; i < C.crowd; i++) { const p = randomFreePoint(); G.ents.push(makeEntity('crowd', p.x, p.y)); }
 
   if (mode === 'police') {
-    // Giocatore = comandante; la squadra IA esegue gli ordini
+    // Player = commander; the AI squad follows orders
     G.player = makeEntity('police', 100, 320, { isPlayer: true, color: COL.police });
     G.ents.push(G.player);
     for (let i = 0; i < C.squad; i++) {
@@ -248,7 +248,7 @@ function startGame(mode) {
       G.ents.push(makeEntity('rioter', p.x, p.y, { sign: false, timer: rand(3, 9) }));
     }
   } else {
-    // Giocatore = manifestante; polizia IA con rinforzi progressivi
+    // Player = protester; AI police with growing backup
     const p = randomFreePoint();
     G.player = makeEntity('rioter', p.x, p.y, { isPlayer: true, sign: false, color: '#f4f1e8' });
     G.ents.push(G.player);
@@ -272,7 +272,7 @@ function refreshLists() {
   G.solids = G.walls.concat(G.objs.filter(o => o.blocks && o.hp > 0));
 }
 
-/* ---------- 5. IA E CONTROLLI ---------- */
+/* ---------- 5. AI AND CONTROLS ---------- */
 function nearest(e, list, filter) {
   let best = null, bd = Infinity;
   for (const o of list) {
@@ -282,7 +282,7 @@ function nearest(e, list, filter) {
   }
   return [best, bd];
 }
-// Imposta la velocità verso un punto; restituisce true quando è arrivato.
+// Sets velocity toward a point; returns true on arrival.
 function moveToward(e, tx, ty, speed) {
   const dx = tx - e.x, dy = ty - e.y, d = Math.hypot(dx, dy);
   if (d < 3) { e.vx = e.vy = 0; return true; }
@@ -290,7 +290,7 @@ function moveToward(e, tx, ty, speed) {
   e.vx = dx / d * s; e.vy = dy / d * s;
   return d < 6;
 }
-// Fuga: lontano dalla minaccia, con una spinta verso il centro per non incastrarsi negli angoli.
+// Flee: away from the threat, nudged toward the center so nobody gets stuck in corners.
 function fleeFrom(e, fx, fy, speed) {
   const a = norm(e.x - fx, e.y - fy), c = norm(W / 2 - e.x, (TOP + BOTTOM) / 2 - e.y);
   const n = norm(a.x + c.x * 0.35, a.y + c.y * 0.35);
@@ -312,7 +312,7 @@ function wander(e, dt, speed) {
 function holdingNear(x, y, r) { return G.policeList.some(p => p.holding && Math.hypot(p.x - x, p.y - y) < r); }
 function crowdNear(e, r) { let n = 0; for (const c of G.crowdList) if (c !== e && dist(c, e) < r) n++; return n; }
 
-// --- Folla pacifica: passeggia attorno alla fontana, si scansa dalla polizia, scappa al megafono
+// --- Peaceful crowd: strolls around the fountain, steps away from police, scatters at the megaphone
 function updateCrowd(e, dt) {
   if (e.fear > 0) { e.fear -= dt; fleeFrom(e, e.fearX, e.fearY, CFG.speed.crowd * 2.2); return; }
   const [p, pd] = nearest(e, G.policeList);
@@ -320,13 +320,13 @@ function updateCrowd(e, dt) {
   wander(e, dt, CFG.speed.crowd);
 }
 
-// --- Facinoroso IA: macchina a stati blend → seek → attack, con fuga se riconosciuto
+// --- AI troublemaker: state machine blend → seek → attack, flees when recognized
 function pickTarget(e) {
   let best = null, bs = Infinity;
   for (const o of G.objs) {
     if (o.hp <= 0) continue;
     const c = { x: o.x + o.w / 2, y: o.y + o.h / 2 };
-    if (holdingNear(c.x, c.y, 80)) continue;          // il cordone protegge l'area
+    if (holdingNear(c.x, c.y, 80)) continue;          // the cordon protects the area
     const cops = G.policeList.filter(p => dist(p, c) < 130).length;
     const s = dist(e, c) + cops * 250 + rand(0, 140) - o.value * 0.05;
     if (s < bs) { bs = s; best = o; }
@@ -345,7 +345,7 @@ function updateRioterAI(e, dt) {
       e.timer -= dt;
       if (e.timer <= 0) { e.state = 'blend'; e.timer = rand(3, 6); }
       break;
-    case 'blend':                                     // si confonde tra la folla
+    case 'blend':                                     // blends into the crowd
       wander(e, dt, CFG.speed.crowd * 1.1);
       e.timer -= dt;
       if (e.timer <= 0) {
@@ -374,7 +374,7 @@ function updateRioterAI(e, dt) {
   }
 }
 
-// --- Squadra di polizia (modalità Polizia): esegue gli ordini del comandante e insegue chi è riconoscibile
+// --- Police squad (Police mode): follows the commander and chases anyone recognizable
 function updateSquad(e, dt) {
   const cmd = G.player, sp = CFG.speed.police;
   if (e.order !== 'cordon') {
@@ -397,7 +397,7 @@ function updateSquad(e, dt) {
   }
 }
 
-// --- Polizia IA (modalità Manifestante): insegue i sospetti "ricercati", altrimenti pattuglia
+// --- AI police (Protester mode): chases "wanted" suspects, otherwise patrols
 function updatePoliceAI(e, dt) {
   const sp = CFG.speed.police;
   let best = null, bs = Infinity;
@@ -411,7 +411,7 @@ function updatePoliceAI(e, dt) {
   if (e.jT <= 0) { e.jT = 3; e.jx = rand(-60, 60); e.jy = rand(-50, 50); }
   if (best) {
     if (best.seenNow) moveToward(e, best.x, best.y, sp * 1.15);
-    else moveToward(e, best.lastX + e.jx, best.lastY + e.jy, sp);   // cerca attorno all'ultima posizione nota
+    else moveToward(e, best.lastX + e.jx, best.lastY + e.jy, sp);   // searches around the last known position
     return;
   }
   e.timer -= dt;
@@ -424,7 +424,7 @@ function updatePoliceAI(e, dt) {
   moveToward(e, e.tx, e.ty, sp * 0.8);
 }
 
-// "Radio" della polizia: chi danneggia viene segnalato; nascondersi nella folla fa perdere le tracce.
+// Police "radio": vandals get reported; hiding in the crowd makes them lose the trail.
 function updateIntel(dt) {
   for (const s of G.rioterList) {
     if (s.arrested) continue;
@@ -449,19 +449,19 @@ function readMove() {
   return (x || y) ? norm(x, y) : { x: 0, y: 0 };
 }
 
-// --- Giocatore Polizia: comandante con squadra
+// --- Police player: commander with a squad
 function controlCommander(e) {
   const m = readMove();
   e.vx = m.x * CFG.speed.commander; e.vy = m.y * CFG.speed.commander;
   const squad = G.policeList.filter(p => !p.isPlayer);
-  if (mouse.clicked) {                                   // invia la squadra al punto cliccato
+  if (mouse.clicked) {                                   // send the squad to the clicked point
     squad.forEach((p, i) => {
       const a = i / squad.length * Math.PI * 2;
       Object.assign(p, { order: 'move', tx: mouse.x + Math.cos(a) * 20, ty: mouse.y + Math.sin(a) * 20, pursue: null });
     });
     G.rings.push({ x: mouse.x, y: mouse.y, r: 4, max: 24, life: 0.4, color: COL.shield });
   }
-  if (pressed.KeyQ) {                                    // cordone: linea perpendicolare alla direzione comandante→mouse
+  if (pressed.KeyQ) {                                    // cordon: a line perpendicular to the commander→mouse direction
     const d = norm(mouse.x - e.x, mouse.y - e.y), pp = { x: -d.y, y: d.x };
     squad.forEach((p, i) => {
       const k = (i - (squad.length - 1) / 2) * 20;
@@ -469,7 +469,7 @@ function controlCommander(e) {
     });
   }
   if (pressed.KeyR) squad.forEach(p => { p.order = 'follow'; p.pursue = null; });
-  if ((pressed.Space || pressed.KeyF) && G.megaCD <= 0) { // megafono: disperde chi è vicino
+  if ((pressed.Space || pressed.KeyF) && G.megaCD <= 0) { // megaphone: scatters anyone nearby
     G.megaCD = CFG.megaphoneCD;
     G.rings.push({ x: e.x, y: e.y, r: 10, max: CFG.megaphoneR, life: 0.6, color: COL.accent });
     for (const t of G.ents) {
@@ -480,7 +480,7 @@ function controlCommander(e) {
   }
 }
 
-// --- Giocatore Manifestante
+// --- Protester player
 function controlRioter(e, dt) {
   const m = readMove();
   const sprinting = (keys.ShiftLeft || keys.ShiftRight) && e.stamina > 0.05 && (m.x || m.y);
@@ -501,13 +501,13 @@ function nearestObjInReach(e) {
   return best;
 }
 
-/* ---------- 6. FISICA ---------- */
+/* ---------- 6. PHYSICS ---------- */
 function resolveRect(e, o) {
   const c = closestOnRect(e.x, e.y, o);
   const dx = e.x - c.x, dy = e.y - c.y, d = Math.hypot(dx, dy);
   if (d >= e.r) return;
   if (d > 0) { const k = (e.r - d) / d; e.x += dx * k; e.y += dy * k; return; }
-  // centro dentro il rettangolo: esci dal lato più vicino
+  // center inside the rectangle: push out through the nearest side
   const l = e.x - o.x, r = o.x + o.w - e.x, t = e.y - o.y, b = o.y + o.h - e.y, mn = Math.min(l, r, t, b);
   if (mn === l) e.x = o.x - e.r; else if (mn === r) e.x = o.x + o.w + e.r; else if (mn === t) e.y = o.y - e.r; else e.y = o.y + o.h + e.r;
 }
@@ -519,7 +519,7 @@ function collide(e) {
 }
 function integrate(e, dt) {
   let vx = e.vx, vy = e.vy;
-  if (e.detour > 0) {                                     // aggira un ostacolo se bloccato
+  if (e.detour > 0) {                                     // steer around an obstacle when stuck
     e.detour -= dt;
     const s = Math.hypot(vx, vy);
     vx = vx * 0.3 + e.dx * s; vy = vy * 0.3 + e.dy * s;
@@ -549,7 +549,7 @@ function separate() {
     }
   }
 }
-// Il cordone respinge civili e facinorosi entro un raggio: funziona come un muro mobile.
+// The cordon pushes back civilians and troublemakers within a radius: a moving wall.
 function cordonRepel() {
   for (const h of G.policeList) {
     if (!h.holding) continue;
@@ -561,7 +561,7 @@ function cordonRepel() {
   }
 }
 
-/* ---------- 7. FERMI, FINE PARTITA, PUNTEGGIO ---------- */
+/* ---------- 7. ARRESTS, GAME OVER, SCORING ---------- */
 function updateArrests(dt) {
   for (const t of G.ents) {
     if (t.kind === 'police' || t.arrested) continue;
@@ -569,7 +569,7 @@ function updateArrests(dt) {
     for (const p of G.policeList) {
       if (dist(p, t) > p.r + t.r + 6) continue;
       if (p.isPlayer) { if (t === G.cmdTarget) n += 1.5; continue; }
-      if (t.kind === 'crowd') continue;                          // gli agenti IA non fermano i pacifici
+      if (t.kind === 'crowd') continue;                          // AI officers never arrest peaceful protesters
       if (G.mode === 'police' && t.revealed <= 0 && p.pursue !== t) continue;
       if (G.mode === 'rioter' && t.wanted <= 0) continue;
       n += 1;
@@ -583,14 +583,14 @@ function arrest(t) {
   Object.assign(t, { arrested: true, ghost: true, arrestProg: 1, vx: 0, vy: 0 });
   if (t.kind === 'rioter') {
     if (!t.isPlayer) G.arrests++;
-    addText(t.x, t.y - 14, 'FERMATO', COL.accent);
+    addText(t.x, t.y - 14, 'DETAINED', COL.accent);
   } else {
     G.wrong++;
-    addText(t.x, t.y - 14, 'Fermo ingiustificato −150', COL.danger);
+    addText(t.x, t.y - 14, 'Wrongful arrest −150', COL.danger);
   }
-  if (t.isPlayer) endGame(false, 'Sei stato fermato dalla polizia.');
+  if (t.isPlayer) endGame(false, 'You were detained by the police.');
 }
-function escort(e, dt) {                                // i fermati vengono accompagnati al furgone
+function escort(e, dt) {                                // detainees are escorted to the van
   if (moveToward(e, VAN.x, VAN.y, 55)) e.remove = true;
   e.x += e.vx * dt; e.y += e.vy * dt;
 }
@@ -598,11 +598,11 @@ function escort(e, dt) {                                // i fermati vengono acc
 function checkEnd() {
   if (G.mode === 'police') {
     const free = G.rioterList.filter(r => !r.arrested).length;
-    if (free === 0) endGame(true, 'Ordine ristabilito: tutti i facinorosi sono stati fermati.');
-    else if (damagePct() >= CFG.police.maxDamagePct) endGame(false, `I danni hanno superato il ${CFG.police.maxDamagePct}%: la piazza è fuori controllo.`);
-    else if (G.time <= 0) endGame(false, `Tempo scaduto: ${free} facinorosi ancora liberi.`);
+    if (free === 0) endGame(true, 'Order restored: every troublemaker has been detained.');
+    else if (damagePct() >= CFG.police.maxDamagePct) endGame(false, `Damage passed ${CFG.police.maxDamagePct}%: the square is out of control.`);
+    else if (G.time <= 0) endGame(false, `Time's up: ${free} troublemakers still at large.`);
   } else if (G.time <= 0) {
-    endGame(true, 'Tempo scaduto: sei riuscito a dileguarti tra la folla.');
+    endGame(true, "Time's up: you slipped away into the crowd.");
   }
 }
 function endGame(win, reason) {
@@ -614,34 +614,34 @@ function endGame(win, reason) {
     const timeBonus = win ? G.time * 5 : 0;
     score = Math.max(0, Math.round(G.arrests * 150 + kept + timeBonus - G.wrong * 150));
     lines = [
-      ['Facinorosi fermati', `${G.arrests} / ${CFG.police.rioters}  (+${G.arrests * 150})`],
-      ['Danni contenuti', `${dmg.toFixed(1)}%  (+${Math.round(kept)})`],
-      ['Tempo residuo', `${Math.ceil(G.time)} s  (+${Math.round(timeBonus)})`],
-      ['Fermi ingiustificati', `${G.wrong}  (−${G.wrong * 150})`],
+      ['Troublemakers detained', `${G.arrests} / ${CFG.police.rioters}  (+${G.arrests * 150})`],
+      ['Damage kept down', `${dmg.toFixed(1)}%  (+${Math.round(kept)})`],
+      ['Time left', `${Math.ceil(G.time)} s  (+${Math.round(timeBonus)})`],
+      ['Wrongful arrests', `${G.wrong}  (−${G.wrong * 150})`],
     ];
   } else {
     const base = Math.round(G.playerDamage);
     score = win ? Math.round(base * 1.5) : base;
     lines = [
-      ['Danni causati da te', euro(base)],
-      ['Danni totali in piazza', `${dmg.toFixed(1)}%`],
-      ['Bonus fuga', win ? '×1,5' : '—'],
-      ['Agenti in piazza', String(G.policeList.length)],
+      ['Damage you caused', euro(base)],
+      ['Total damage to the square', `${dmg.toFixed(1)}%`],
+      ['Escape bonus', win ? '×1.5' : '—'],
+      ['Officers on the square', String(G.policeList.length)],
     ];
   }
   let best = 0;
   try {
-    const k = 'piazzaCalda.best.' + G.mode;
+    const k = 'piazzaPanic.best.' + G.mode;
     best = Number(localStorage.getItem(k)) || 0;
     if (score > best) { localStorage.setItem(k, String(score)); }
-  } catch (_) { /* storage non disponibile: nessun record */ }
+  } catch (_) { /* storage unavailable: no high score */ }
   G.result = { win, reason, score, lines, best, record: score > best };
-  G.ending = 1.2;                                        // breve pausa prima della schermata finale
+  G.ending = 1.2;                                        // short pause before the end screen
 }
 
 function addText(x, y, text, color) { G.texts.push({ x, y, text, color, life: 1.4 }); }
 
-/* ---------- AGGIORNAMENTO PRINCIPALE ---------- */
+/* ---------- MAIN UPDATE ---------- */
 function update(dt) {
   refreshLists();
   if (G.ending) { G.ending -= dt; if (G.ending <= 0) { G.ending = 0; G.screen = 'end'; } }
@@ -651,12 +651,12 @@ function update(dt) {
   if (G.mode === 'rioter') {
     G.reinforceT += dt;
     if (G.reinforceT >= CFG.rioter.reinforceEvery && G.policeList.length < CFG.rioter.maxPolice) {
-      G.reinforceT = 0; spawnOfficer(); addText(VAN.x + 40, VAN.y - 40, 'Rinforzi!', COL.shield);
+      G.reinforceT = 0; spawnOfficer(); addText(VAN.x + 40, VAN.y - 40, 'Backup!', COL.shield);
     }
     updateIntel(dt);
   }
 
-  // Bersaglio del fermo del comandante (tieni premuto E vicino a qualcuno)
+  // Commander arrest target (hold E next to someone)
   G.cmdTarget = null;
   if (G.mode === 'police' && keys.KeyE && !G.ending) {
     const [t, d] = nearest(G.player, G.ents, o => o.kind !== 'police' && !o.arrested);
@@ -715,13 +715,13 @@ function drawBuildings() {
     for (let i = 0; i < 11; i++) {
       ctx.fillStyle = COL.roofs[(i + (isTop ? 0 : 2)) % COL.roofs.length];
       ctx.fillRect(i * 92 - 16, y0, 92, h);
-      ctx.fillStyle = 'rgba(0,0,0,0.18)';                       // colmo del tetto
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';                       // roof ridge
       ctx.fillRect(i * 92 - 16, isTop ? y0 + 18 : y0 + h - 22, 92, 4);
     }
   }
   for (const o of G.objs) {
-    if (o.type !== 'vetrina') continue;
-    const top = o.y < TOP, ay = top ? o.y - 16 : o.y + o.h;   // tenda sopra/sotto la vetrina
+    if (o.type !== 'window') continue;
+    const top = o.y < TOP, ay = top ? o.y - 16 : o.y + o.h;   // awning above/below the shop window
     ctx.fillStyle = o.awning; ctx.fillRect(o.x - 4, ay, o.w + 8, 16);
     ctx.fillStyle = 'rgba(255,255,255,0.22)';
     for (let k = 0; k < o.w + 8; k += 12) ctx.fillRect(o.x - 4 + k, ay, 6, 16);
@@ -731,7 +731,7 @@ function drawBuildings() {
 
 function drawWalls() {
   for (const w of G.walls) {
-    if (w.kind === 'fontana') {
+    if (w.kind === 'fountain') {
       ctx.fillStyle = '#bdb6a6'; ctx.beginPath(); ctx.arc(480, 320, 42, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#4f9bc4'; ctx.beginPath(); ctx.arc(480, 320, 34, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#bdb6a6'; ctx.beginPath(); ctx.arc(480, 320, 8, 0, Math.PI * 2); ctx.fill();
@@ -754,46 +754,46 @@ function drawObj(o) {
   if (o.shake > 0) ctx.translate(rand(-1.5, 1.5), rand(-1, 1));
   const { x, y, w, h } = o;
   switch (o.type) {
-    case 'vetrina':
+    case 'window':
       ctx.fillStyle = dead ? '#2b3036' : '#8fd3ea'; ctx.fillRect(x, y, w, h);
       if (!dead) { ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fillRect(x + 6, y + 2, 10, 2); }
       break;
-    case 'auto':
+    case 'car':
       ctx.fillStyle = dead ? '#5a5650' : o.color; ctx.fillRect(x, y, w, h);
       ctx.fillStyle = dead ? '#333' : '#1f2a36'; ctx.fillRect(x + 14, y + 4, 10, h - 8); ctx.fillRect(x + w - 18, y + 4, 8, h - 8);
       ctx.fillStyle = '#151515';
       for (const [wx, wy] of [[x + 8, y - 2], [x + w - 16, y - 2], [x + 8, y + h - 2], [x + w - 16, y + h - 2]]) ctx.fillRect(wx, wy, 8, 4);
       break;
-    case 'panchina':
+    case 'bench':
       ctx.fillStyle = dead ? '#5b4630' : '#a0703c'; ctx.fillRect(x, y, w, h);
       ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(x, y + 4, w, 2); ctx.fillRect(x, y + 9, w, 2);
       break;
-    case 'cassonetto':
+    case 'bin':
       ctx.fillStyle = dead ? '#2c4a31' : '#3a8f4a'; ctx.fillRect(x, y, w, h);
       ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x, y, w, 4);
       break;
-    case 'lampione':
+    case 'lamp':
       ctx.fillStyle = '#3b3b3b'; ctx.fillRect(x, y, w, h);
       if (!dead) { ctx.fillStyle = 'rgba(255,230,140,0.25)'; ctx.beginPath(); ctx.arc(x + 5, y + 5, 16, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#ffe48a'; ctx.fillRect(x + 2, y + 2, 6, 6); }
       break;
-    case 'fioriera':
+    case 'planter':
       ctx.fillStyle = '#7a6656'; ctx.fillRect(x, y, w, h);
       ctx.fillStyle = dead ? '#5a4a3a' : '#5d9a45'; ctx.fillRect(x + 3, y + 3, w - 6, h - 6);
       if (!dead) { ctx.fillStyle = '#e86a8a'; ctx.fillRect(x + 7, y + 6, 4, 4); ctx.fillRect(x + 18, y + 9, 4, 4); }
       break;
-    case 'edicola':
+    case 'kiosk':
       ctx.fillStyle = dead ? '#3a4a52' : '#4c7a8c'; ctx.fillRect(x, y, w, h);
       ctx.fillStyle = dead ? '#555' : '#f0e6c8'; ctx.fillRect(x + 4, y + h - 12, w - 8, 8);
-      text('EDICOLA', x + w / 2, y + 12, 9, '#fff', 'center', 'bold');
+      text('NEWS', x + w / 2, y + 12, 9, '#fff', 'center', 'bold');
       break;
-    case 'pensilina':
+    case 'shelter':
       ctx.fillStyle = dead ? '#3c4248' : 'rgba(170,220,240,0.85)'; ctx.fillRect(x, y, w, h);
       ctx.fillStyle = '#556'; ctx.fillRect(x, y, w, 3);
       text('BUS 7', x + w / 2, y + 11, 8, '#223', 'center', 'bold');
       break;
   }
-  // crepe proporzionali al danno; detriti quando è distrutto
+  // cracks grow with damage; debris once destroyed
   if (dmg > 0) {
     ctx.strokeStyle = dead ? 'rgba(0,0,0,0.6)' : 'rgba(30,30,30,0.7)'; ctx.lineWidth = 1;
     const n = dead ? 5 : Math.ceil(dmg * 4);
@@ -815,7 +815,7 @@ function drawEnt(e) {
   ctx.save();
   if (e.arrested) ctx.globalAlpha = 0.6;
   const showRed = e.kind === 'rioter' && (e.revealed > 0 || (G.mode === 'rioter' && e.wanted > 0 && !e.isPlayer));
-  if (showRed) {                                          // anello rosso: facinoroso riconoscibile
+  if (showRed) {                                          // red ring: recognizable troublemaker
     ctx.strokeStyle = COL.danger; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 4, 0, Math.PI * 2); ctx.stroke();
   }
@@ -825,7 +825,7 @@ function drawEnt(e) {
     ctx.beginPath(); ctx.arc(e.x, e.y, (e.r + 7) * p, 0, Math.PI * 2); ctx.stroke();
     ctx.fillStyle = COL.accent; ctx.beginPath(); ctx.moveTo(e.x - 5, e.y - 22); ctx.lineTo(e.x + 5, e.y - 22); ctx.lineTo(e.x, e.y - 16); ctx.fill();
   }
-  if (e.sign && e.kind === 'crowd') {                     // cartello di protesta (generico)
+  if (e.sign && e.kind === 'crowd') {                     // protest sign (generic)
     ctx.fillStyle = '#6b4a2a'; ctx.fillRect(e.x + 5, e.y - 12, 2, 10);
     ctx.fillStyle = '#f7f3e8'; ctx.fillRect(e.x - 1, e.y - 18, 14, 8);
     ctx.fillStyle = '#c44536'; ctx.fillRect(e.x + 1, e.y - 15, 10, 2);
@@ -833,10 +833,10 @@ function drawEnt(e) {
   ctx.fillStyle = e.arrested ? '#8a8a8a' : e.color;
   ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 1.5; ctx.stroke();
-  // testa (o casco/cappello per la polizia), spostata nella direzione di marcia
+  // head (cap for police), shifted toward the walking direction
   ctx.fillStyle = e.kind === 'police' ? COL.policeCap : e.isPlayer ? '#2b2b2b' : '#f0d2b0';
   ctx.beginPath(); ctx.arc(e.x + e.fx * 2, e.y + e.fy * 2, e.r * 0.5, 0, Math.PI * 2); ctx.fill();
-  if (e.holding) {                                        // scudo in posizione di cordone
+  if (e.holding) {                                        // shield raised in cordon position
     const px = -e.fy, py = e.fx;
     ctx.strokeStyle = COL.shield; ctx.lineWidth = 4;
     ctx.beginPath();
@@ -844,10 +844,10 @@ function drawEnt(e) {
     ctx.lineTo(e.x + e.fx * 9 + px * 9, e.y + e.fy * 9 + py * 9);
     ctx.stroke();
   }
-  if (e.arrested) {                                       // icona "fermato": due anelli
+  if (e.arrested) {                                       // "detained" icon: two rings
     ctx.strokeStyle = '#ddd'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(e.x - 3, e.y - 12, 2.5, 0, Math.PI * 2); ctx.arc(e.x + 3, e.y - 12, 2.5, 0, Math.PI * 2); ctx.stroke();
-  } else if (e.arrestProg > 0.02) {                       // barra di avanzamento del fermo
+  } else if (e.arrestProg > 0.02) {                       // arrest progress arc
     ctx.strokeStyle = COL.accent; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 8, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * e.arrestProg); ctx.stroke();
   }
@@ -861,11 +861,11 @@ function drawWorld() {
   for (const o of G.objs) drawObj(o);
   const pl = G.player;
   if (G.screen === 'play' && pl && G.mode === 'rioter' && pl.reachObj && !pl.arrested) {
-    const o = pl.reachObj;                                // evidenzia l'oggetto a portata
+    const o = pl.reachObj;                                // highlight the object in reach
     ctx.strokeStyle = COL.accent; ctx.lineWidth = 2; ctx.setLineDash([4, 3]);
     ctx.strokeRect(o.x - 3, o.y - 3, o.w + 6, o.h + 6); ctx.setLineDash([]);
   }
-  if (G.screen === 'play' && G.mode === 'police' && pl) {   // anteprima del cordone
+  if (G.screen === 'play' && G.mode === 'police' && pl) {   // cordon preview
     if (keys.KeyQ) {
       ctx.strokeStyle = 'rgba(201,214,232,0.6)'; ctx.setLineDash([6, 6]);
       const d = norm(mouse.x - pl.x, mouse.y - pl.y), pp = { x: -d.y, y: d.x }, k = (CFG.police.squad - 1) * 10;
@@ -896,54 +896,54 @@ function bar(x, y, w, h, frac, color, back = 'rgba(255,255,255,0.12)') {
 function drawHUD() {
   ctx.fillStyle = COL.hud; ctx.fillRect(0, 0, W, 34); ctx.fillRect(0, H - 28, W, 28);
   const isPol = G.mode === 'police';
-  text(isPol ? 'POLIZIA' : 'MANIFESTANTE', 12, 17, 13, isPol ? '#8fb4ff' : COL.accent, 'left', 'bold');
+  text(isPol ? 'POLICE' : 'PROTESTER', 12, 17, 13, isPol ? '#8fb4ff' : COL.accent, 'left', 'bold');
   const t = Math.ceil(G.time), mm = Math.floor(t / 60), ss = String(t % 60).padStart(2, '0');
   text(`${mm}:${ss}`, 150, 17, 16, G.time < 20 ? COL.danger : COL.text, 'left', 'bold');
 
-  // indicatore danni alla piazza
+  // damage meter for the square
   const pct = damagePct();
-  text('DANNI', 220, 17, 11, COL.muted);
+  text('DAMAGE', 220, 17, 11, COL.muted);
   bar(266, 10, 220, 14, pct / 100, pct > 45 ? COL.danger : '#e0a03a');
   if (isPol) { const mx = 266 + 220 * CFG.police.maxDamagePct / 100; ctx.fillStyle = '#fff'; ctx.fillRect(mx, 6, 2, 22); }
   text(`${pct.toFixed(1)}%  ${euro(damageValue())}`, 494, 17, 11, COL.text);
 
   if (isPol) {
     const free = G.rioterList.filter(r => !r.arrested).length;
-    text(`Facinorosi liberi ${free}/${CFG.police.rioters}`, 640, 17, 11, COL.text);
-    text(G.megaCD > 0 ? `Megafono ${G.megaCD.toFixed(1)}s` : 'Megafono pronto', 830, 17, 11, G.megaCD > 0 ? COL.muted : COL.accent);
+    text(`Troublemakers free ${free}/${CFG.police.rioters}`, 640, 17, 11, COL.text);
+    text(G.megaCD > 0 ? `Megaphone ${G.megaCD.toFixed(1)}s` : 'Megaphone ready', 830, 17, 11, G.megaCD > 0 ? COL.muted : COL.accent);
   } else {
     const p = G.player;
-    text(`Bottino ${euro(G.playerDamage)}`, 640, 17, 11, COL.accent, 'left', 'bold');
-    text('FIATO', 770, 12, 9, COL.muted); bar(770, 19, 60, 6, p.stamina, '#8fd3ea');
-    const status = p.wanted > 0 ? (p.seenNow ? ['RICERCATO', COL.danger] : ['TRACCE PERSE?', '#e0a03a'])
-                 : p.hidden ? ['NASCOSTO', COL.ok] : ['IN VISTA', COL.text];
+    text(`Your damage ${euro(G.playerDamage)}`, 640, 17, 11, COL.accent, 'left', 'bold');
+    text('STAMINA', 760, 12, 9, COL.muted); bar(770, 19, 60, 6, p.stamina, '#8fd3ea');
+    const status = p.wanted > 0 ? (p.seenNow ? ['WANTED', COL.danger] : ['TRAIL LOST?', '#e0a03a'])
+                 : p.hidden ? ['HIDDEN', COL.ok] : ['VISIBLE', COL.text];
     text(status[0], 948, 17, 11, status[1], 'right', 'bold');
   }
   const help = isPol
-    ? 'WASD muovi · Clic: invia squadra · Q: cordone verso il mouse · R: squadra con te · Spazio: megafono · E (tieni): ferma'
-    : 'WASD muovi · Shift: corri · Spazio/clic vicino a un oggetto: danneggia · Stai tra la folla per far perdere le tracce';
+    ? 'WASD move · Click: send squad · Q: cordon at mouse · R: squad to you · Space: megaphone · Hold E: arrest'
+    : 'WASD move · Shift: run · Space/click near an object: damage it · Stay in the crowd to lose the police';
   text(help, W / 2, H - 14, 11, COL.muted, 'center');
   if (G.paused) {
     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 34, W, H - 62);
-    text('PAUSA', W / 2, H / 2, 40, COL.text, 'center', 'bold');
-    text('P per riprendere · Esc per il menu', W / 2, H / 2 + 36, 13, COL.muted, 'center');
+    text('PAUSED', W / 2, H / 2, 40, COL.text, 'center', 'bold');
+    text('P to resume · Esc for the menu', W / 2, H / 2 + 36, 13, COL.muted, 'center');
   }
 }
 
 const CARDS = [
-  { mode: 'police', x: 150, y: 230, w: 310, h: 290, key: '1', title: 'POLIZIA', color: '#8fb4ff',
-    lines: ['Comandi una squadra di 6 agenti.', '', 'Obiettivo: fermare i 6 facinorosi', 'nascosti nella folla entro 3:00,', 'con danni sotto il 60%.', '', 'Cordoni, megafono e fermi.', 'Attenzione: fermare un pacifico', 'costa punti.'] },
-  { mode: 'rioter', x: 500, y: 230, w: 310, h: 290, key: '2', title: 'MANIFESTANTE', color: COL.accent,
-    lines: ['Sei un facinoroso nel corteo.', '', 'Obiettivo: causare più danni', 'possibili agli arredi in 2:30', 'senza farti fermare.', '', 'Chi colpisce diventa riconoscibile:', 'torna nella folla per sparire.', 'Arrivano rinforzi ogni 25 s.'] },
+  { mode: 'police', x: 150, y: 230, w: 310, h: 290, key: '1', title: 'POLICE', color: '#8fb4ff',
+    lines: ['You command a squad of 6 officers.', '', 'Goal: detain the 6 troublemakers', 'hiding in the crowd within 3:00,', 'keeping damage under 60%.', '', 'Cordons, megaphone and arrests.', 'Careful: arresting a peaceful', 'protester costs points.'] },
+  { mode: 'rioter', x: 500, y: 230, w: 310, h: 290, key: '2', title: 'PROTESTER', color: COL.accent,
+    lines: ['You are a troublemaker in the march.', '', 'Goal: cause as much damage to', 'street furniture as you can in 2:30', 'without getting detained.', '', 'Hitting things makes you stand out:', 'slip back into the crowd to vanish.', 'Police backup arrives every 25 s.'] },
 ];
 
 function drawMenu() {
   drawWorld();
   ctx.fillStyle = 'rgba(12,13,17,0.78)'; ctx.fillRect(0, 0, W, H);
-  text('PIAZZA CALDA', W / 2, 92, 52, COL.text, 'center', 'bold');
-  text('Valdoria · Piazza del Mercato Vecchio · ore 17:00', W / 2, 140, 14, COL.muted, 'center');
-  text('Il Comitato delle Lanterne protesta contro la chiusura del mercato coperto.', W / 2, 168, 13, COL.muted, 'center');
-  text('Scegli da che parte stare', W / 2, 202, 14, COL.text, 'center', 'bold');
+  text('PIAZZA PANIC', W / 2, 92, 52, COL.text, 'center', 'bold');
+  text('Valdoria · Old Market Square · 5:00 pm', W / 2, 140, 14, COL.muted, 'center');
+  text('The Lantern Committee is protesting the closure of the covered market.', W / 2, 168, 13, COL.muted, 'center');
+  text('Pick a side', W / 2, 202, 14, COL.text, 'center', 'bold');
   G.hoverCard = -1;
   CARDS.forEach((c, i) => {
     const hover = mouse.x > c.x && mouse.x < c.x + c.w && mouse.y > c.y && mouse.y < c.y + c.h;
@@ -951,16 +951,16 @@ function drawMenu() {
     ctx.fillStyle = hover ? 'rgba(40,44,54,0.98)' : 'rgba(28,31,38,0.95)';
     ctx.fillRect(c.x, c.y, c.w, c.h);
     ctx.strokeStyle = hover ? c.color : '#3a3e48'; ctx.lineWidth = 2; ctx.strokeRect(c.x, c.y, c.w, c.h);
-    // icona
+    // icon
     ctx.fillStyle = c.mode === 'police' ? COL.police : '#f4f1e8';
     ctx.beginPath(); ctx.arc(c.x + 34, c.y + 36, 12, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = c.mode === 'police' ? COL.policeCap : '#2b2b2b';
     ctx.beginPath(); ctx.arc(c.x + 34, c.y + 36, 6, 0, Math.PI * 2); ctx.fill();
     text(c.title, c.x + 58, c.y + 36, 20, c.color, 'left', 'bold');
     c.lines.forEach((l, k) => text(l, c.x + 20, c.y + 74 + k * 20, 12, COL.text));
-    text(`Premi ${c.key} o clicca`, c.x + c.w / 2, c.y + c.h - 18, 12, hover ? c.color : COL.muted, 'center', 'bold');
+    text(`Press ${c.key} or click`, c.x + c.w / 2, c.y + c.h - 18, 12, hover ? c.color : COL.muted, 'center', 'bold');
   });
-  text('Città, gruppi e motivazioni sono inventati. Il danno riguarda solo oggetti: nessuna persona viene ferita.', W / 2, 568, 11, COL.muted, 'center');
+  text('The town, groups and causes are made up. Only objects take damage: nobody gets hurt.', W / 2, 568, 11, COL.muted, 'center');
 }
 
 function drawEnd() {
@@ -969,20 +969,20 @@ function drawEnd() {
   const r = G.result, x = 230, y = 130, w = 500, h = 380;
   ctx.fillStyle = 'rgba(28,31,38,0.97)'; ctx.fillRect(x, y, w, h);
   ctx.strokeStyle = r.win ? COL.ok : COL.danger; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
-  text(r.win ? 'VITTORIA' : 'SCONFITTA', W / 2, y + 44, 34, r.win ? COL.ok : COL.danger, 'center', 'bold');
+  text(r.win ? 'VICTORY' : 'DEFEAT', W / 2, y + 44, 34, r.win ? COL.ok : COL.danger, 'center', 'bold');
   text(r.reason, W / 2, y + 84, 13, COL.text, 'center');
   r.lines.forEach(([k, v], i) => {
     text(k, x + 50, y + 130 + i * 28, 13, COL.muted);
     text(v, x + w - 50, y + 130 + i * 28, 13, COL.text, 'right', 'bold');
   });
   ctx.fillStyle = '#3a3e48'; ctx.fillRect(x + 50, y + 244, w - 100, 1);
-  text('PUNTEGGIO', x + 50, y + 274, 14, COL.text, 'left', 'bold');
-  text(r.score.toLocaleString('it-IT'), x + w - 50, y + 274, 26, COL.accent, 'right', 'bold');
-  text(r.record ? 'Nuovo record per questa fazione!' : `Record: ${r.best.toLocaleString('it-IT')}`, W / 2, y + 312, 12, r.record ? COL.accent : COL.muted, 'center');
-  text('Invio o clic per tornare al menu', W / 2, y + h - 24, 12, COL.muted, 'center');
+  text('SCORE', x + 50, y + 274, 14, COL.text, 'left', 'bold');
+  text(r.score.toLocaleString('en-US'), x + w - 50, y + 274, 26, COL.accent, 'right', 'bold');
+  text(r.record ? 'New high score for this side!' : `Best: ${r.best.toLocaleString('en-US')}`, W / 2, y + 312, 12, r.record ? COL.accent : COL.muted, 'center');
+  text('Press Enter or click to return to the menu', W / 2, y + h - 24, 12, COL.muted, 'center');
 }
 
-/* ---------- 9. LOOP PRINCIPALE ---------- */
+/* ---------- 9. MAIN LOOP ---------- */
 function handleScreens() {
   if (G.screen === 'menu') {
     if (pressed.Digit1 || pressed.Numpad1) startGame('police');
@@ -996,7 +996,7 @@ function handleScreens() {
   }
 }
 
-// Scena di sfondo del menu: piazza intatta con una folla che passeggia
+// Menu background: an undamaged square with a strolling crowd
 function menuScene() {
   G.screen = 'menu'; G.mode = null; G.player = null; G.paused = false;
   G.ents = []; G.particles = []; G.texts = []; G.rings = [];

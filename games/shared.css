@@ -1,5 +1,5 @@
-/* Stile comune della Ludoteca: token di colore (chiaro/scuro), barra in alto, bottoni.
-   Ogni gioco lo importa con <link rel="stylesheet" href="shared.css">. */
+/* Shared Playroom styles: color tokens (light/dark), top bar, buttons.
+   Every game imports it with <link rel="stylesheet" href="shared.css">. */
 :root {
   --bg: #f4f5fa;
   --fg: #1c1e2b;

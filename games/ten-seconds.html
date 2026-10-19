@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Dieci Secondi</title>
+<title>Ten Seconds</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="shared.css">
@@ -27,15 +27,15 @@
 </style>
 </head>
 <body>
-<header class="topbar"><a class="back" href="index.html">← La Ludoteca</a><span class="best" id="best"></span></header>
+<header class="topbar"><a class="back" href="index.html">← The Playroom</a><span class="best" id="best"></span></header>
 <main class="stage">
-  <h1 class="game-title">Dieci Secondi</h1>
-  <p class="lead">Avvia il cronometro e fermalo esattamente a 10,00 secondi. Dopo 3 secondi le cifre spariscono: dovrai contare nella testa.</p>
-  <div class="dial"><span class="time" id="time">0,00</span><span class="unit">secondi</span></div>
+  <h1 class="game-title">Ten Seconds</h1>
+  <p class="lead">Start the stopwatch and stop it at exactly 10.00 seconds. After 3 seconds the digits disappear, so you’ll have to count in your head.</p>
+  <div class="dial"><span class="time" id="time">0.00</span><span class="unit">seconds</span></div>
   <p class="verdict" id="verdict"></p>
-  <button class="btn" id="btn">Avvia</button>
-  <p class="hint">Puoi usare anche la barra spaziatrice.</p>
-  <ol class="history" id="history" aria-label="Ultimi tentativi"></ol>
+  <button class="btn" id="btn">Start</button>
+  <p class="hint">You can also use the space bar.</p>
+  <ol class="history" id="history" aria-label="Recent tries"></ol>
 </main>
 <script>
 'use strict';
@@ -43,20 +43,20 @@ const TARGET = 10, VISIBLE_FOR = 3;
 const timeEl = document.getElementById('time'), btn = document.getElementById('btn');
 const verdictEl = document.getElementById('verdict'), historyEl = document.getElementById('history'), bestEl = document.getElementById('best');
 let running = false, t0 = 0, history = [];
-const fmt = s => s.toFixed(2).replace('.', ',');
+const fmt = s => s.toFixed(2);
 
-const BEST_KEY = 'ludoteca.dieci.best';
+const BEST_KEY = 'playroom.tenseconds.best';
 const readBest = () => { try { const v = localStorage.getItem(BEST_KEY); return v === null ? null : Number(v); } catch (_) { return null; } };
-const showBest = () => { const b = readBest(); bestEl.textContent = b === null ? '' : `Record: ±${fmt(b)} s`; };
+const showBest = () => { const b = readBest(); bestEl.textContent = b === null ? '' : `Best: ±${fmt(b)} s`; };
 showBest();
 
 function verdict(err) {
-  if (err < 0.02) return 'Orologio svizzero. Sei un robot?';
-  if (err < 0.1) return 'Quasi perfetto!';
-  if (err < 0.3) return 'Ottimo senso del tempo.';
-  if (err < 0.7) return 'Niente male.';
-  if (err < 1.5) return 'Il tuo orologio interno va regolato.';
-  return 'Per te il tempo è un concetto relativo.';
+  if (err < 0.02) return 'Swiss watch. Are you a robot?';
+  if (err < 0.1) return 'Almost perfect!';
+  if (err < 0.3) return 'Great sense of timing.';
+  if (err < 0.7) return 'Not bad.';
+  if (err < 1.5) return 'Your inner clock needs adjusting.';
+  return 'For you, time is a relative concept.';
 }
 
 function tick() {
@@ -70,7 +70,7 @@ function tick() {
 function toggle() {
   if (!running) {
     running = true; t0 = performance.now();
-    verdictEl.textContent = 'Conta…'; btn.textContent = 'Ferma';
+    verdictEl.textContent = 'Counting…'; btn.textContent = 'Stop';
     requestAnimationFrame(tick);
     return;
   }
@@ -78,7 +78,7 @@ function toggle() {
   const s = (performance.now() - t0) / 1000, d = s - TARGET, err = Math.abs(d);
   timeEl.classList.remove('hidden'); timeEl.textContent = fmt(s);
   verdictEl.innerHTML = `<span class="diff ${err < 0.3 ? 'good' : 'bad'}">${d >= 0 ? '+' : '−'}${fmt(err)} s</span> · ${verdict(err)}`;
-  btn.textContent = 'Riprova';
+  btn.textContent = 'Try again';
   history = [fmt(s) + ' s', ...history].slice(0, 6);
   historyEl.innerHTML = history.map(h => `<li>${h}</li>`).join('');
   const best = readBest();
@@ -87,7 +87,7 @@ function toggle() {
 
 btn.addEventListener('click', toggle);
 addEventListener('keydown', e => {
-  if (e.target === btn) return;                // il bottone gestisce già Spazio da solo
+  if (e.target === btn) return;                // the button already handles Space itself
   if (e.code === 'Space' && !e.repeat) { e.preventDefault(); toggle(); }
 });
 </script>

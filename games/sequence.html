@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Sequenza</title>
+<title>Sequence</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="shared.css">
@@ -38,35 +38,35 @@
 </style>
 </head>
 <body>
-<header class="topbar"><a class="back" href="index.html">← La Ludoteca</a><span class="best" id="best"></span></header>
+<header class="topbar"><a class="back" href="index.html">← The Playroom</a><span class="best" id="best"></span></header>
 <main class="stage">
-  <h1 class="game-title">Sequenza</h1>
-  <p class="lead">Guarda e ascolta la sequenza di colori, poi ripetila nello stesso ordine. Ogni turno si aggiunge un colore.</p>
+  <h1 class="game-title">Sequence</h1>
+  <p class="lead">Watch and listen to the color sequence, then repeat it in the same order. Each round adds one more color.</p>
   <div class="board locked" id="board">
-    <button class="pad" aria-label="Verde">1</button>
-    <button class="pad" aria-label="Rosso">2</button>
-    <button class="pad" aria-label="Giallo">3</button>
-    <button class="pad" aria-label="Blu">4</button>
-    <div class="hub"><b id="level">0</b><span>livello</span></div>
+    <button class="pad" aria-label="Green">1</button>
+    <button class="pad" aria-label="Red">2</button>
+    <button class="pad" aria-label="Yellow">3</button>
+    <button class="pad" aria-label="Blue">4</button>
+    <div class="hub"><b id="level">0</b><span>level</span></div>
   </div>
-  <p class="status" id="status">Pronto?</p>
-  <button class="btn" id="start">Inizia</button>
-  <p class="hint">Tasti 1–4 per i colori. Alza il volume: ogni colore ha la sua nota.</p>
+  <p class="status" id="status">Ready?</p>
+  <button class="btn" id="start">Start</button>
+  <p class="hint">Keys 1–4 for the colors. Turn the sound up: each color has its own note.</p>
 </main>
 <script>
 'use strict';
-const FREQ = [329.63, 261.63, 220.0, 164.81];              // mi, do, la, mi basso
+const FREQ = [329.63, 261.63, 220.0, 164.81];              // E, C, A, low E
 const pads = [...document.querySelectorAll('.pad')];
 const board = document.getElementById('board'), statusEl = document.getElementById('status');
 const levelEl = document.getElementById('level'), startBtn = document.getElementById('start'), bestEl = document.getElementById('best');
 let seq = [], idx = 0, phase = 'idle', ac = null, timers = [];
 
-const BEST_KEY = 'ludoteca.sequenza.best';
+const BEST_KEY = 'playroom.sequence.best';
 const readBest = () => { try { return Number(localStorage.getItem(BEST_KEY)) || 0; } catch (_) { return 0; } };
-const showBest = () => { const b = readBest(); bestEl.textContent = b ? `Record: livello ${b}` : ''; };
+const showBest = () => { const b = readBest(); bestEl.textContent = b ? `Best: level ${b}` : ''; };
 showBest();
 
-// Suono generato al volo con WebAudio (parte solo dopo un clic, come vogliono i browser)
+// Sound generated on the fly with WebAudio (starts only after a click, as browsers require)
 function tone(freq, ms, type = 'sine') {
   try {
     ac = ac || new (window.AudioContext || window.webkitAudioContext)();
@@ -76,7 +76,7 @@ function tone(freq, ms, type = 'sine') {
     g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
     g.gain.exponentialRampToValueAtTime(0.0001, t + ms / 1000);
     o.connect(g).connect(ac.destination); o.start(t); o.stop(t + ms / 1000 + 0.05);
-  } catch (_) { /* audio non disponibile: si gioca solo con i colori */ }
+  } catch (_) { /* no audio available: play with colors only */ }
 }
 function flash(i, ms) {
   pads[i].classList.add('lit'); tone(FREQ[i], ms);
@@ -91,17 +91,17 @@ function start() {
 function next() {
   seq.push(Math.floor(Math.random() * 4));
   levelEl.textContent = seq.length;
-  phase = 'show'; board.classList.add('locked'); statusEl.textContent = 'Guarda…';
-  const step = Math.max(260, 560 - seq.length * 22);       // la sequenza accelera
+  phase = 'show'; board.classList.add('locked'); statusEl.textContent = 'Watch…';
+  const step = Math.max(260, 560 - seq.length * 22);       // the sequence speeds up
   seq.forEach((p, i) => later(() => flash(p, step * 0.7), 500 + i * step));
-  later(() => { phase = 'input'; idx = 0; board.classList.remove('locked'); statusEl.textContent = 'Tocca a te'; }, 500 + seq.length * step);
+  later(() => { phase = 'input'; idx = 0; board.classList.remove('locked'); statusEl.textContent = 'Your turn'; }, 500 + seq.length * step);
 }
 function press(i) {
   if (phase !== 'input') return;
   flash(i, 200);
   if (i !== seq[idx]) return gameOver();
   idx++;
-  if (idx === seq.length) { phase = 'wait'; board.classList.add('locked'); statusEl.textContent = 'Giusto!'; later(next, 750); }
+  if (idx === seq.length) { phase = 'wait'; board.classList.add('locked'); statusEl.textContent = 'Correct!'; later(next, 750); }
 }
 function gameOver() {
   phase = 'over'; board.classList.add('locked');
@@ -109,9 +109,9 @@ function gameOver() {
   const reached = seq.length - 1;
   const best = readBest();
   if (reached > best) { try { localStorage.setItem(BEST_KEY, String(reached)); } catch (_) {} showBest(); }
-  statusEl.textContent = `Sbagliato! Hai completato ${reached} ${reached === 1 ? 'livello' : 'livelli'}${reached > best ? ' · nuovo record' : ''}.`;
-  later(() => flash(seq[idx], 600), 500);                  // mostra quale era il colore giusto
-  startBtn.textContent = 'Rigioca'; startBtn.hidden = false;
+  statusEl.textContent = `Wrong! You completed ${reached} ${reached === 1 ? 'level' : 'levels'}${reached > best ? ' · new best' : ''}.`;
+  later(() => flash(seq[idx], 600), 500);                  // show which color was right
+  startBtn.textContent = 'Play again'; startBtn.hidden = false;
 }
 
 pads.forEach((p, i) => p.addEventListener('pointerdown', e => { e.preventDefault(); press(i); }));

@@ -1,16 +1,16 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>La Ludoteca</title>
+<title>The Playroom</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="shared.css">
 <style>
-  /* Layout: titolo centrato + griglia di schede colorate (3 → 2 → 1 colonne). */
+  /* Layout: centered title + grid of colorful cards (3 → 2 → 1 columns). */
   .hero { text-align: center; padding-block: 56px 32px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
   .hero h1 {
     font-family: var(--font-display); font-weight: 700; margin: 0;
@@ -55,24 +55,24 @@
 </head>
 <body>
 <header class="hero">
-  <h1><span>La</span> <span>Ludo</span><span>teca</span></h1>
-  <p>Giochini e giocattoli da browser. Niente account, niente download: clicca e gioca.</p>
+  <h1><span>The</span> <span>Play</span><span>room</span></h1>
+  <p>Little browser games and toys. No accounts, no downloads: just click and play.</p>
 </header>
 
 <main>
-  <ul class="grid" id="grid" aria-label="Giochi"></ul>
+  <ul class="grid" id="grid" aria-label="Games"></ul>
 </main>
 
-<footer>Fatto a mano con HTML, CSS e JavaScript. Nessuna libreria.</footer>
+<footer>Handmade with HTML, CSS and JavaScript. No libraries.</footer>
 
 <script>
 'use strict';
-/* Elenco dei giochi: per aggiungerne uno basta un nuovo oggetto qui
-   (file della pagina, titolo, descrizione, tipo e disegno della copertina in SVG). */
+/* Game list: to add a game, add one object here
+   (page file, title, description, tag and an SVG cover drawing). */
 const GAMES = [
   {
-    href: 'piazza-calda.html', title: 'Piazza Calda', tag: 'Arcade · tastiera',
-    text: 'Polizia o manifestante in una piazza immaginaria. Si rompono solo oggetti.',
+    href: 'piazza-panic.html', title: 'Piazza Panic', tag: 'Arcade · keyboard',
+    text: 'Police or protester in a made-up town square. Only objects get broken.',
     art: `<rect width="200" height="120" fill="#9a9384"/>
       <g stroke="#a8a192" stroke-width="3" fill="none"><ellipse cx="100" cy="60" rx="70" ry="42"/><ellipse cx="100" cy="60" rx="42" ry="26"/></g>
       <circle cx="100" cy="60" r="14" fill="#4f9bc4" stroke="#bdb6a6" stroke-width="4"/>
@@ -84,23 +84,23 @@ const GAMES = [
       <circle cx="140" cy="78" r="9" fill="none" stroke="#e4572e" stroke-width="2"/>`,
   },
   {
-    href: 'riflessi.html', title: 'Riflessi', tag: 'Sfida · 30 secondi',
-    text: 'Clicca appena diventa verde. Quanti millisecondi ti servono?',
+    href: 'reflexes.html', title: 'Reflexes', tag: 'Challenge · 30 seconds',
+    text: 'Click the moment it turns green. How many milliseconds do you need?',
     art: `<rect width="200" height="120" fill="#2fbf71"/>
       <path d="M110 14 L72 66 H98 L88 106 L130 50 H104 Z" fill="#fff"/>
       <text x="170" y="104" font-family="Fredoka, sans-serif" font-size="18" font-weight="700" fill="#0f5132" text-anchor="end">ms</text>`,
   },
   {
-    href: 'dieci-secondi.html', title: 'Dieci Secondi', tag: 'Sfida · senso del tempo',
-    text: 'Ferma il cronometro a 10,00 secondi. Dopo un po’ però sparisce.',
+    href: 'ten-seconds.html', title: 'Ten Seconds', tag: 'Challenge · timing',
+    text: 'Stop the clock at exactly 10.00 seconds. The digits vanish after 3 seconds.',
     art: `<rect width="200" height="120" fill="#ffcf3f"/>
       <circle cx="100" cy="64" r="40" fill="#fff" stroke="#1c1e2b" stroke-width="6"/>
       <rect x="92" y="12" width="16" height="10" rx="3" fill="#1c1e2b"/>
-      <text x="100" y="73" font-family="Fredoka, sans-serif" font-size="24" font-weight="700" fill="#1c1e2b" text-anchor="middle">10,00</text>`,
+      <text x="100" y="73" font-family="Fredoka, sans-serif" font-size="24" font-weight="700" fill="#1c1e2b" text-anchor="middle">10.00</text>`,
   },
   {
-    href: 'torre.html', title: 'Torre', tag: 'Arcade · un tasto',
-    text: 'Impila i blocchi uno sull’altro. Quello che sporge cade.',
+    href: 'tower.html', title: 'Tower', tag: 'Arcade · one button',
+    text: 'Stack the blocks on top of each other. Whatever hangs over falls off.',
     art: `<rect width="200" height="120" fill="#7cc6fe"/>
       <rect x="50" y="98" width="100" height="14" fill="#5b6ee1"/>
       <rect x="56" y="84" width="88" height="14" fill="#7b5be1"/>
@@ -110,8 +110,8 @@ const GAMES = [
       <rect x="118" y="20" width="62" height="14" fill="#e18a5b"/>`,
   },
   {
-    href: 'sequenza.html', title: 'Sequenza', tag: 'Memoria · audio',
-    text: 'Guarda, ascolta, ripeti. Ogni turno la sequenza si allunga.',
+    href: 'sequence.html', title: 'Sequence', tag: 'Memory · sound',
+    text: 'Watch, listen, repeat. The sequence grows every round.',
     art: `<rect width="200" height="120" fill="#24263a"/>
       <g transform="translate(100 60)">
         <path d="M-4 -4 V-46 A42 42 0 0 0 -46 -4 Z" fill="#2fbf71"/>
@@ -121,8 +121,8 @@ const GAMES = [
       </g>`,
   },
   {
-    href: 'non-premere.html', title: 'Non Premere', tag: 'Giocattolo · 2 minuti',
-    text: 'C’è un bottone. Non premerlo. Davvero.',
+    href: 'dont-press.html', title: 'Don’t Press', tag: 'Toy · 2 minutes',
+    text: 'There is a button. Don’t press it. Really.',
     art: `<rect width="200" height="120" fill="#ffb3c1"/>
       <ellipse cx="100" cy="80" rx="52" ry="18" fill="#7a1f2b"/>
       <ellipse cx="100" cy="66" rx="44" ry="24" fill="#e5484d"/>
@@ -133,7 +133,7 @@ const GAMES = [
 document.getElementById('grid').innerHTML = GAMES.map(g => `
   <li class="card">
     <a href="${g.href}">
-      <svg class="thumb" viewBox="0 0 200 120" role="img" aria-label="Copertina di ${g.title}">${g.art}</svg>
+      <svg class="thumb" viewBox="0 0 200 120" role="img" aria-label="Cover for ${g.title}">${g.art}</svg>
       <div class="meta">
         <h2>${g.title}</h2>
         <p>${g.text}</p>
