@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Piazza Calda</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Layout: un unico "cabinato" centrato; il gioco ha un look scuro fisso (single-theme). */
+  :root {
+    --bg: #14161b;
+    --fg: #e8e4da;
+    --muted: #8d8a82;
+    --accent: #f2c14e;
+    --frame: #2a2d35;
+    --font-ui: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-ui);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding-block: 12px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    box-sizing: border-box;
+  }
+  canvas {
+    display: block;
+    width: min(100%, 960px, calc((100vh - 70px) * 1.5));
+    max-width: 100%;
+    aspect-ratio: 3 / 2;
+    background: #000;
+    border: 2px solid var(--frame);
+    border-radius: 6px;
+    cursor: crosshair;
+    outline: none;
+  }
+  canvas:focus-visible { border-color: var(--accent); }
+  p.note { margin: 0; font-size: 12px; color: var(--muted); text-align: center; max-width: 70ch; }
+</style>
+</head>
+<body>
+<canvas id="game" width="960" height="640" tabindex="0" aria-label="Piazza Calda, gioco arcade"></canvas>
+<p class="note">Valdoria e i suoi gruppi sono inventati. Il danno riguarda solo arredo urbano e oggetti. P = pausa · Esc = menu</p>
+
+<script>
+'use strict';
+/* =====================================================================
+   PIAZZA CALDA — prototipo arcade top-down (HTML5 Canvas, zero librerie)
+   Struttura:
+     1. Configurazione e utilità
+     2. Input
+     3. Mappa e oggetti distruttibili
+     4. Entità e avvio partita
+     5. IA (folla, facinorosi, polizia) e controlli del giocatore
+     6. Fisica (movimento, collisioni, separazione, cordone)
+     7. Fermi, condizioni di fine, punteggio
+     8. Rendering (mondo, HUD, menu, fine partita)
+     9. Loop principale
+   ===================================================================== */
+
+/* ---------- 1. CONFIGURAZIONE ---------- */
+const W = 960, H = 640;
+const TOP = 70, BOTTOM = H - 70;          // facciate dei palazzi sopra e sotto
+const VAN = { x: 60, y: 320 };            // furgone della polizia (spawn e destinazione dei fermati)
+
+const CFG = {
+  police: { time: 180, rioters: 6, squad: 6, crowd: 45, maxDamagePct: 60 },
+  rioter: { time: 150, police: 4, maxPolice: 10, reinforceEvery: 25, aiRioters: 2, crowd: 50 },
+  speed:  { crowd: 34, rioter: 62, police: 60, commander: 84, player: 72, sprint: 118 },
+  playerHit: 10, playerHitCD: 0.35,       // danno e cadenza del manifestante giocatore
+  aiHit: 6, aiHitCD: 0.8,                 // danno e cadenza dei facinorosi IA
+  reach: 14,                              // distanza utile per colpire un oggetto
+  arrestTime: 1.6,                        // secondi di contatto (1 agente) per completare un fermo
+  megaphoneCD: 6, megaphoneR: 150,
+  revealTime: 5,                          // secondi in cui chi danneggia resta "riconoscibile"
+};
+
+const COL = {
+  street: '#3a3d44', streetLine: '#c9c2a8', paving: '#9a9384', pavingLine: '#8b8476', ring: '#a8a192',
+  roofs: ['#5d4a40', '#6b5a4c', '#4f5a61', '#705b48', '#5b4f63'],
+  awnings: ['#b8432f', '#2e7fa3', '#d39a22', '#3f8a58', '#8a4a9a', '#c76a2a'],
+  crowd: ['#e07a5f', '#81b29a', '#f2cc8f', '#c08bd8', '#7fb7d9', '#e6a1b9', '#b5c46a', '#d9a066'],
+  police: '#2d5bb0', policeCap: '#dfe6f2', shield: '#c9d6e8',
+  accent: '#f2c14e', danger: '#e4572e', ok: '#6cc28a', hud: 'rgba(14,16,20,0.86)', text: '#e8e4da', muted: '#9a968d',
+};
+const FONT = 'ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace';
+
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+function norm(x, y) { const d = Math.hypot(x, y) || 1; return { x: x / d, y: y / d }; }
+function closestOnRect(px, py, o) { return { x: clamp(px, o.x, o.x + o.w), y: clamp(py, o.y, o.y + o.h) }; }
+function distToRect(px, py, o) { const c = closestOnRect(px, py, o); return Math.hypot(px - c.x, py - c.y); }
+const euro = v => '€' + Math.round(v).toLocaleString('it-IT');
+
+/* ---------- 2. INPUT ---------- */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const keys = {}, pressed = {};
+const mouse = { x: 0, y: 0, down: false, clicked: false };
+
+addEventListener('keydown', e => {
+  if (!keys[e.code]) pressed[e.code] = true;
+  keys[e.code] = true;
+  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; mouse.down = false; });
+function setMouse(e) {
+  const r = canvas.getBoundingClientRect();
+  mouse.x = (e.clientX - r.left) * W / r.width;
+  mouse.y = (e.clientY - r.top) * H / r.height;
+}
+canvas.addEventListener('mousemove', setMouse);
+canvas.addEventListener('mousedown', e => { setMouse(e); mouse.down = true; mouse.clicked = true; canvas.focus(); });
+addEventListener('mouseup', () => { mouse.down = false; });
+
+/* ---------- 3. MAPPA E OGGETTI DISTRUTTIBILI ---------- */
+// Per aggiungere un nuovo arredo basta una riga qui e una posizione in buildMap().
+const OBJ_TYPES = {
+  vetrina:    { hp: 40,  value: 300, blocks: false, debris: '#bfe6f5' },
+  auto:       { hp: 120, value: 900, blocks: true,  debris: '#d0d0d0' },
+  panchina:   { hp: 50,  value: 150, blocks: true,  debris: '#a0703c' },
+  cassonetto: { hp: 30,  value: 90,  blocks: true,  debris: '#3a8f4a' },
+  lampione:   { hp: 45,  value: 220, blocks: true,  debris: '#e8d27a' },
+  edicola:    { hp: 100, value: 600, blocks: true,  debris: '#4c7a8c' },
+  fioriera:   { hp: 35,  value: 120, blocks: true,  debris: '#6a9a4a' },
+  pensilina:  { hp: 70,  value: 400, blocks: true,  debris: '#bfe6f5' },
+};
+const SHOPS = ['FORNO', 'BAR', 'LIBRI', 'OTTICA', 'FIORI', 'SARTO', 'BANCA', 'GELATI', 'MERCERIA', 'CAFFÈ',
+               'DROGHERIA', 'MODA', 'POSTA', 'TABACCHI', 'PANE', 'DISCHI', 'CARTOLERIA', 'FARMACIA', 'SCARPE', 'PIZZA'];
+
+function makeObj(type, x, y, w, h, extra = {}) {
+  const t = OBJ_TYPES[type];
+  const cracks = [];
+  for (let i = 0; i < 5; i++) cracks.push([rand(0, w), rand(0, h), rand(0, w), rand(0, h)]);
+  return Object.assign({ type, x, y, w, h, hp: t.hp, maxHp: t.hp, value: t.value, blocks: t.blocks, shake: 0, cracks }, extra);
+}
+
+function buildMap() {
+  // Ostacoli fissi e indistruttibili: fontana e furgone
+  G.walls = [
+    { x: 440, y: 280, w: 80, h: 80, kind: 'fontana' },
+    { x: 10, y: 290, w: 40, h: 62, kind: 'furgone' },
+  ];
+  const o = [];
+  for (let i = 0; i < 10; i++) {
+    o.push(makeObj('vetrina', 30 + i * 92, TOP - 10, 62, 10, { shop: SHOPS[i], awning: COL.awnings[i % 6] }));
+    o.push(makeObj('vetrina', 30 + i * 92, BOTTOM, 62, 10, { shop: SHOPS[i + 10], awning: COL.awnings[(i + 3) % 6] }));
+  }
+  const carColors = ['#c44536', '#3d6ea8', '#e2b33c', '#5f8f5f', '#9a6fb0', '#d97b3a', '#6c7a89', '#b84f7a'];
+  [140, 300, 600, 760].forEach((x, i) => {
+    o.push(makeObj('auto', x, TOP + 26, 58, 30, { color: carColors[i] }));
+    o.push(makeObj('auto', x, BOTTOM - 56, 58, 30, { color: carColors[i + 4] }));
+  });
+  [[360, 240], [550, 240], [360, 392], [550, 392]].forEach(([x, y]) => o.push(makeObj('panchina', x, y, 50, 14)));
+  [[300, 312], [644, 312], [230, 180], [714, 450]].forEach(([x, y]) => o.push(makeObj('cassonetto', x, y, 16, 16)));
+  [[220, 250], [730, 250], [220, 390], [730, 390]].forEach(([x, y]) => o.push(makeObj('lampione', x, y, 10, 10)));
+  [[400, 160], [530, 160], [400, 466], [530, 466]].forEach(([x, y]) => o.push(makeObj('fioriera', x, y, 30, 18)));
+  o.push(makeObj('edicola', 150, 420, 54, 40));
+  o.push(makeObj('pensilina', 760, 170, 70, 18));
+  G.objs = o;
+  G.totalValue = o.reduce((s, x) => s + x.value, 0);
+}
+
+function damageValue() { return G.objs.reduce((s, o) => s + (o.maxHp - o.hp) / o.maxHp * o.value, 0); }
+function damagePct() { return damageValue() / G.totalValue * 100; }
+
+// Applica danno a un oggetto; restituisce il valore in € del danno inflitto.
+function damageObject(o, amount, byPlayer) {
+  const real = Math.min(o.hp, amount);
+  if (real <= 0) return 0;
+  o.hp -= real;
+  o.shake = 0.15;
+  const val = real / o.maxHp * o.value;
+  if (byPlayer) G.playerDamage += val;
+  const c = { x: o.x + o.w / 2, y: o.y + o.h / 2 };
+  for (let i = 0; i < 6; i++) {
+    G.particles.push({ x: c.x + rand(-o.w / 3, o.w / 3), y: c.y + rand(-o.h / 2, o.h / 2), vx: rand(-60, 60), vy: rand(-60, 60),
+      life: rand(0.4, 0.8), size: rand(2, 4), color: OBJ_TYPES[o.type].debris });
+  }
+  if (o.hp <= 0) addText(c.x, c.y - 10, '-' + euro(o.value), COL.danger);
+  return val;
+}
+
+/* ---------- 4. ENTITÀ E AVVIO PARTITA ---------- */
+const G = {
+  screen: 'menu', mode: null, paused: false, time: 0, ending: 0, result: null,
+  ents: [], objs: [], walls: [], solids: [], particles: [], texts: [], rings: [],
+  totalValue: 1, arrests: 0, wrong: 0, playerDamage: 0, megaCD: 0, reinforceT: 0, hoverCard: -1,
+  policeList: [], rioterList: [], crowdList: [], cmdTarget: null,
+};
+
+let uid = 0;
+function makeEntity(kind, x, y, extra = {}) {
+  return Object.assign({
+    id: uid++, kind, x, y, r: 7, vx: 0, vy: 0, fx: 0, fy: 1,
+    state: 'blend', timer: rand(1, 4), idle: false, tx: x, ty: y,
+    fear: 0, fearX: 0, fearY: 0, revealed: 0, wanted: 0, lastX: x, lastY: y, seenNow: false, hidden: false,
+    arrestProg: 0, arrested: false, slowed: false, ghost: false, remove: false,
+    stuckT: 0, detour: 0, dx: 0, dy: 0, hitCD: 0, stamina: 1,
+    color: pick(COL.crowd), sign: Math.random() < 0.25,
+  }, extra);
+}
+
+function randomFreePoint() {
+  for (let i = 0; i < 200; i++) {
+    const x = rand(90, W - 90), y = rand(TOP + 24, BOTTOM - 24);
+    if (!G.solids.some(o => distToRect(x, y, o) < 14)) return { x, y };
+  }
+  return { x: W / 2, y: TOP + 40 };
+}
+
+function startGame(mode) {
+  Object.assign(G, { mode, screen: 'play', paused: false, ending: 0, result: null, ents: [], particles: [], texts: [], rings: [],
+    arrests: 0, wrong: 0, playerDamage: 0, megaCD: 0, reinforceT: 0 });
+  buildMap();
+  refreshLists();
+  const C = CFG[mode];
+  G.time = C.time;
+  for (let i = 0; i < C.crowd; i++) { const p = randomFreePoint(); G.ents.push(makeEntity('crowd', p.x, p.y)); }
+
+  if (mode === 'police') {
+    // Giocatore = comandante; la squadra IA esegue gli ordini
+    G.player = makeEntity('police', 100, 320, { isPlayer: true, color: COL.police });
+    G.ents.push(G.player);
+    for (let i = 0; i < C.squad; i++) {
+      G.ents.push(makeEntity('police', 90 + rand(-10, 10), 300 + i * 8, { color: COL.police, order: 'follow', slot: i }));
+    }
+    for (let i = 0; i < C.rioters; i++) {
+      const p = randomFreePoint();
+      G.ents.push(makeEntity('rioter', p.x, p.y, { sign: false, timer: rand(3, 9) }));
+    }
+  } else {
+    // Giocatore = manifestante; polizia IA con rinforzi progressivi
+    const p = randomFreePoint();
+    G.player = makeEntity('rioter', p.x, p.y, { isPlayer: true, sign: false, color: '#f4f1e8' });
+    G.ents.push(G.player);
+    for (let i = 0; i < C.aiRioters; i++) {
+      const q = randomFreePoint();
+      G.ents.push(makeEntity('rioter', q.x, q.y, { sign: false, timer: rand(6, 12) }));
+    }
+    for (let i = 0; i < C.police; i++) spawnOfficer();
+  }
+  canvas.focus();
+}
+
+function spawnOfficer() {
+  G.ents.push(makeEntity('police', VAN.x + 20, VAN.y + rand(-30, 30), { color: COL.police, timer: 0 }));
+}
+
+function refreshLists() {
+  G.policeList = G.ents.filter(e => e.kind === 'police');
+  G.rioterList = G.ents.filter(e => e.kind === 'rioter');
+  G.crowdList = G.ents.filter(e => e.kind === 'crowd' && !e.arrested);
+  G.solids = G.walls.concat(G.objs.filter(o => o.blocks && o.hp > 0));
+}
+
+/* ---------- 5. IA E CONTROLLI ---------- */
+function nearest(e, list, filter) {
+  let best = null, bd = Infinity;
+  for (const o of list) {
+    if (o === e || (filter && !filter(o))) continue;
+    const d = dist(e, o);
+    if (d < bd) { bd = d; best = o; }
+  }
+  return [best, bd];
+}
+// Imposta la velocità verso un punto; restituisce true quando è arrivato.
+function moveToward(e, tx, ty, speed) {
+  const dx = tx - e.x, dy = ty - e.y, d = Math.hypot(dx, dy);
+  if (d < 3) { e.vx = e.vy = 0; return true; }
+  const s = Math.min(speed, d * 4);
+  e.vx = dx / d * s; e.vy = dy / d * s;
+  return d < 6;
+}
+// Fuga: lontano dalla minaccia, con una spinta verso il centro per non incastrarsi negli angoli.
+function fleeFrom(e, fx, fy, speed) {
+  const a = norm(e.x - fx, e.y - fy), c = norm(W / 2 - e.x, (TOP + BOTTOM) / 2 - e.y);
+  const n = norm(a.x + c.x * 0.35, a.y + c.y * 0.35);
+  e.vx = n.x * speed; e.vy = n.y * speed;
+}
+function rallyPoint() {
+  const a = rand(0, Math.PI * 2), r = rand(70, 240);
+  return { x: clamp(480 + Math.cos(a) * r * 1.5, 90, W - 90), y: clamp(320 + Math.sin(a) * r * 0.8, TOP + 24, BOTTOM - 24) };
+}
+function wander(e, dt, speed) {
+  e.wT = (e.wT || 0) - dt;
+  if (e.wT <= 0) {
+    e.wT = rand(2, 7);
+    e.idle = Math.random() < 0.35;
+    if (!e.idle) { const p = rallyPoint(); e.tx = p.x; e.ty = p.y; }
+  }
+  if (e.idle) { e.vx = e.vy = 0; } else if (moveToward(e, e.tx, e.ty, speed)) e.idle = true;
+}
+function holdingNear(x, y, r) { return G.policeList.some(p => p.holding && Math.hypot(p.x - x, p.y - y) < r); }
+function crowdNear(e, r) { let n = 0; for (const c of G.crowdList) if (c !== e && dist(c, e) < r) n++; return n; }
+
+// --- Folla pacifica: passeggia attorno alla fontana, si scansa dalla polizia, scappa al megafono
+function updateCrowd(e, dt) {
+  if (e.fear > 0) { e.fear -= dt; fleeFrom(e, e.fearX, e.fearY, CFG.speed.crowd * 2.2); return; }
+  const [p, pd] = nearest(e, G.policeList);
+  if (p && pd < 40) { fleeFrom(e, p.x, p.y, CFG.speed.crowd * 1.4); return; }
+  wander(e, dt, CFG.speed.crowd);
+}
+
+// --- Facinoroso IA: macchina a stati blend → seek → attack, con fuga se riconosciuto
+function pickTarget(e) {
+  let best = null, bs = Infinity;
+  for (const o of G.objs) {
+    if (o.hp <= 0) continue;
+    const c = { x: o.x + o.w / 2, y: o.y + o.h / 2 };
+    if (holdingNear(c.x, c.y, 80)) continue;          // il cordone protegge l'area
+    const cops = G.policeList.filter(p => dist(p, c) < 130).length;
+    const s = dist(e, c) + cops * 250 + rand(0, 140) - o.value * 0.05;
+    if (s < bs) { bs = s; best = o; }
+  }
+  return best;
+}
+function updateRioterAI(e, dt) {
+  const spd = CFG.speed.rioter * (e.slowed ? 0.45 : 1);
+  const [p, pd] = nearest(e, G.policeList);
+  if (e.fear > 0) { e.fear -= dt; fleeFrom(e, e.fearX, e.fearY, spd * 1.3); e.state = 'blend'; e.timer = rand(3, 5); return; }
+  if (p && pd < 100 && (e.revealed > 0 || e.wanted > 0) && e.state !== 'flee') { e.state = 'flee'; e.timer = rand(2, 3.5); }
+
+  switch (e.state) {
+    case 'flee':
+      if (p) fleeFrom(e, p.x, p.y, spd * 1.15);
+      e.timer -= dt;
+      if (e.timer <= 0) { e.state = 'blend'; e.timer = rand(3, 6); }
+      break;
+    case 'blend':                                     // si confonde tra la folla
+      wander(e, dt, CFG.speed.crowd * 1.1);
+      e.timer -= dt;
+      if (e.timer <= 0) {
+        e.target = pickTarget(e);
+        if (e.target) { e.state = 'seek'; e.seekT = 0; } else e.timer = 2;
+      }
+      break;
+    case 'seek': {
+      const t = e.target;
+      e.seekT += dt;
+      if (!t || t.hp <= 0 || e.seekT > 12 || holdingNear(t.x + t.w / 2, t.y + t.h / 2, 80)) { e.state = 'blend'; e.timer = rand(1, 2); break; }
+      const c = closestOnRect(e.x, e.y, t);
+      moveToward(e, c.x, c.y, spd);
+      if (distToRect(e.x, e.y, t) <= e.r + CFG.reach * 0.7) { e.state = 'attack'; e.hitCD = 0.3; }
+      break;
+    }
+    case 'attack': {
+      const t = e.target;
+      e.vx = e.vy = 0;
+      if (!t || t.hp <= 0) { e.state = 'blend'; e.timer = rand(4, 8); break; }
+      if (distToRect(e.x, e.y, t) > e.r + CFG.reach) { e.state = 'seek'; break; }
+      e.hitCD -= dt;
+      if (e.hitCD <= 0) { e.hitCD = CFG.aiHitCD; damageObject(t, CFG.aiHit, false); e.revealed = CFG.revealTime; }
+      break;
+    }
+  }
+}
+
+// --- Squadra di polizia (modalità Polizia): esegue gli ordini del comandante e insegue chi è riconoscibile
+function updateSquad(e, dt) {
+  const cmd = G.player, sp = CFG.speed.police;
+  if (e.order !== 'cordon') {
+    e.holding = false;
+    if (e.pursue && (e.pursue.arrested || (e.pursue.revealed <= 0 && dist(e, e.pursue) > 140) || e.pursueT > 8)) e.pursue = null;
+    if (!e.pursue) {
+      const [r, rd] = nearest(e, G.rioterList, o => o.revealed > 0 && !o.arrested);
+      if (r && rd < 130) { e.pursue = r; e.pursueT = 0; }
+    }
+    if (e.pursue) { e.pursueT += dt; moveToward(e, e.pursue.x, e.pursue.y, sp * 1.1); return; }
+  }
+  if (e.order === 'follow') {
+    const n = CFG.police.squad, a = e.slot / n * Math.PI * 2;
+    moveToward(e, cmd.x + Math.cos(a) * 30, cmd.y + Math.sin(a) * 30, sp * 1.3);
+  } else if (e.order === 'move') {
+    moveToward(e, e.tx, e.ty, sp * 1.2);
+  } else if (e.order === 'cordon') {
+    moveToward(e, e.tx, e.ty, sp * 1.3);
+    e.holding = Math.hypot(e.x - e.tx, e.y - e.ty) < 8;
+  }
+}
+
+// --- Polizia IA (modalità Manifestante): insegue i sospetti "ricercati", altrimenti pattuglia
+function updatePoliceAI(e, dt) {
+  const sp = CFG.speed.police;
+  let best = null, bs = Infinity;
+  for (const s of G.rioterList) {
+    if (s.arrested || s.wanted <= 0) continue;
+    let d = Math.hypot(e.x - (s.seenNow ? s.x : s.lastX), e.y - (s.seenNow ? s.y : s.lastY));
+    if (s.isPlayer) d *= 0.75;
+    if (d < bs) { bs = d; best = s; }
+  }
+  e.jT = (e.jT || 0) - dt;
+  if (e.jT <= 0) { e.jT = 3; e.jx = rand(-60, 60); e.jy = rand(-50, 50); }
+  if (best) {
+    if (best.seenNow) moveToward(e, best.x, best.y, sp * 1.15);
+    else moveToward(e, best.lastX + e.jx, best.lastY + e.jy, sp);   // cerca attorno all'ultima posizione nota
+    return;
+  }
+  e.timer -= dt;
+  if (e.timer <= 0) {
+    const alive = G.objs.filter(o => o.hp > 0);
+    const o = alive.length ? pick(alive) : null;
+    const p = o ? { x: o.x + o.w / 2 + rand(-40, 40), y: o.y + o.h / 2 + rand(-40, 40) } : rallyPoint();
+    e.tx = clamp(p.x, 70, W - 70); e.ty = clamp(p.y, TOP + 20, BOTTOM - 20); e.timer = rand(4, 8);
+  }
+  moveToward(e, e.tx, e.ty, sp * 0.8);
+}
+
+// "Radio" della polizia: chi danneggia viene segnalato; nascondersi nella folla fa perdere le tracce.
+function updateIntel(dt) {
+  for (const s of G.rioterList) {
+    if (s.arrested) continue;
+    s.hidden = s.revealed <= 0 && crowdNear(s, 45) >= 3;
+    let seen = false;
+    for (const p of G.policeList) {
+      const d = dist(p, s);
+      if ((s.revealed > 0 && d < 300) || (s.wanted > 0 && !s.hidden && d < 160) || (s.wanted > 0 && d < 30)) { seen = true; break; }
+    }
+    s.seenNow = seen;
+    if (seen) { s.lastX = s.x; s.lastY = s.y; s.wanted = s.revealed > 0 ? 10 : Math.max(s.wanted, 2); }
+    else s.wanted = Math.max(0, s.wanted - dt);
+  }
+}
+
+function readMove() {
+  let x = 0, y = 0;
+  if (keys.KeyW || keys.ArrowUp) y--;
+  if (keys.KeyS || keys.ArrowDown) y++;
+  if (keys.KeyA || keys.ArrowLeft) x--;
+  if (keys.KeyD || keys.ArrowRight) x++;
+  return (x || y) ? norm(x, y) : { x: 0, y: 0 };
+}
+
+// --- Giocatore Polizia: comandante con squadra
+function controlCommander(e) {
+  const m = readMove();
+  e.vx = m.x * CFG.speed.commander; e.vy = m.y * CFG.speed.commander;
+  const squad = G.policeList.filter(p => !p.isPlayer);
+  if (mouse.clicked) {                                   // invia la squadra al punto cliccato
+    squad.forEach((p, i) => {
+      const a = i / squad.length * Math.PI * 2;
+      Object.assign(p, { order: 'move', tx: mouse.x + Math.cos(a) * 20, ty: mouse.y + Math.sin(a) * 20, pursue: null });
+    });
+    G.rings.push({ x: mouse.x, y: mouse.y, r: 4, max: 24, life: 0.4, color: COL.shield });
+  }
+  if (pressed.KeyQ) {                                    // cordone: linea perpendicolare alla direzione comandante→mouse
+    const d = norm(mouse.x - e.x, mouse.y - e.y), pp = { x: -d.y, y: d.x };
+    squad.forEach((p, i) => {
+      const k = (i - (squad.length - 1) / 2) * 20;
+      Object.assign(p, { order: 'cordon', tx: mouse.x + pp.x * k, ty: mouse.y + pp.y * k, fx: d.x, fy: d.y, pursue: null });
+    });
+  }
+  if (pressed.KeyR) squad.forEach(p => { p.order = 'follow'; p.pursue = null; });
+  if ((pressed.Space || pressed.KeyF) && G.megaCD <= 0) { // megafono: disperde chi è vicino
+    G.megaCD = CFG.megaphoneCD;
+    G.rings.push({ x: e.x, y: e.y, r: 10, max: CFG.megaphoneR, life: 0.6, color: COL.accent });
+    for (const t of G.ents) {
+      if (t.kind === 'police' || t.arrested || dist(t, e) > CFG.megaphoneR) continue;
+      Object.assign(t, { fear: rand(3, 4.5), fearX: e.x, fearY: e.y });
+      if (t.kind === 'rioter' && t.state !== 'flee') { t.state = 'blend'; t.target = null; }
+    }
+  }
+}
+
+// --- Giocatore Manifestante
+function controlRioter(e, dt) {
+  const m = readMove();
+  const sprinting = (keys.ShiftLeft || keys.ShiftRight) && e.stamina > 0.05 && (m.x || m.y);
+  e.stamina = clamp(e.stamina + (sprinting ? -0.35 : 0.2) * dt, 0, 1);
+  const sp = (sprinting ? CFG.speed.sprint : CFG.speed.player) * (e.slowed ? 0.5 : 1);
+  e.vx = m.x * sp; e.vy = m.y * sp;
+  e.hitCD -= dt;
+  e.reachObj = nearestObjInReach(e);
+  if ((keys.Space || mouse.down) && e.hitCD <= 0 && e.reachObj) {
+    e.hitCD = CFG.playerHitCD;
+    damageObject(e.reachObj, CFG.playerHit, true);
+    e.revealed = CFG.revealTime;
+  }
+}
+function nearestObjInReach(e) {
+  let best = null, bd = e.r + CFG.reach;
+  for (const o of G.objs) { if (o.hp <= 0) continue; const d = distToRect(e.x, e.y, o); if (d <= bd) { bd = d; best = o; } }
+  return best;
+}
+
+/* ---------- 6. FISICA ---------- */
+function resolveRect(e, o) {
+  const c = closestOnRect(e.x, e.y, o);
+  const dx = e.x - c.x, dy = e.y - c.y, d = Math.hypot(dx, dy);
+  if (d >= e.r) return;
+  if (d > 0) { const k = (e.r - d) / d; e.x += dx * k; e.y += dy * k; return; }
+  // centro dentro il rettangolo: esci dal lato più vicino
+  const l = e.x - o.x, r = o.x + o.w - e.x, t = e.y - o.y, b = o.y + o.h - e.y, mn = Math.min(l, r, t, b);
+  if (mn === l) e.x = o.x - e.r; else if (mn === r) e.x = o.x + o.w + e.r; else if (mn === t) e.y = o.y - e.r; else e.y = o.y + o.h + e.r;
+}
+function collide(e) {
+  if (e.ghost) return;
+  for (const o of G.solids) resolveRect(e, o);
+  e.x = clamp(e.x, e.r, W - e.r);
+  e.y = clamp(e.y, TOP + e.r, BOTTOM - e.r);
+}
+function integrate(e, dt) {
+  let vx = e.vx, vy = e.vy;
+  if (e.detour > 0) {                                     // aggira un ostacolo se bloccato
+    e.detour -= dt;
+    const s = Math.hypot(vx, vy);
+    vx = vx * 0.3 + e.dx * s; vy = vy * 0.3 + e.dy * s;
+  }
+  const ox = e.x, oy = e.y;
+  e.x += vx * dt; e.y += vy * dt;
+  collide(e);
+  const want = Math.hypot(vx, vy) * dt, moved = Math.hypot(e.x - ox, e.y - oy);
+  if (!e.isPlayer && want > 0.4 && moved < want * 0.3) {
+    e.stuckT += dt;
+    if (e.stuckT > 0.4) { e.stuckT = 0; const s = Math.random() < 0.5 ? 1 : -1, n = norm(-vy * s, vx * s); e.dx = n.x; e.dy = n.y; e.detour = 0.6; }
+  } else e.stuckT = Math.max(0, e.stuckT - dt);
+  if (Math.hypot(vx, vy) > 5 && !e.holding) { const n = norm(vx, vy); e.fx = n.x; e.fy = n.y; }
+}
+const mass = e => (e.holding ? 100 : e.kind === 'police' ? 3 : e.isPlayer ? 2 : 1);
+function separate() {
+  const a = G.ents;
+  for (let i = 0; i < a.length; i++) {
+    const p = a[i]; if (p.ghost) continue;
+    for (let j = i + 1; j < a.length; j++) {
+      const q = a[j]; if (q.ghost) continue;
+      const dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy), min = p.r + q.r;
+      if (d >= min || d === 0) continue;
+      const over = min - d, mp = mass(p), mq = mass(q), tot = mp + mq;
+      p.x -= dx / d * over * (mq / tot); p.y -= dy / d * over * (mq / tot);
+      q.x += dx / d * over * (mp / tot); q.y += dy / d * over * (mp / tot);
+    }
+  }
+}
+// Il cordone respinge civili e facinorosi entro un raggio: funziona come un muro mobile.
+function cordonRepel() {
+  for (const h of G.policeList) {
+    if (!h.holding) continue;
+    for (const e of G.ents) {
+      if (e.kind === 'police' || e.ghost) continue;
+      const d = dist(e, h);
+      if (d < 26 && d > 0) { const k = (26 - d) / d; e.x += (e.x - h.x) * k * 0.5; e.y += (e.y - h.y) * k * 0.5; }
+    }
+  }
+}
+
+/* ---------- 7. FERMI, FINE PARTITA, PUNTEGGIO ---------- */
+function updateArrests(dt) {
+  for (const t of G.ents) {
+    if (t.kind === 'police' || t.arrested) continue;
+    let n = 0;
+    for (const p of G.policeList) {
+      if (dist(p, t) > p.r + t.r + 6) continue;
+      if (p.isPlayer) { if (t === G.cmdTarget) n += 1.5; continue; }
+      if (t.kind === 'crowd') continue;                          // gli agenti IA non fermano i pacifici
+      if (G.mode === 'police' && t.revealed <= 0 && p.pursue !== t) continue;
+      if (G.mode === 'rioter' && t.wanted <= 0) continue;
+      n += 1;
+    }
+    t.slowed = n > 0;
+    t.arrestProg = n > 0 ? t.arrestProg + dt * n / CFG.arrestTime : Math.max(0, t.arrestProg - dt * 0.6);
+    if (t.arrestProg >= 1) arrest(t);
+  }
+}
+function arrest(t) {
+  Object.assign(t, { arrested: true, ghost: true, arrestProg: 1, vx: 0, vy: 0 });
+  if (t.kind === 'rioter') {
+    if (!t.isPlayer) G.arrests++;
+    addText(t.x, t.y - 14, 'FERMATO', COL.accent);
+  } else {
+    G.wrong++;
+    addText(t.x, t.y - 14, 'Fermo ingiustificato −150', COL.danger);
+  }
+  if (t.isPlayer) endGame(false, 'Sei stato fermato dalla polizia.');
+}
+function escort(e, dt) {                                // i fermati vengono accompagnati al furgone
+  if (moveToward(e, VAN.x, VAN.y, 55)) e.remove = true;
+  e.x += e.vx * dt; e.y += e.vy * dt;
+}
+
+function checkEnd() {
+  if (G.mode === 'police') {
+    const free = G.rioterList.filter(r => !r.arrested).length;
+    if (free === 0) endGame(true, 'Ordine ristabilito: tutti i facinorosi sono stati fermati.');
+    else if (damagePct() >= CFG.police.maxDamagePct) endGame(false, `I danni hanno superato il ${CFG.police.maxDamagePct}%: la piazza è fuori controllo.`);
+    else if (G.time <= 0) endGame(false, `Tempo scaduto: ${free} facinorosi ancora liberi.`);
+  } else if (G.time <= 0) {
+    endGame(true, 'Tempo scaduto: sei riuscito a dileguarti tra la folla.');
+  }
+}
+function endGame(win, reason) {
+  if (G.ending) return;
+  const dmg = damagePct();
+  let score, lines;
+  if (G.mode === 'police') {
+    const kept = Math.max(0, CFG.police.maxDamagePct - dmg) * 25;
+    const timeBonus = win ? G.time * 5 : 0;
+    score = Math.max(0, Math.round(G.arrests * 150 + kept + timeBonus - G.wrong * 150));
+    lines = [
+      ['Facinorosi fermati', `${G.arrests} / ${CFG.police.rioters}  (+${G.arrests * 150})`],
+      ['Danni contenuti', `${dmg.toFixed(1)}%  (+${Math.round(kept)})`],
+      ['Tempo residuo', `${Math.ceil(G.time)} s  (+${Math.round(timeBonus)})`],
+      ['Fermi ingiustificati', `${G.wrong}  (−${G.wrong * 150})`],
+    ];
+  } else {
+    const base = Math.round(G.playerDamage);
+    score = win ? Math.round(base * 1.5) : base;
+    lines = [
+      ['Danni causati da te', euro(base)],
+      ['Danni totali in piazza', `${dmg.toFixed(1)}%`],
+      ['Bonus fuga', win ? '×1,5' : '—'],
+      ['Agenti in piazza', String(G.policeList.length)],
+    ];
+  }
+  let best = 0;
+  try {
+    const k = 'piazzaCalda.best.' + G.mode;
+    best = Number(localStorage.getItem(k)) || 0;
+    if (score > best) { localStorage.setItem(k, String(score)); }
+  } catch (_) { /* storage non disponibile: nessun record */ }
+  G.result = { win, reason, score, lines, best, record: score > best };
+  G.ending = 1.2;                                        // breve pausa prima della schermata finale
+}
+
+function addText(x, y, text, color) { G.texts.push({ x, y, text, color, life: 1.4 }); }
+
+/* ---------- AGGIORNAMENTO PRINCIPALE ---------- */
+function update(dt) {
+  refreshLists();
+  if (G.ending) { G.ending -= dt; if (G.ending <= 0) { G.ending = 0; G.screen = 'end'; } }
+  else G.time = Math.max(0, G.time - dt);
+  G.megaCD = Math.max(0, G.megaCD - dt);
+
+  if (G.mode === 'rioter') {
+    G.reinforceT += dt;
+    if (G.reinforceT >= CFG.rioter.reinforceEvery && G.policeList.length < CFG.rioter.maxPolice) {
+      G.reinforceT = 0; spawnOfficer(); addText(VAN.x + 40, VAN.y - 40, 'Rinforzi!', COL.shield);
+    }
+    updateIntel(dt);
+  }
+
+  // Bersaglio del fermo del comandante (tieni premuto E vicino a qualcuno)
+  G.cmdTarget = null;
+  if (G.mode === 'police' && keys.KeyE && !G.ending) {
+    const [t, d] = nearest(G.player, G.ents, o => o.kind !== 'police' && !o.arrested);
+    if (t && d <= G.player.r + t.r + 8) G.cmdTarget = t;
+  }
+
+  for (const e of G.ents) {
+    if (e.arrested) { escort(e, dt); continue; }
+    if (e.isPlayer) { if (G.ending) { e.vx = e.vy = 0; } else if (G.mode === 'police') controlCommander(e); else controlRioter(e, dt); }
+    else if (e.kind === 'crowd') updateCrowd(e, dt);
+    else if (e.kind === 'rioter') updateRioterAI(e, dt);
+    else if (e.kind === 'police') { if (G.mode === 'police') updateSquad(e, dt); else updatePoliceAI(e, dt); }
+    e.revealed = Math.max(0, e.revealed - dt);
+    integrate(e, dt);
+  }
+  separate();
+  cordonRepel();
+  for (const e of G.ents) collide(e);
+  if (!G.ending) updateArrests(dt);
+  G.ents = G.ents.filter(e => !e.remove || e.isPlayer);
+
+  for (const o of G.objs) o.shake = Math.max(0, o.shake - dt);
+  for (const p of G.particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.92; p.vy *= 0.92; p.life -= dt; }
+  G.particles = G.particles.filter(p => p.life > 0);
+  for (const t of G.texts) { t.y -= 18 * dt; t.life -= dt; }
+  G.texts = G.texts.filter(t => t.life > 0);
+  for (const r of G.rings) { r.life -= dt; r.r += (r.max - r.r) * Math.min(1, dt * 8); }
+  G.rings = G.rings.filter(r => r.life > 0);
+
+  if (!G.ending) checkEnd();
+}
+
+/* ---------- 8. RENDERING ---------- */
+function text(str, x, y, size, color, align = 'left', weight = 'normal') {
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'middle';
+  ctx.fillText(str, x, y);
+}
+
+function drawGround() {
+  ctx.fillStyle = COL.street; ctx.fillRect(0, TOP, W, BOTTOM - TOP);
+  ctx.strokeStyle = COL.streetLine; ctx.setLineDash([14, 12]); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(32, TOP); ctx.lineTo(32, BOTTOM); ctx.moveTo(W - 32, TOP); ctx.lineTo(W - 32, BOTTOM); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = COL.paving; ctx.fillRect(64, TOP, W - 128, BOTTOM - TOP);
+  ctx.strokeStyle = COL.pavingLine; ctx.lineWidth = 1; ctx.beginPath();
+  for (let x = 64; x <= W - 64; x += 32) { ctx.moveTo(x + 0.5, TOP); ctx.lineTo(x + 0.5, BOTTOM); }
+  for (let y = TOP; y <= BOTTOM; y += 32) { ctx.moveTo(64, y + 0.5); ctx.lineTo(W - 64, y + 0.5); }
+  ctx.stroke();
+  ctx.strokeStyle = COL.ring; ctx.lineWidth = 3;
+  for (const r of [80, 130, 180]) { ctx.beginPath(); ctx.ellipse(480, 320, r * 1.3, r, 0, 0, Math.PI * 2); ctx.stroke(); }
+}
+
+function drawBuildings() {
+  for (const [y0, h, isTop] of [[0, TOP, true], [BOTTOM, H - BOTTOM, false]]) {
+    for (let i = 0; i < 11; i++) {
+      ctx.fillStyle = COL.roofs[(i + (isTop ? 0 : 2)) % COL.roofs.length];
+      ctx.fillRect(i * 92 - 16, y0, 92, h);
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';                       // colmo del tetto
+      ctx.fillRect(i * 92 - 16, isTop ? y0 + 18 : y0 + h - 22, 92, 4);
+    }
+  }
+  for (const o of G.objs) {
+    if (o.type !== 'vetrina') continue;
+    const top = o.y < TOP, ay = top ? o.y - 16 : o.y + o.h;   // tenda sopra/sotto la vetrina
+    ctx.fillStyle = o.awning; ctx.fillRect(o.x - 4, ay, o.w + 8, 16);
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    for (let k = 0; k < o.w + 8; k += 12) ctx.fillRect(o.x - 4 + k, ay, 6, 16);
+    text(o.shop, o.x + o.w / 2, ay + 8, 9, '#fff8e8', 'center', 'bold');
+  }
+}
+
+function drawWalls() {
+  for (const w of G.walls) {
+    if (w.kind === 'fontana') {
+      ctx.fillStyle = '#bdb6a6'; ctx.beginPath(); ctx.arc(480, 320, 42, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#4f9bc4'; ctx.beginPath(); ctx.arc(480, 320, 34, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#bdb6a6'; ctx.beginPath(); ctx.arc(480, 320, 8, 0, Math.PI * 2); ctx.fill();
+      const t = performance.now() / 600;
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.5;
+      for (let k = 0; k < 2; k++) { ctx.beginPath(); ctx.arc(480, 320, 14 + ((t + k / 2) % 1) * 18, 0, Math.PI * 2); ctx.stroke(); }
+    } else {
+      ctx.fillStyle = '#e8ecf2'; ctx.fillRect(w.x, w.y, w.w, w.h);
+      ctx.fillStyle = COL.police; ctx.fillRect(w.x, w.y + 24, w.w, 10);
+      ctx.fillStyle = '#2a3b55'; ctx.fillRect(w.x + 5, w.y + 4, w.w - 10, 12);
+      ctx.fillStyle = (Math.floor(performance.now() / 300) % 2) ? '#4aa3ff' : '#e4572e';
+      ctx.fillRect(w.x + 14, w.y + 18, 12, 4);
+    }
+  }
+}
+
+function drawObj(o) {
+  const dmg = 1 - o.hp / o.maxHp, dead = o.hp <= 0;
+  ctx.save();
+  if (o.shake > 0) ctx.translate(rand(-1.5, 1.5), rand(-1, 1));
+  const { x, y, w, h } = o;
+  switch (o.type) {
+    case 'vetrina':
+      ctx.fillStyle = dead ? '#2b3036' : '#8fd3ea'; ctx.fillRect(x, y, w, h);
+      if (!dead) { ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fillRect(x + 6, y + 2, 10, 2); }
+      break;
+    case 'auto':
+      ctx.fillStyle = dead ? '#5a5650' : o.color; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = dead ? '#333' : '#1f2a36'; ctx.fillRect(x + 14, y + 4, 10, h - 8); ctx.fillRect(x + w - 18, y + 4, 8, h - 8);
+      ctx.fillStyle = '#151515';
+      for (const [wx, wy] of [[x + 8, y - 2], [x + w - 16, y - 2], [x + 8, y + h - 2], [x + w - 16, y + h - 2]]) ctx.fillRect(wx, wy, 8, 4);
+      break;
+    case 'panchina':
+      ctx.fillStyle = dead ? '#5b4630' : '#a0703c'; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(x, y + 4, w, 2); ctx.fillRect(x, y + 9, w, 2);
+      break;
+    case 'cassonetto':
+      ctx.fillStyle = dead ? '#2c4a31' : '#3a8f4a'; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x, y, w, 4);
+      break;
+    case 'lampione':
+      ctx.fillStyle = '#3b3b3b'; ctx.fillRect(x, y, w, h);
+      if (!dead) { ctx.fillStyle = 'rgba(255,230,140,0.25)'; ctx.beginPath(); ctx.arc(x + 5, y + 5, 16, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffe48a'; ctx.fillRect(x + 2, y + 2, 6, 6); }
+      break;
+    case 'fioriera':
+      ctx.fillStyle = '#7a6656'; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = dead ? '#5a4a3a' : '#5d9a45'; ctx.fillRect(x + 3, y + 3, w - 6, h - 6);
+      if (!dead) { ctx.fillStyle = '#e86a8a'; ctx.fillRect(x + 7, y + 6, 4, 4); ctx.fillRect(x + 18, y + 9, 4, 4); }
+      break;
+    case 'edicola':
+      ctx.fillStyle = dead ? '#3a4a52' : '#4c7a8c'; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = dead ? '#555' : '#f0e6c8'; ctx.fillRect(x + 4, y + h - 12, w - 8, 8);
+      text('EDICOLA', x + w / 2, y + 12, 9, '#fff', 'center', 'bold');
+      break;
+    case 'pensilina':
+      ctx.fillStyle = dead ? '#3c4248' : 'rgba(170,220,240,0.85)'; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = '#556'; ctx.fillRect(x, y, w, 3);
+      text('BUS 7', x + w / 2, y + 11, 8, '#223', 'center', 'bold');
+      break;
+  }
+  // crepe proporzionali al danno; detriti quando è distrutto
+  if (dmg > 0) {
+    ctx.strokeStyle = dead ? 'rgba(0,0,0,0.6)' : 'rgba(30,30,30,0.7)'; ctx.lineWidth = 1;
+    const n = dead ? 5 : Math.ceil(dmg * 4);
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) { const c = o.cracks[i]; ctx.moveTo(x + c[0], y + c[1]); ctx.lineTo(x + c[2], y + c[3]); }
+    ctx.stroke();
+  }
+  if (dead) {
+    ctx.fillStyle = OBJ_TYPES[o.type].debris;
+    for (let i = 0; i < 5; i++) { const c = o.cracks[i]; ctx.fillRect(x + c[0] - 2, y + c[1] + (o.y < TOP ? 12 : o.y >= BOTTOM ? -14 : 0), 3, 3); }
+  } else if (dmg > 0) {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(x, (o.y < TOP ? y + h + 2 : y - 6), w, 3);
+    ctx.fillStyle = COL.danger; ctx.fillRect(x, (o.y < TOP ? y + h + 2 : y - 6), w * (1 - dmg), 3);
+  }
+  ctx.restore();
+}
+
+function drawEnt(e) {
+  ctx.save();
+  if (e.arrested) ctx.globalAlpha = 0.6;
+  const showRed = e.kind === 'rioter' && (e.revealed > 0 || (G.mode === 'rioter' && e.wanted > 0 && !e.isPlayer));
+  if (showRed) {                                          // anello rosso: facinoroso riconoscibile
+    ctx.strokeStyle = COL.danger; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 4, 0, Math.PI * 2); ctx.stroke();
+  }
+  if (e.isPlayer) {
+    const p = 1 + Math.sin(performance.now() / 180) * 0.15;
+    ctx.strokeStyle = COL.accent; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(e.x, e.y, (e.r + 7) * p, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = COL.accent; ctx.beginPath(); ctx.moveTo(e.x - 5, e.y - 22); ctx.lineTo(e.x + 5, e.y - 22); ctx.lineTo(e.x, e.y - 16); ctx.fill();
+  }
+  if (e.sign && e.kind === 'crowd') {                     // cartello di protesta (generico)
+    ctx.fillStyle = '#6b4a2a'; ctx.fillRect(e.x + 5, e.y - 12, 2, 10);
+    ctx.fillStyle = '#f7f3e8'; ctx.fillRect(e.x - 1, e.y - 18, 14, 8);
+    ctx.fillStyle = '#c44536'; ctx.fillRect(e.x + 1, e.y - 15, 10, 2);
+  }
+  ctx.fillStyle = e.arrested ? '#8a8a8a' : e.color;
+  ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 1.5; ctx.stroke();
+  // testa (o casco/cappello per la polizia), spostata nella direzione di marcia
+  ctx.fillStyle = e.kind === 'police' ? COL.policeCap : e.isPlayer ? '#2b2b2b' : '#f0d2b0';
+  ctx.beginPath(); ctx.arc(e.x + e.fx * 2, e.y + e.fy * 2, e.r * 0.5, 0, Math.PI * 2); ctx.fill();
+  if (e.holding) {                                        // scudo in posizione di cordone
+    const px = -e.fy, py = e.fx;
+    ctx.strokeStyle = COL.shield; ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(e.x + e.fx * 9 - px * 9, e.y + e.fy * 9 - py * 9);
+    ctx.lineTo(e.x + e.fx * 9 + px * 9, e.y + e.fy * 9 + py * 9);
+    ctx.stroke();
+  }
+  if (e.arrested) {                                       // icona "fermato": due anelli
+    ctx.strokeStyle = '#ddd'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(e.x - 3, e.y - 12, 2.5, 0, Math.PI * 2); ctx.arc(e.x + 3, e.y - 12, 2.5, 0, Math.PI * 2); ctx.stroke();
+  } else if (e.arrestProg > 0.02) {                       // barra di avanzamento del fermo
+    ctx.strokeStyle = COL.accent; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 8, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * e.arrestProg); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawWorld() {
+  drawGround();
+  drawBuildings();
+  drawWalls();
+  for (const o of G.objs) drawObj(o);
+  const pl = G.player;
+  if (G.screen === 'play' && pl && G.mode === 'rioter' && pl.reachObj && !pl.arrested) {
+    const o = pl.reachObj;                                // evidenzia l'oggetto a portata
+    ctx.strokeStyle = COL.accent; ctx.lineWidth = 2; ctx.setLineDash([4, 3]);
+    ctx.strokeRect(o.x - 3, o.y - 3, o.w + 6, o.h + 6); ctx.setLineDash([]);
+  }
+  if (G.screen === 'play' && G.mode === 'police' && pl) {   // anteprima del cordone
+    if (keys.KeyQ) {
+      ctx.strokeStyle = 'rgba(201,214,232,0.6)'; ctx.setLineDash([6, 6]);
+      const d = norm(mouse.x - pl.x, mouse.y - pl.y), pp = { x: -d.y, y: d.x }, k = (CFG.police.squad - 1) * 10;
+      ctx.beginPath(); ctx.moveTo(mouse.x - pp.x * k, mouse.y - pp.y * k); ctx.lineTo(mouse.x + pp.x * k, mouse.y + pp.y * k); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (G.megaCD <= 0) { ctx.strokeStyle = 'rgba(242,193,78,0.18)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(pl.x, pl.y, CFG.megaphoneR, 0, Math.PI * 2); ctx.stroke(); }
+  }
+  const sorted = G.ents.slice().sort((a, b) => a.y - b.y);
+  for (const e of sorted) drawEnt(e);
+  for (const p of G.particles) { ctx.globalAlpha = Math.min(1, p.life * 2); ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.size, p.size); }
+  ctx.globalAlpha = 1;
+  for (const r of G.rings) { ctx.globalAlpha = Math.max(0, r.life * 1.6); ctx.strokeStyle = r.color; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.globalAlpha = 1;
+  for (const t of G.texts) {
+    ctx.globalAlpha = Math.min(1, t.life);
+    text(t.text, t.x + 1, t.y + 1, 12, 'rgba(0,0,0,0.7)', 'center', 'bold');
+    text(t.text, t.x, t.y, 12, t.color, 'center', 'bold');
+  }
+  ctx.globalAlpha = 1;
+}
+
+function bar(x, y, w, h, frac, color, back = 'rgba(255,255,255,0.12)') {
+  ctx.fillStyle = back; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = color; ctx.fillRect(x, y, w * clamp(frac, 0, 1), h);
+}
+
+function drawHUD() {
+  ctx.fillStyle = COL.hud; ctx.fillRect(0, 0, W, 34); ctx.fillRect(0, H - 28, W, 28);
+  const isPol = G.mode === 'police';
+  text(isPol ? 'POLIZIA' : 'MANIFESTANTE', 12, 17, 13, isPol ? '#8fb4ff' : COL.accent, 'left', 'bold');
+  const t = Math.ceil(G.time), mm = Math.floor(t / 60), ss = String(t % 60).padStart(2, '0');
+  text(`${mm}:${ss}`, 150, 17, 16, G.time < 20 ? COL.danger : COL.text, 'left', 'bold');
+
+  // indicatore danni alla piazza
+  const pct = damagePct();
+  text('DANNI', 220, 17, 11, COL.muted);
+  bar(266, 10, 220, 14, pct / 100, pct > 45 ? COL.danger : '#e0a03a');
+  if (isPol) { const mx = 266 + 220 * CFG.police.maxDamagePct / 100; ctx.fillStyle = '#fff'; ctx.fillRect(mx, 6, 2, 22); }
+  text(`${pct.toFixed(1)}%  ${euro(damageValue())}`, 494, 17, 11, COL.text);
+
+  if (isPol) {
+    const free = G.rioterList.filter(r => !r.arrested).length;
+    text(`Facinorosi liberi ${free}/${CFG.police.rioters}`, 640, 17, 11, COL.text);
+    text(G.megaCD > 0 ? `Megafono ${G.megaCD.toFixed(1)}s` : 'Megafono pronto', 830, 17, 11, G.megaCD > 0 ? COL.muted : COL.accent);
+  } else {
+    const p = G.player;
+    text(`Bottino ${euro(G.playerDamage)}`, 640, 17, 11, COL.accent, 'left', 'bold');
+    text('FIATO', 770, 12, 9, COL.muted); bar(770, 19, 60, 6, p.stamina, '#8fd3ea');
+    const status = p.wanted > 0 ? (p.seenNow ? ['RICERCATO', COL.danger] : ['TRACCE PERSE?', '#e0a03a'])
+                 : p.hidden ? ['NASCOSTO', COL.ok] : ['IN VISTA', COL.text];
+    text(status[0], 948, 17, 11, status[1], 'right', 'bold');
+  }
+  const help = isPol
+    ? 'WASD muovi · Clic: invia squadra · Q: cordone verso il mouse · R: squadra con te · Spazio: megafono · E (tieni): ferma'
+    : 'WASD muovi · Shift: corri · Spazio/clic vicino a un oggetto: danneggia · Stai tra la folla per far perdere le tracce';
+  text(help, W / 2, H - 14, 11, COL.muted, 'center');
+  if (G.paused) {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 34, W, H - 62);
+    text('PAUSA', W / 2, H / 2, 40, COL.text, 'center', 'bold');
+    text('P per riprendere · Esc per il menu', W / 2, H / 2 + 36, 13, COL.muted, 'center');
+  }
+}
+
+const CARDS = [
+  { mode: 'police', x: 150, y: 230, w: 310, h: 290, key: '1', title: 'POLIZIA', color: '#8fb4ff',
+    lines: ['Comandi una squadra di 6 agenti.', '', 'Obiettivo: fermare i 6 facinorosi', 'nascosti nella folla entro 3:00,', 'con danni sotto il 60%.', '', 'Cordoni, megafono e fermi.', 'Attenzione: fermare un pacifico', 'costa punti.'] },
+  { mode: 'rioter', x: 500, y: 230, w: 310, h: 290, key: '2', title: 'MANIFESTANTE', color: COL.accent,
+    lines: ['Sei un facinoroso nel corteo.', '', 'Obiettivo: causare più danni', 'possibili agli arredi in 2:30', 'senza farti fermare.', '', 'Chi colpisce diventa riconoscibile:', 'torna nella folla per sparire.', 'Arrivano rinforzi ogni 25 s.'] },
+];
+
+function drawMenu() {
+  drawWorld();
+  ctx.fillStyle = 'rgba(12,13,17,0.78)'; ctx.fillRect(0, 0, W, H);
+  text('PIAZZA CALDA', W / 2, 92, 52, COL.text, 'center', 'bold');
+  text('Valdoria · Piazza del Mercato Vecchio · ore 17:00', W / 2, 140, 14, COL.muted, 'center');
+  text('Il Comitato delle Lanterne protesta contro la chiusura del mercato coperto.', W / 2, 168, 13, COL.muted, 'center');
+  text('Scegli da che parte stare', W / 2, 202, 14, COL.text, 'center', 'bold');
+  G.hoverCard = -1;
+  CARDS.forEach((c, i) => {
+    const hover = mouse.x > c.x && mouse.x < c.x + c.w && mouse.y > c.y && mouse.y < c.y + c.h;
+    if (hover) G.hoverCard = i;
+    ctx.fillStyle = hover ? 'rgba(40,44,54,0.98)' : 'rgba(28,31,38,0.95)';
+    ctx.fillRect(c.x, c.y, c.w, c.h);
+    ctx.strokeStyle = hover ? c.color : '#3a3e48'; ctx.lineWidth = 2; ctx.strokeRect(c.x, c.y, c.w, c.h);
+    // icona
+    ctx.fillStyle = c.mode === 'police' ? COL.police : '#f4f1e8';
+    ctx.beginPath(); ctx.arc(c.x + 34, c.y + 36, 12, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = c.mode === 'police' ? COL.policeCap : '#2b2b2b';
+    ctx.beginPath(); ctx.arc(c.x + 34, c.y + 36, 6, 0, Math.PI * 2); ctx.fill();
+    text(c.title, c.x + 58, c.y + 36, 20, c.color, 'left', 'bold');
+    c.lines.forEach((l, k) => text(l, c.x + 20, c.y + 74 + k * 20, 12, COL.text));
+    text(`Premi ${c.key} o clicca`, c.x + c.w / 2, c.y + c.h - 18, 12, hover ? c.color : COL.muted, 'center', 'bold');
+  });
+  text('Città, gruppi e motivazioni sono inventati. Il danno riguarda solo oggetti: nessuna persona viene ferita.', W / 2, 568, 11, COL.muted, 'center');
+}
+
+function drawEnd() {
+  drawWorld();
+  ctx.fillStyle = 'rgba(12,13,17,0.75)'; ctx.fillRect(0, 0, W, H);
+  const r = G.result, x = 230, y = 130, w = 500, h = 380;
+  ctx.fillStyle = 'rgba(28,31,38,0.97)'; ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = r.win ? COL.ok : COL.danger; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
+  text(r.win ? 'VITTORIA' : 'SCONFITTA', W / 2, y + 44, 34, r.win ? COL.ok : COL.danger, 'center', 'bold');
+  text(r.reason, W / 2, y + 84, 13, COL.text, 'center');
+  r.lines.forEach(([k, v], i) => {
+    text(k, x + 50, y + 130 + i * 28, 13, COL.muted);
+    text(v, x + w - 50, y + 130 + i * 28, 13, COL.text, 'right', 'bold');
+  });
+  ctx.fillStyle = '#3a3e48'; ctx.fillRect(x + 50, y + 244, w - 100, 1);
+  text('PUNTEGGIO', x + 50, y + 274, 14, COL.text, 'left', 'bold');
+  text(r.score.toLocaleString('it-IT'), x + w - 50, y + 274, 26, COL.accent, 'right', 'bold');
+  text(r.record ? 'Nuovo record per questa fazione!' : `Record: ${r.best.toLocaleString('it-IT')}`, W / 2, y + 312, 12, r.record ? COL.accent : COL.muted, 'center');
+  text('Invio o clic per tornare al menu', W / 2, y + h - 24, 12, COL.muted, 'center');
+}
+
+/* ---------- 9. LOOP PRINCIPALE ---------- */
+function handleScreens() {
+  if (G.screen === 'menu') {
+    if (pressed.Digit1 || pressed.Numpad1) startGame('police');
+    else if (pressed.Digit2 || pressed.Numpad2) startGame('rioter');
+    else if (mouse.clicked && G.hoverCard >= 0) { startGame(CARDS[G.hoverCard].mode); mouse.clicked = false; }
+  } else if (G.screen === 'play') {
+    if (pressed.KeyP) G.paused = !G.paused;
+    if (pressed.Escape) menuScene();
+  } else if (G.screen === 'end') {
+    if (pressed.Enter || pressed.Space || mouse.clicked) { menuScene(); mouse.clicked = false; }
+  }
+}
+
+// Scena di sfondo del menu: piazza intatta con una folla che passeggia
+function menuScene() {
+  G.screen = 'menu'; G.mode = null; G.player = null; G.paused = false;
+  G.ents = []; G.particles = []; G.texts = []; G.rings = [];
+  buildMap(); refreshLists();
+  for (let i = 0; i < 40; i++) { const p = randomFreePoint(); G.ents.push(makeEntity('crowd', p.x, p.y)); }
+}
+menuScene();
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  handleScreens();
+  if (G.screen === 'play' && !G.paused) update(dt);
+  else if (G.screen === 'menu') { refreshLists(); for (const e of G.ents) { updateCrowd(e, dt); integrate(e, dt); } separate(); }
+  if (G.screen === 'menu') drawMenu();
+  else if (G.screen === 'end') drawEnd();
+  else { drawWorld(); drawHUD(); }
+  for (const k in pressed) delete pressed[k];
+  mouse.clicked = false;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
