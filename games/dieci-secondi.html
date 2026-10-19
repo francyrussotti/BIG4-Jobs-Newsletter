@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dieci Secondi</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="shared.css">
+<style>
+  :root { --dial: #ffcf3f; --dial-ink: #1c1e2b; --good: #23a862; --bad: #d6404a; }
+  .dial {
+    width: min(78vw, 320px); max-width: 100%; aspect-ratio: 1; border-radius: 50%;
+    background: var(--dial); color: var(--dial-ink); border: 10px solid var(--fg);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; position: relative;
+  }
+  .dial::before { content: ""; position: absolute; top: -30px; width: 44px; height: 18px; border-radius: 6px; background: var(--fg); }
+  .time { font-family: var(--font-display); font-weight: 700; font-size: clamp(52px, 16vw, 84px); line-height: 1; font-variant-numeric: tabular-nums; transition: opacity 0.6s, filter 0.6s; }
+  .time.hidden { opacity: 0.08; filter: blur(8px); }
+  .unit { font-size: 15px; font-weight: 600; opacity: 0.7; }
+  .verdict { font-family: var(--font-display); font-weight: 600; font-size: 22px; min-height: 1.4em; margin: 0; }
+  .diff { font-variant-numeric: tabular-nums; font-weight: 700; }
+  .diff.good { color: var(--good); } .diff.bad { color: var(--bad); }
+  .history { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; min-height: 36px; }
+  .history li { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font-variant-numeric: tabular-nums; }
+  .hint { color: var(--muted); font-size: 14px; margin: 0; }
+</style>
+</head>
+<body>
+<header class="topbar"><a class="back" href="index.html">← La Ludoteca</a><span class="best" id="best"></span></header>
+<main class="stage">
+  <h1 class="game-title">Dieci Secondi</h1>
+  <p class="lead">Avvia il cronometro e fermalo esattamente a 10,00 secondi. Dopo 3 secondi le cifre spariscono: dovrai contare nella testa.</p>
+  <div class="dial"><span class="time" id="time">0,00</span><span class="unit">secondi</span></div>
+  <p class="verdict" id="verdict"></p>
+  <button class="btn" id="btn">Avvia</button>
+  <p class="hint">Puoi usare anche la barra spaziatrice.</p>
+  <ol class="history" id="history" aria-label="Ultimi tentativi"></ol>
+</main>
+<script>
+'use strict';
+const TARGET = 10, VISIBLE_FOR = 3;
+const timeEl = document.getElementById('time'), btn = document.getElementById('btn');
+const verdictEl = document.getElementById('verdict'), historyEl = document.getElementById('history'), bestEl = document.getElementById('best');
+let running = false, t0 = 0, history = [];
+const fmt = s => s.toFixed(2).replace('.', ',');
+
+const BEST_KEY = 'ludoteca.dieci.best';
+const readBest = () => { try { const v = localStorage.getItem(BEST_KEY); return v === null ? null : Number(v); } catch (_) { return null; } };
+const showBest = () => { const b = readBest(); bestEl.textContent = b === null ? '' : `Record: ±${fmt(b)} s`; };
+showBest();
+
+function verdict(err) {
+  if (err < 0.02) return 'Orologio svizzero. Sei un robot?';
+  if (err < 0.1) return 'Quasi perfetto!';
+  if (err < 0.3) return 'Ottimo senso del tempo.';
+  if (err < 0.7) return 'Niente male.';
+  if (err < 1.5) return 'Il tuo orologio interno va regolato.';
+  return 'Per te il tempo è un concetto relativo.';
+}
+
+function tick() {
+  if (!running) return;
+  const s = (performance.now() - t0) / 1000;
+  timeEl.textContent = fmt(s);
+  timeEl.classList.toggle('hidden', s > VISIBLE_FOR);
+  requestAnimationFrame(tick);
+}
+
+function toggle() {
+  if (!running) {
+    running = true; t0 = performance.now();
+    verdictEl.textContent = 'Conta…'; btn.textContent = 'Ferma';
+    requestAnimationFrame(tick);
+    return;
+  }
+  running = false;
+  const s = (performance.now() - t0) / 1000, d = s - TARGET, err = Math.abs(d);
+  timeEl.classList.remove('hidden'); timeEl.textContent = fmt(s);
+  verdictEl.innerHTML = `<span class="diff ${err < 0.3 ? 'good' : 'bad'}">${d >= 0 ? '+' : '−'}${fmt(err)} s</span> · ${verdict(err)}`;
+  btn.textContent = 'Riprova';
+  history = [fmt(s) + ' s', ...history].slice(0, 6);
+  historyEl.innerHTML = history.map(h => `<li>${h}</li>`).join('');
+  const best = readBest();
+  if (best === null || err < best) { try { localStorage.setItem(BEST_KEY, String(err)); } catch (_) {} showBest(); }
+}
+
+btn.addEventListener('click', toggle);
+addEventListener('keydown', e => {
+  if (e.target === btn) return;                // il bottone gestisce già Spazio da solo
+  if (e.code === 'Space' && !e.repeat) { e.preventDefault(); toggle(); }
+});
+</script>
+</body>
+</html>

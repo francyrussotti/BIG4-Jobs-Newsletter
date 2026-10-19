@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Torre</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="shared.css">
+<style>
+  canvas {
+    display: block; width: min(100%, 400px, calc((100vh - 230px) * 0.6667)); max-width: 100%;
+    aspect-ratio: 2 / 3; border-radius: 22px; cursor: pointer; touch-action: manipulation;
+    box-shadow: 0 12px 30px var(--shadow);
+  }
+  canvas:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+  .stage { gap: 14px; }
+</style>
+</head>
+<body>
+<header class="topbar"><a class="back" href="index.html">← La Ludoteca</a><span class="best" id="best"></span></header>
+<main class="stage">
+  <h1 class="game-title">Torre</h1>
+  <p class="lead">Clicca, tocca o premi Spazio per far cadere il blocco. Quello che sporge si stacca. Tre centri perfetti di fila allargano il blocco.</p>
+  <canvas id="c" tabindex="0" aria-label="Gioco della torre"></canvas>
+</main>
+<script>
+'use strict';
+/* Coordinate logiche 400×600; il canvas viene scalato per schermi ad alta densità. */
+const W = 400, H = 600, BH = 26, BASE_W = 220, GROUND = H - 70;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const dpr = Math.min(2, window.devicePixelRatio || 1);
+cv.width = W * dpr; cv.height = H * dpr; ctx.scale(dpr, dpr);
+const FONT = '"Fredoka", ui-rounded, system-ui, sans-serif';
+
+let blocks, cur, debris, flashes, camY, score, streak, state, started;
+const BEST_KEY = 'ludoteca.torre.best';
+const readBest = () => { try { return Number(localStorage.getItem(BEST_KEY)) || 0; } catch (_) { return 0; } };
+const bestEl = document.getElementById('best');
+const showBest = () => { const b = readBest(); bestEl.textContent = b ? `Record: ${b} piani` : ''; };
+
+const colorOf = i => `hsl(${(i * 11 + 215) % 360} 68% 62%)`;
+const shadeOf = i => `hsl(${(i * 11 + 215) % 360} 55% 45%)`;
+const screenY = level => GROUND - (level + 1) * BH + camY;   // bordo superiore del piano "level"
+
+function reset() {
+  blocks = [{ x: (W - BASE_W) / 2, w: BASE_W }];
+  debris = []; flashes = []; camY = 0; score = 0; streak = 0; state = 'play'; started = false;
+  spawn(); showBest();
+}
+function spawn() {
+  const prev = blocks[blocks.length - 1], fromLeft = blocks.length % 2 === 0;
+  cur = { x: fromLeft ? -prev.w / 2 : W - prev.w / 2, w: prev.w, dir: fromLeft ? 1 : -1 };
+}
+const speed = () => Math.min(430, 150 + score * 7);
+
+function drop() {
+  if (state === 'over') return reset();
+  started = true;
+  const prev = blocks[blocks.length - 1], level = blocks.length;
+  const left = Math.max(cur.x, prev.x), right = Math.min(cur.x + cur.w, prev.x + prev.w), overlap = right - left;
+  if (overlap <= 0) {                                       // mancato: il blocco cade tutto
+    debris.push({ x: cur.x, w: cur.w, wy: level * BH, vy: 0, i: level });
+    state = 'over';
+    if (score > readBest()) { try { localStorage.setItem(BEST_KEY, String(score)); } catch (_) {} }
+    showBest();
+    return;
+  }
+  if (Math.abs(cur.x - prev.x) <= 5) {                      // centro perfetto
+    cur.x = prev.x; streak++;
+    if (streak >= 3 && cur.w < BASE_W) { const g = Math.min(14, BASE_W - cur.w); cur.w += g; cur.x -= g / 2; }
+    flashes.push({ x: cur.x, w: cur.w, level, life: 0.5, text: streak >= 3 ? 'Perfetto! +' : 'Perfetto!' });
+  } else {                                                  // taglia la parte che sporge
+    streak = 0;
+    if (cur.x < prev.x) debris.push({ x: cur.x, w: prev.x - cur.x, wy: level * BH, vy: 0, i: level });
+    else debris.push({ x: right, w: cur.x + cur.w - right, wy: level * BH, vy: 0, i: level });
+    cur.x = left; cur.w = overlap;
+  }
+  blocks.push({ x: cur.x, w: cur.w });
+  score++;
+  spawn();
+}
+
+function update(dt) {
+  if (state === 'play') {
+    cur.x += cur.dir * speed() * dt;
+    if (cur.x + cur.w / 2 > W) cur.dir = -1;
+    if (cur.x + cur.w / 2 < 0) cur.dir = 1;
+  }
+  const target = Math.max(0, blocks.length * BH - 330);     // la camera sale con la torre
+  camY += (target - camY) * Math.min(1, dt * 5);
+  for (const d of debris) { d.vy += 900 * dt; d.wy -= d.vy * dt; }
+  debris = debris.filter(d => GROUND - d.wy + camY < H + 60);
+  for (const f of flashes) f.life -= dt;
+  flashes = flashes.filter(f => f.life > 0);
+}
+
+function rect(x, y, w, i) {
+  ctx.fillStyle = colorOf(i); ctx.fillRect(x, y, w, BH);
+  ctx.fillStyle = shadeOf(i); ctx.fillRect(x, y + BH - 5, w, 5);
+}
+function draw() {
+  const h = Math.min(1, camY / 2500);                       // il cielo si scurisce salendo
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, `hsl(${205 + h * 40} 80% ${78 - h * 55}%)`);
+  g.addColorStop(1, `hsl(${200 + h * 30} 85% ${88 - h * 50}%)`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  if (h > 0.4) { ctx.fillStyle = `rgba(255,255,255,${(h - 0.4) * 1.2})`; for (let k = 0; k < 30; k++) ctx.fillRect((k * 137) % W, (k * 89) % (H / 1.5), 2, 2); }
+  ctx.fillStyle = '#3c8d5a'; ctx.fillRect(0, GROUND + camY, W, H);   // prato alla base
+
+  blocks.forEach((b, i) => { const y = screenY(i); if (y > -BH && y < H) rect(b.x, y, b.w, i); });
+  if (state === 'play') rect(cur.x, screenY(blocks.length), cur.w, blocks.length);
+  for (const d of debris) { ctx.globalAlpha = 0.85; rect(d.x, GROUND - d.wy + camY - BH, d.w, d.i); }
+  ctx.globalAlpha = 1;
+  for (const f of flashes) {
+    ctx.globalAlpha = f.life * 2; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+    ctx.strokeRect(f.x - 3, screenY(f.level) - 3, f.w + 6, BH + 6);
+    ctx.fillStyle = '#fff'; ctx.font = `600 18px ${FONT}`; ctx.textAlign = 'center';
+    ctx.fillText(f.text, W / 2, screenY(f.level) - 14);
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = h > 0.5 ? '#fff' : '#1c1e2b';
+  ctx.font = `700 56px ${FONT}`; ctx.fillText(String(score), W / 2, 60);
+  if (!started && state === 'play') {
+    ctx.font = `500 17px ${FONT}`; ctx.fillText('Clicca o premi Spazio', W / 2, 108);
+  }
+  if (state === 'over') {
+    ctx.fillStyle = 'rgba(20,21,29,0.6)'; ctx.fillRect(0, H / 2 - 70, W, 140);
+    ctx.fillStyle = '#fff';
+    ctx.font = `700 34px ${FONT}`; ctx.fillText(`${score} ${score === 1 ? 'piano' : 'piani'}`, W / 2, H / 2 - 22);
+    ctx.font = `500 17px ${FONT}`; ctx.fillText('Clicca per rigiocare', W / 2, H / 2 + 24);
+  }
+}
+
+cv.addEventListener('pointerdown', e => { e.preventDefault(); cv.focus(); drop(); });
+addEventListener('keydown', e => { if (e.code === 'Space' && !e.repeat) { e.preventDefault(); drop(); } });
+
+reset();
+let last = performance.now();
+(function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  update(dt); draw();
+  requestAnimationFrame(loop);
+})(last);
+</script>
+</body>
+</html>

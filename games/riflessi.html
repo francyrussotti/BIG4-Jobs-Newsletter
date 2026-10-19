@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Riflessi</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="shared.css">
+<style>
+  :root { --idle: #3b82f6; --wait: #d6404a; --go: #23a862; --early: #e8932c; }
+  .pad {
+    width: 100%; max-width: 100%; aspect-ratio: 16 / 9; max-height: 52vh;
+    border: 0; border-radius: 22px; cursor: pointer; color: #fff;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    background: var(--idle); user-select: none; -webkit-user-select: none; touch-action: manipulation;
+    transition: background-color 0.08s;
+  }
+  .pad:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+  .pad[data-state="wait"] { background: var(--wait); }
+  .pad[data-state="go"] { background: var(--go); }
+  .pad[data-state="early"] { background: var(--early); }
+  .big { font-family: var(--font-display); font-weight: 700; font-size: clamp(30px, 8vw, 60px); line-height: 1.1; }
+  .small { font-size: 16px; opacity: 0.9; min-height: 1.5em; padding-inline: 12px; }
+  .tries { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; min-height: 36px; }
+  .tries li {
+    font-variant-numeric: tabular-nums; font-weight: 600; padding: 6px 14px;
+    border-radius: 999px; background: var(--card); border: 1px solid var(--line);
+  }
+  .scale { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; font-size: 13px; color: var(--muted); }
+  .scale div { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px; }
+  .scale b { display: block; color: var(--fg); font-family: var(--font-display); font-weight: 600; font-size: 15px; }
+  @media (max-width: 480px) { .scale { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+</style>
+</head>
+<body>
+<header class="topbar"><a class="back" href="index.html">← La Ludoteca</a><span class="best" id="best"></span></header>
+<main class="stage">
+  <h1 class="game-title">Riflessi</h1>
+  <p class="lead">Quando il riquadro diventa verde, clicca più in fretta che puoi. Cinque tentativi, poi vedi la tua media.</p>
+  <button class="pad" id="pad" data-state="idle">
+    <span class="big" id="big">Clicca per iniziare</span>
+    <span class="small" id="small">oppure premi Spazio</span>
+  </button>
+  <ol class="tries" id="tries" aria-label="Tentativi"></ol>
+  <div class="scale" aria-label="Scala dei risultati">
+    <div><b>&lt; 200 ms</b>Fulmine</div>
+    <div><b>200–250 ms</b>Felino</div>
+    <div><b>250–300 ms</b>Pilota della domenica</div>
+    <div><b>300–360 ms</b>Nella media</div>
+    <div><b>360–450 ms</b>Un po’ assonnato</div>
+    <div><b>&gt; 450 ms</b>Bradipo certificato</div>
+  </div>
+</main>
+<script>
+'use strict';
+const N = 5;
+const RATINGS = [[200, 'Fulmine'], [250, 'Felino'], [300, 'Pilota della domenica'], [360, 'Nella media'], [450, 'Un po’ assonnato'], [Infinity, 'Bradipo certificato']];
+const pad = document.getElementById('pad'), big = document.getElementById('big'), small = document.getElementById('small');
+const triesEl = document.getElementById('tries'), bestEl = document.getElementById('best');
+let state = 'idle', t0 = 0, timer = null, times = [];
+
+// Record salvato solo nel browser di chi gioca (se lo storage non c'è, si gioca lo stesso)
+const BEST_KEY = 'ludoteca.riflessi.best';
+const readBest = () => { try { return Number(localStorage.getItem(BEST_KEY)) || 0; } catch (_) { return 0; } };
+const showBest = () => { const b = readBest(); bestEl.textContent = b ? `Record: ${b} ms` : ''; };
+showBest();
+
+function setState(s, b, sm = '') { state = s; pad.dataset.state = s; big.textContent = b; small.textContent = sm; }
+function renderTries() { triesEl.innerHTML = times.map(ms => `<li>${ms} ms</li>`).join(''); }
+
+function startWait() {
+  setState('wait', 'Aspetta il verde…');
+  timer = setTimeout(() => { t0 = performance.now(); setState('go', 'ORA!'); }, 1200 + Math.random() * 2800);
+}
+
+function act() {
+  if (state === 'idle' || state === 'result' || state === 'early') return startWait();
+  if (state === 'done') { times = []; renderTries(); return startWait(); }
+  if (state === 'wait') {                                   // clic prima del verde
+    clearTimeout(timer);
+    return setState('early', 'Troppo presto!', 'Il tentativo non conta. Clicca per riprovare.');
+  }
+  if (state === 'go') {
+    const ms = Math.round(performance.now() - t0);
+    times.push(ms); renderTries();
+    if (times.length < N) return setState('result', `${ms} ms`, `Tentativo ${times.length} di ${N} · clicca per continuare`);
+    const avg = Math.round(times.reduce((a, b) => a + b, 0) / N);
+    const rating = RATINGS.find(([max]) => avg < max)[1];
+    const best = readBest();
+    if (!best || avg < best) { try { localStorage.setItem(BEST_KEY, String(avg)); } catch (_) {} }
+    showBest();
+    setState('done', `${avg} ms di media`, `${rating}${!best || avg < best ? ' · nuovo record!' : ''} · clicca per rigiocare`);
+  }
+}
+
+pad.addEventListener('pointerdown', e => { e.preventDefault(); act(); });
+addEventListener('keydown', e => {
+  if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat) { e.preventDefault(); act(); }
+});
+</script>
+</body>
+</html>

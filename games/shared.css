@@ -1,0 +1,65 @@
+/* Stile comune della Ludoteca: token di colore (chiaro/scuro), barra in alto, bottoni.
+   Ogni gioco lo importa con <link rel="stylesheet" href="shared.css">. */
+:root {
+  --bg: #f4f5fa;
+  --fg: #1c1e2b;
+  --muted: #646a82;
+  --card: #ffffff;
+  --line: #e0e3ee;
+  --shadow: rgba(28, 30, 43, 0.14);
+  --accent: #ff5a36;
+  --font-display: "Fredoka", ui-rounded, "Segoe UI", system-ui, sans-serif;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14151d; --fg: #eceef6; --muted: #9a9fb6; --card: #1f2130; --line: #2e3144;
+    --shadow: rgba(0, 0, 0, 0.45); --accent: #ff7a5c; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14151d; --fg: #eceef6; --muted: #9a9fb6; --card: #1f2130; --line: #2e3144;
+  --shadow: rgba(0, 0, 0, 0.45); --accent: #ff7a5c; color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+.topbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  max-width: 960px; margin: 0 auto; padding-block: 14px;
+}
+.back {
+  font-family: var(--font-display); font-weight: 600; font-size: 16px;
+  color: var(--fg); text-decoration: none;
+  padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--card);
+}
+.back:hover { border-color: var(--fg); }
+.back:focus-visible, .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.best { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+
+.stage {
+  max-width: 720px; margin: 0 auto; padding-block: 8px 48px;
+  display: flex; flex-direction: column; align-items: center; gap: 18px; text-align: center;
+}
+.game-title {
+  font-family: var(--font-display); font-weight: 700; margin: 0;
+  font-size: clamp(32px, 7vw, 52px); letter-spacing: -0.01em; text-wrap: balance;
+}
+.lead { margin: 0; color: var(--muted); max-width: 52ch; font-size: 17px; }
+
+.btn {
+  font-family: var(--font-display); font-weight: 600; font-size: 18px;
+  padding: 12px 26px; border-radius: 999px; border: 0; cursor: pointer;
+  background: var(--fg); color: var(--bg);
+}
+.btn:active { transform: translateY(1px); }
+.btn[disabled] { opacity: 0.4; cursor: default; }
+.num { font-variant-numeric: tabular-nums; }

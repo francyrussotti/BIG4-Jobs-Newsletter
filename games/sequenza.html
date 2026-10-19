@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sequenza</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="shared.css">
+<style>
+  :root { --p0: #2fbf71; --p1: #e5484d; --p2: #f5b82e; --p3: #3b82f6; --board: #24263a; }
+  .board {
+    width: min(86vw, 360px); max-width: 100%; aspect-ratio: 1; padding: 14px; box-sizing: border-box;
+    background: var(--board); border-radius: 50%;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px; position: relative;
+  }
+  .pad {
+    border: 0; cursor: pointer; opacity: 0.45; transition: opacity 0.08s, transform 0.08s, filter 0.08s;
+    font-family: var(--font-display); font-weight: 700; font-size: 20px; color: rgba(255,255,255,0.75);
+    touch-action: manipulation;
+  }
+  .pad:nth-child(1) { background: var(--p0); border-radius: 100% 0 0 0; }
+  .pad:nth-child(2) { background: var(--p1); border-radius: 0 100% 0 0; }
+  .pad:nth-child(3) { background: var(--p2); border-radius: 0 0 0 100%; }
+  .pad:nth-child(4) { background: var(--p3); border-radius: 0 0 100% 0; }
+  .pad.lit { opacity: 1; filter: brightness(1.15); transform: scale(0.97); }
+  .pad:focus-visible { outline: 3px solid #fff; outline-offset: -6px; }
+  .board.locked .pad { cursor: default; }
+  .hub {
+    position: absolute; inset: 0; margin: auto; width: 38%; height: 38%; border-radius: 50%;
+    background: var(--board); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  .hub b { font-family: var(--font-display); font-size: clamp(30px, 9vw, 44px); line-height: 1; font-variant-numeric: tabular-nums; }
+  .hub span { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.7; }
+  .status { font-family: var(--font-display); font-weight: 600; font-size: 22px; margin: 0; min-height: 1.4em; }
+  .hint { margin: 0; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<header class="topbar"><a class="back" href="index.html">← La Ludoteca</a><span class="best" id="best"></span></header>
+<main class="stage">
+  <h1 class="game-title">Sequenza</h1>
+  <p class="lead">Guarda e ascolta la sequenza di colori, poi ripetila nello stesso ordine. Ogni turno si aggiunge un colore.</p>
+  <div class="board locked" id="board">
+    <button class="pad" aria-label="Verde">1</button>
+    <button class="pad" aria-label="Rosso">2</button>
+    <button class="pad" aria-label="Giallo">3</button>
+    <button class="pad" aria-label="Blu">4</button>
+    <div class="hub"><b id="level">0</b><span>livello</span></div>
+  </div>
+  <p class="status" id="status">Pronto?</p>
+  <button class="btn" id="start">Inizia</button>
+  <p class="hint">Tasti 1–4 per i colori. Alza il volume: ogni colore ha la sua nota.</p>
+</main>
+<script>
+'use strict';
+const FREQ = [329.63, 261.63, 220.0, 164.81];              // mi, do, la, mi basso
+const pads = [...document.querySelectorAll('.pad')];
+const board = document.getElementById('board'), statusEl = document.getElementById('status');
+const levelEl = document.getElementById('level'), startBtn = document.getElementById('start'), bestEl = document.getElementById('best');
+let seq = [], idx = 0, phase = 'idle', ac = null, timers = [];
+
+const BEST_KEY = 'ludoteca.sequenza.best';
+const readBest = () => { try { return Number(localStorage.getItem(BEST_KEY)) || 0; } catch (_) { return 0; } };
+const showBest = () => { const b = readBest(); bestEl.textContent = b ? `Record: livello ${b}` : ''; };
+showBest();
+
+// Suono generato al volo con WebAudio (parte solo dopo un clic, come vogliono i browser)
+function tone(freq, ms, type = 'sine') {
+  try {
+    ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+    const o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime;
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + ms / 1000);
+    o.connect(g).connect(ac.destination); o.start(t); o.stop(t + ms / 1000 + 0.05);
+  } catch (_) { /* audio non disponibile: si gioca solo con i colori */ }
+}
+function flash(i, ms) {
+  pads[i].classList.add('lit'); tone(FREQ[i], ms);
+  setTimeout(() => pads[i].classList.remove('lit'), ms);
+}
+function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
+
+function start() {
+  timers.forEach(clearTimeout); timers = [];
+  seq = []; startBtn.hidden = true; next();
+}
+function next() {
+  seq.push(Math.floor(Math.random() * 4));
+  levelEl.textContent = seq.length;
+  phase = 'show'; board.classList.add('locked'); statusEl.textContent = 'Guarda…';
+  const step = Math.max(260, 560 - seq.length * 22);       // la sequenza accelera
+  seq.forEach((p, i) => later(() => flash(p, step * 0.7), 500 + i * step));
+  later(() => { phase = 'input'; idx = 0; board.classList.remove('locked'); statusEl.textContent = 'Tocca a te'; }, 500 + seq.length * step);
+}
+function press(i) {
+  if (phase !== 'input') return;
+  flash(i, 200);
+  if (i !== seq[idx]) return gameOver();
+  idx++;
+  if (idx === seq.length) { phase = 'wait'; board.classList.add('locked'); statusEl.textContent = 'Giusto!'; later(next, 750); }
+}
+function gameOver() {
+  phase = 'over'; board.classList.add('locked');
+  tone(110, 450, 'square');
+  const reached = seq.length - 1;
+  const best = readBest();
+  if (reached > best) { try { localStorage.setItem(BEST_KEY, String(reached)); } catch (_) {} showBest(); }
+  statusEl.textContent = `Sbagliato! Hai completato ${reached} ${reached === 1 ? 'livello' : 'livelli'}${reached > best ? ' · nuovo record' : ''}.`;
+  later(() => flash(seq[idx], 600), 500);                  // mostra quale era il colore giusto
+  startBtn.textContent = 'Rigioca'; startBtn.hidden = false;
+}
+
+pads.forEach((p, i) => p.addEventListener('pointerdown', e => { e.preventDefault(); press(i); }));
+startBtn.addEventListener('click', start);
+addEventListener('keydown', e => {
+  const k = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(e.code);
+  const n = ['Numpad1', 'Numpad2', 'Numpad3', 'Numpad4'].indexOf(e.code);
+  if ((k >= 0 || n >= 0) && !e.repeat) press(k >= 0 ? k : n);
+});
+</script>
+</body>
+</html>
