@@ -1,0 +1,53 @@
+{
+  "id": "https://openalex.org/W1234567890",
+  "doi": "https://doi.org/10.1234/ABC.2024.001",
+  "display_name": "A synthetic test paper on language models",
+  "publication_date": "2024-03-15",
+  "publication_year": 2024,
+  "language": "en",
+  "type": "article",
+  "cited_by_count": 12,
+  "counts_by_year": [
+    {"year": 2025, "cited_by_count": 9},
+    {"year": 2024, "cited_by_count": 3}
+  ],
+  "abstract_inverted_index": {"We": [0], "study": [1], "language": [2, 5], "models": [3], "and": [4], "use.": [6]},
+  "authorships": [
+    {
+      "author_position": "first",
+      "author": {"id": "https://openalex.org/A111", "display_name": "Ada Rossi", "orcid": null},
+      "institutions": [
+        {"id": "https://openalex.org/I1", "display_name": "University of Testing", "country_code": "IT"}
+      ]
+    },
+    {
+      "author_position": "last",
+      "author": {"id": "https://openalex.org/A222", "display_name": "Bo Chen", "orcid": null},
+      "institutions": [
+        {"id": "https://openalex.org/I1", "display_name": "University of Testing", "country_code": "IT"},
+        {"id": "https://openalex.org/I2", "display_name": "Example Lab", "country_code": "US"}
+      ]
+    }
+  ],
+  "primary_location": {
+    "is_oa": true,
+    "landing_page_url": "https://example.org/paper/1",
+    "pdf_url": "https://example.org/paper/1.pdf",
+    "source": {"id": "https://openalex.org/S1", "display_name": "Journal of Tests"}
+  },
+  "primary_topic": {
+    "id": "https://openalex.org/T1",
+    "display_name": "Natural Language Processing Techniques",
+    "score": 0.99,
+    "subfield": {"id": "https://openalex.org/subfields/1702", "display_name": "Artificial Intelligence"},
+    "field": {"id": "https://openalex.org/fields/17", "display_name": "Computer Science"},
+    "domain": {"id": "https://openalex.org/domains/3", "display_name": "Physical Sciences"}
+  },
+  "topics": [
+    {"id": "https://openalex.org/T1", "display_name": "Natural Language Processing Techniques", "score": 0.99},
+    {"id": "https://openalex.org/T2", "display_name": "Topic Modeling", "score": 0.8}
+  ],
+  "keywords": [{"id": "https://openalex.org/keywords/llm", "display_name": "Large language model", "score": 0.7}],
+  "open_access": {"is_oa": true, "oa_status": "gold", "oa_url": "https://example.org/paper/1.pdf"},
+  "updated_date": "2026-10-01T05:00:00.000000"
+}
