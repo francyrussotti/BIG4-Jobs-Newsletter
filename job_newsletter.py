@@ -174,7 +174,7 @@ def salva_seen(seen: set, storico: list):
     try:
         with open(SEEN_FILE, "w", encoding="utf-8") as f:
             json.dump({
-                "ids":               list(seen),
+                "ids":               sorted(seen),   # ordinati: diff git stabili tra una run e l'altra
                 "aggiornato":        datetime.now().isoformat(),
                 "storico_conteggi":  storico[-STORICO_MAX_RUN:],   # solo le ultime N run
             }, f, indent=2)
@@ -945,53 +945,117 @@ def scrape_kpmg():
 #
 #  Filtro paese: facet "locationCountry", ID Italia fisso.
 #  Paginazione: offset crescente di 20 fino al "total" dichiarato.
+#
+#  NOTA (ottobre 2026): Workday risponde HTTP 429 (rate limit) alle
+#  richieste da IP di datacenter, e la run restava rossa con 0 offerte.
+#  Ora: header Origin/Referer, retry con backoff sui 429 e, se requests
+#  non basta, le stesse chiamate API eseguite dentro un browser Playwright
+#  (stesso dominio, cookie reali).
 # ============================================================
+
+ACCENTURE_API  = "https://accenture.wd103.myworkdayjobs.com/wday/cxs/accenture/AccentureCareers/jobs"
+ACCENTURE_BASE = "https://accenture.wd103.myworkdayjobs.com/en-US/AccentureCareers"
+
+def _accenture_post(body, headers):
+    """POST Workday con retry/backoff sui 429. Ritorna il JSON o None."""
+    for attesa in (0, 5, 15, 30):
+        time.sleep(attesa)
+        try:
+            r = requests.post(ACCENTURE_API, headers=headers, json=body, timeout=20)
+            if r.status_code == 429:
+                print(f"    ⚠️  Accenture HTTP 429, riprovo (attesa successiva {attesa or 5}s)...")
+                continue
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            print(f"    ⚠️  POST Workday Accenture → {e}")
+            return None
+    print("    ⚠️  Accenture: 429 persistente dopo i retry")
+    return None
+
+def _accenture_playwright(ITALIA_ID, LIMIT):
+    """Fallback: stesse chiamate API, ma eseguite dentro un browser reale."""
+    if not PLAYWRIGHT_OK:
+        return []
+    JS = """async ([id, limit]) => {
+        const url = '/wday/cxs/accenture/AccentureCareers/jobs';
+        let out = [], offset = 0, total = null;
+        while (true) {
+            const r = await fetch(url, {method:'POST',
+                headers:{'Content-Type':'application/json','Accept':'application/json'},
+                body: JSON.stringify({appliedFacets:{locationCountry:[id]},
+                                      limit, offset, searchText:''})});
+            if (!r.ok) return {status: r.status, jobs: out};
+            const d = await r.json();
+            if (total === null) total = d.total || 0;
+            if (!d.jobPostings || !d.jobPostings.length) break;
+            out.push(...d.jobPostings);
+            offset += limit;
+            if (offset >= total) break;
+            await new Promise(res => setTimeout(res, 1500));
+        }
+        return {status: 200, jobs: out};
+    }"""
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+            ctx  = browser.new_context(user_agent=HEADERS["User-Agent"], locale="it-IT")
+            page = ctx.new_page()
+            page.goto(ACCENTURE_BASE, wait_until="networkidle", timeout=45_000)
+            res = page.evaluate(JS, [ITALIA_ID, LIMIT])
+            browser.close()
+            if res["status"] != 200:
+                print(f"    ⚠️  Accenture via browser → HTTP {res['status']}")
+            return res["jobs"]
+    except Exception as e:
+        print(f"    ⚠️  Playwright Accenture error: {e}")
+        return []
 
 def scrape_accenture():
     print("🔍 Accenture Italia (Workday)...")
-    URL = "https://accenture.wd103.myworkdayjobs.com/wday/cxs/accenture/AccentureCareers/jobs"
     ITALIA_ID = "8cd04a563fd94da7b06857a79faaf815"
-    BASE_JOB_URL = "https://accenture.wd103.myworkdayjobs.com/en-US/AccentureCareers"
     LIMIT = 20
-    risultati = []
+    headers = {**HEADERS, "Content-Type": "application/json", "Accept": "application/json",
+               "Origin": "https://accenture.wd103.myworkdayjobs.com",
+               "Referer": ACCENTURE_BASE}
 
-    headers = {**HEADERS, "Content-Type": "application/json", "Accept": "application/json"}
-    offset = 0
-    totale_dichiarato = None
+    jobs, offset, totale = [], 0, None
     while True:
-        body = {"appliedFacets": {"locationCountry": [ITALIA_ID]}, "limit": LIMIT,
-                "offset": offset, "searchText": ""}
-        try:
-            r = requests.post(URL, headers=headers, json=body, timeout=15)
-            r.raise_for_status()
-            dati = r.json()
-        except Exception as e:
-            print(f"    ⚠️  POST Workday Accenture → {e}")
+        dati = _accenture_post({"appliedFacets": {"locationCountry": [ITALIA_ID]},
+                                "limit": LIMIT, "offset": offset, "searchText": ""}, headers)
+        if dati is None:
             break
-
-        if totale_dichiarato is None:
-            totale_dichiarato = dati.get("total", 0)
-
-        jobs = dati.get("jobPostings", [])
-        if not jobs:
+        if totale is None:
+            totale = dati.get("total", 0)
+        page_jobs = dati.get("jobPostings", [])
+        if not page_jobs:
             break
-        for j in jobs:
-            titolo = j.get("title") or "N/D"
-            path   = j.get("externalPath", "")
-            bullet = j.get("bulletFields", [])
-            luogo  = bullet[1] if len(bullet) > 1 else ""
-            risultati.append({
-                "titolo":   titolo,
-                "location": f"Accenture Italia" + (f" · {luogo}" if luogo and luogo != "Location Negotiable" else ""),
-                "url":      f"{BASE_JOB_URL}{path}" if path else "",
-                "data":     _workday_data(j.get("postedOn")),
-            })
-
+        jobs.extend(page_jobs)
         offset += LIMIT
-        if offset >= totale_dichiarato:
+        if offset >= totale:
             break
-        time.sleep(0.2)
+        time.sleep(1.0)
 
+    if not jobs:
+        print("    → requests senza risultati, provo dal browser (Playwright)...")
+        jobs = _accenture_playwright(ITALIA_ID, LIMIT)
+
+    risultati, visti = [], set()
+    for j in jobs:
+        path = j.get("externalPath", "")
+        if path in visti:
+            continue
+        visti.add(path)
+        bullet = j.get("bulletFields", [])
+        luogo  = bullet[1] if len(bullet) > 1 else ""
+        risultati.append({
+            "titolo":   j.get("title") or "N/D",
+            "location": "Accenture Italia" + (f" · {luogo}" if luogo and luogo != "Location Negotiable" else ""),
+            "url":      f"{ACCENTURE_BASE}{path}" if path else "",
+            "data":     _workday_data(j.get("postedOn")),
+        })
+
+    registra_copertura("Accenture", len(risultati), totale)
     print(f"   → {len(risultati)} offerte trovate")
     return risultati
 
