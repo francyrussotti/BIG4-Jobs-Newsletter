@@ -168,6 +168,32 @@ class TestRisposteStrane(unittest.TestCase):
             self.assertEqual(jn.scrape_bip(), [])
 
 
+class TestPrivacyDestinatari(unittest.TestCase):
+    """Ogni destinatario non deve vedere gli altri: indirizzi solo nella busta
+    SMTP, mai nelle intestazioni (né To, né Cc, né Bcc)."""
+
+    def test_destinatari_in_ccn(self):
+        catturato = {}
+
+        class FintoSMTP:
+            def __init__(self, *a, **k): pass
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+            def login(self, *a): pass
+            def sendmail(self, mitt, dest, msg): catturato.update(dest=dest, msg=msg)
+
+        dest = ["anna@x.it", "bruno@y.it", "carla@z.it"]
+        with mock.patch.object(jn, "GMAIL_MITTENTE", "mittente@gmail.com"), \
+             mock.patch.object(jn, "GMAIL_PASSWORD", "x"), \
+             mock.patch.object(jn, "EMAIL_DESTINATARIO", ", ".join(dest)), \
+             mock.patch.object(jn.smtplib, "SMTP_SSL", FintoSMTP):
+            self.assertEqual(jn.invia_email("<p>ok</p>", 1), "ok")
+        for d in dest:
+            self.assertIn(d, catturato["dest"])        # consegnata a tutti
+            self.assertNotIn(d, catturato["msg"])      # ma invisibile nel messaggio
+        self.assertNotRegex(catturato["msg"], r"(?im)^(cc|bcc):")
+
+
 class TestMain(ConFileTemporaneo):
     """Flusso completo con scraper finti."""
 
