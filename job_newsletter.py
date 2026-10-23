@@ -154,40 +154,62 @@ def _workday_data(testo):
         return (testo or "").replace("Offerta pubblicata ", "")
     return (datetime.now() - timedelta(days=eta)).strftime("%Y-%m-%d")
 
+class SeenIlleggibile(Exception):
+    """seen_jobs.json esiste ma non si riesce a leggere."""
+
 def carica_seen() -> tuple[set, list]:
-    """Restituisce (ID già visti, storico dei conteggi per fonte)."""
-    if os.path.exists(SEEN_FILE):
-        try:
-            with open(SEEN_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            ids     = set(data.get("ids", []))
-            storico = data.get("storico_conteggi", [])
-            print(f"📂 Caricati {len(ids)} ID già visti da {SEEN_FILE} · storico: {len(storico)} run")
-            return ids, storico
-        except Exception as e:
-            print(f"⚠️  Errore lettura {SEEN_FILE}: {e}")
-    else:
+    """Restituisce (ID già visti, storico dei conteggi per fonte).
+
+    Se il file ESISTE ma è illeggibile (JSON troncato, conflitto di merge,
+    struttura inattesa) solleva SeenIlleggibile: proseguire con un insieme
+    vuoto farebbe inviare come "nuove" tutte le ~3000 offerte monitorate e
+    sovrascriverebbe lo storico. Meglio fermarsi e far fallire la run."""
+    if not os.path.exists(SEEN_FILE):
         print(f"📂 {SEEN_FILE} non trovato — prima esecuzione, tutte le offerte sono nuove")
-    return set(), []
+        return set(), []
+    try:
+        with open(SEEN_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict) or not isinstance(data.get("ids", []), list):
+            raise ValueError("struttura inattesa (manca la lista 'ids')")
+        ids     = {i for i in data.get("ids", []) if isinstance(i, str)}
+        storico = [r for r in (data.get("storico_conteggi") or []) if isinstance(r, dict)]
+    except Exception as e:
+        raise SeenIlleggibile(f"{SEEN_FILE} illeggibile: {e}") from e
+    print(f"📂 Caricati {len(ids)} ID già visti da {SEEN_FILE} · storico: {len(storico)} run")
+    return ids, storico
 
 def salva_seen(seen: set, storico: list):
+    """Scrittura atomica: si scrive un file temporaneo e lo si rinomina. Se la
+    run si interrompe a metà scrittura, seen_jobs.json resta quello di prima
+    invece di rimanere troncato (e illeggibile alla run successiva)."""
+    tmp = SEEN_FILE + ".tmp"
     try:
-        with open(SEEN_FILE, "w", encoding="utf-8") as f:
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump({
                 "ids":               sorted(seen),   # ordinati: diff git stabili tra una run e l'altra
                 "aggiornato":        datetime.now().isoformat(),
                 "storico_conteggi":  storico[-STORICO_MAX_RUN:],   # solo le ultime N run
             }, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, SEEN_FILE)
         print(f"💾 Salvati {len(seen)} ID in {SEEN_FILE}")
     except Exception as e:
         print(f"⚠️  Errore scrittura {SEEN_FILE}: {e}")
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
 
 def filtra_nuove(azienda: str, offerte: list, seen: set) -> tuple[list, set]:
     nuove = []
     nuovi_ids = set()
     for o in offerte:
         job_id = _job_id(azienda, o)
-        if job_id not in seen:
+        # "not in nuovi_ids": la stessa offerta presente due volte nella
+        # raccolta di oggi compare una sola volta nell'email
+        if job_id not in seen and job_id not in nuovi_ids:
             nuove.append(o)
             nuovi_ids.add(job_id)
     seen_aggiornato = seen | nuovi_ids
@@ -215,9 +237,12 @@ def health_check(conteggi: dict, nuove_per_fonte: dict, storico: list) -> list:
     problemi = []
 
     for fonte, trovate in conteggi.items():
-        # Storico dei conteggi passati per questa fonte
+        # Storico dei conteggi passati per questa fonte. Gli zeri (giorni in cui
+        # lo scraper era rotto, già segnalati come bloccanti) si escludono: altrimenti
+        # abbasserebbero la mediana e nasconderebbero un recupero solo parziale.
         passati = [run["conteggi"][fonte] for run in storico
-                   if isinstance(run.get("conteggi"), dict) and fonte in run["conteggi"]]
+                   if isinstance(run.get("conteggi"), dict)
+                   and isinstance(run["conteggi"].get(fonte), int) and run["conteggi"][fonte] > 0]
 
         if trovate == 0:
             problemi.append(("bloccante", fonte,
@@ -270,10 +295,32 @@ def ts_ms_to_str(ts):
     except:
         return ""
 
+def _crea_sessione():
+    """Sessione HTTP con retry automatico sugli errori temporanei (connessione
+    caduta, 429, 5xx), con attesa crescente (1s, 2s, 4s) e rispetto di
+    Retry-After. Senza retry un singolo 502 faceva perdere una fonte intera
+    o troncava la paginazione a metà (le offerte saltate tornavano poi come
+    false "nuove"). Anche i POST si ripetono: qui sono tutte ricerche, senza
+    effetti collaterali."""
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+    retry = Retry(total=3, connect=3, read=3, status=3, backoff_factor=1,
+                  status_forcelist=(429, 500, 502, 503, 504),
+                  allowed_methods=None,            # None = tutti i metodi, POST compreso
+                  respect_retry_after_header=True, raise_on_status=False)
+    s = requests.Session()
+    adapter = HTTPAdapter(max_retries=retry, pool_maxsize=10)
+    s.mount("https://", adapter)
+    s.mount("http://", adapter)
+    return s
+
+SESSION = _crea_sessione()
+
 def http_get(url, **kw):
     try:
         headers = {**HEADERS, **kw.pop("headers", {})}
-        r = requests.get(url, headers=headers, timeout=15, **kw)
+        timeout = kw.pop("timeout", 15)
+        r = SESSION.get(url, headers=headers, timeout=timeout, **kw)
         r.raise_for_status()
         return r
     except Exception as e:
@@ -284,12 +331,27 @@ def http_post(url, **kw):
     try:
         headers = {**HEADERS, **kw.pop("headers", {})}
         timeout = kw.pop("timeout", 15)
-        r = requests.post(url, headers=headers, timeout=timeout, **kw)
+        r = SESSION.post(url, headers=headers, timeout=timeout, **kw)
         r.raise_for_status()
         return r
     except Exception as e:
         print(f"    ⚠️  POST {url[:70]}... → {e}")
         return None
+
+def _json(r):
+    """JSON della risposta, o None se la risposta manca o non è JSON valido."""
+    if r is None:
+        return None
+    try:
+        return r.json()
+    except ValueError:
+        print(f"    ⚠️  Risposta non JSON da {r.url[:70]}...")
+        return None
+
+# Tetto di sicurezza per le paginazioni "finché ci sono risultati": se un sito
+# risponde a una pagina oltre l'ultima ripetendo l'ultima (o la prima) pagina,
+# senza un tetto il ciclo non terminerebbe mai e la run resterebbe appesa.
+MAX_PAGINE = 100
 
 # ============================================================
 # 🌐  PLAYWRIGHT HELPERS
@@ -413,7 +475,7 @@ def scrape_ey():
     BASE = "https://eyglobal.yello.co/job_boards/c1riT--B2O-KySgYWsZO1Q"
     ey_headers = {**HEADERS, "X-Requested-With": "XMLHttpRequest",
                   "Accept": "application/json, text/javascript, */*"}
-    MAX_PAGINE = 40   # tetto di sicurezza per città (~1000 offerte)
+    MAX_PAGINE_EY = 40   # tetto di sicurezza per città (~1000 offerte)
 
     risultati = []
     tot_dichiarate = tot_raccolte = 0
@@ -421,14 +483,10 @@ def scrape_ey():
     for citta, paese in EY_CITTA:
         raccolti   = {}     # chiave (req id o url) → offerta
         dichiarato = None
-        for pagina in range(1, MAX_PAGINE + 1):
+        for pagina in range(1, MAX_PAGINE_EY + 1):
             url = f"{BASE}/search?query={citta}&locale=it&page_number={pagina}"
-            r = http_get(url, headers=ey_headers)
-            if not r:
-                break
-            try:
-                j = r.json()
-            except ValueError:
+            j = _json(http_get(url, headers=ey_headers))
+            if not isinstance(j, dict):
                 break
             if pagina == 1:
                 m = re.search(r"(\d+)", j.get("display_count_text", "") or "")
@@ -531,7 +589,7 @@ def _ey_dettaglio(url):
     se la pagina non è leggibile. Sede: es. "ITA-Roma, ITA-Milano" → "Roma, Milano"."""
     for tentativo in range(2):
         try:
-            r = requests.get(url, headers=HEADERS, timeout=20)
+            r = SESSION.get(url, headers=HEADERS, timeout=20)
             r.raise_for_status()
             soup = BeautifulSoup(r.text, "lxml")
             paese = None
@@ -720,7 +778,7 @@ def _pwc_belgio_workday():
         # 1) ID delle sedi belghe dal facet "locations"
         filtro = {"appliedFacets": {}, "searchText": "Belgium"}   # fallback
         try:
-            r = requests.post(api, headers=h, timeout=20,
+            r = SESSION.post(api, headers=h, timeout=20,
                               json={"appliedFacets": {}, "limit": 1, "offset": 0, "searchText": ""})
             r.raise_for_status()
             ids = [v["id"]
@@ -738,7 +796,7 @@ def _pwc_belgio_workday():
         offset, totale = 0, None
         for _ in range(30):
             try:
-                r = requests.post(api, headers=h, timeout=20,
+                r = SESSION.post(api, headers=h, timeout=20,
                                   json={**filtro, "limit": 20, "offset": offset})
                 r.raise_for_status()
                 d = r.json()
@@ -891,9 +949,10 @@ def scrape_kpmg():
     BASE_URL  = "https://careers.kpmg.it/search/"
     STEP      = 5
     risultati = []
+    visti     = set()
     startrow  = 0
 
-    while True:
+    for _ in range(400):   # tetto di sicurezza (~2000 offerte con 5 per pagina)
         url = (f"{BASE_URL}?q=&sortColumn=referencedate&sortDirection=desc"
                f"&startrow={startrow}")
         r = http_get(url)
@@ -906,6 +965,7 @@ def scrape_kpmg():
         if not rows:
             break
 
+        nuovi = 0
         for row in rows:
             cols = row.select("td")
             if len(cols) < 2:
@@ -916,6 +976,10 @@ def scrape_kpmg():
             href = link_el.get("href", "")
             if href and not href.startswith("http"):
                 href = "https://careers.kpmg.it" + href
+            if href in visti:
+                continue
+            visti.add(href)
+            nuovi += 1
             data = ""
             for col in cols:
                 cls = " ".join(col.get("class", []))
@@ -932,6 +996,10 @@ def scrape_kpmg():
                 "data":     data,
             })
 
+        # Pagina che non porta offerte nuove (es. il sito ripete l'ultima pagina
+        # oltre la fine): ci si ferma invece di girare all'infinito.
+        if nuovi == 0:
+            break
         startrow += STEP
         if len(rows) < STEP:
             break
@@ -957,20 +1025,25 @@ ACCENTURE_API  = "https://accenture.wd103.myworkdayjobs.com/wday/cxs/accenture/A
 ACCENTURE_BASE = "https://accenture.wd103.myworkdayjobs.com/en-US/AccentureCareers"
 
 def _accenture_post(body, headers):
-    """POST Workday con retry/backoff sui 429. Ritorna il JSON o None."""
+    """POST Workday con retry/backoff sui 429, sui 5xx e sugli errori di rete
+    (attese più lunghe della sessione generica: il rate limit di Workday è
+    severo). Ritorna il JSON o None."""
     for attesa in (0, 5, 15, 30):
         time.sleep(attesa)
         try:
             r = requests.post(ACCENTURE_API, headers=headers, json=body, timeout=20)
-            if r.status_code == 429:
-                print(f"    ⚠️  Accenture HTTP 429, riprovo (attesa successiva {attesa or 5}s)...")
+            if r.status_code == 429 or r.status_code >= 500:
+                print(f"    ⚠️  Accenture HTTP {r.status_code}, riprovo...")
                 continue
             r.raise_for_status()
             return r.json()
+        except (requests.ConnectionError, requests.Timeout) as e:
+            print(f"    ⚠️  POST Workday Accenture → {e}, riprovo...")
+            continue
         except Exception as e:
             print(f"    ⚠️  POST Workday Accenture → {e}")
             return None
-    print("    ⚠️  Accenture: 429 persistente dopo i retry")
+    print("    ⚠️  Accenture: errore persistente dopo i retry")
     return None
 
 def _accenture_playwright(ITALIA_ID, LIMIT):
@@ -1004,9 +1077,11 @@ def _accenture_playwright(ITALIA_ID, LIMIT):
             page.goto(ACCENTURE_BASE, wait_until="networkidle", timeout=45_000)
             res = page.evaluate(JS, [ITALIA_ID, LIMIT])
             browser.close()
-            if res["status"] != 200:
-                print(f"    ⚠️  Accenture via browser → HTTP {res['status']}")
-            return res["jobs"]
+            if not isinstance(res, dict):
+                return []
+            if res.get("status") != 200:
+                print(f"    ⚠️  Accenture via browser → HTTP {res.get('status')}")
+            return res.get("jobs") or []
     except Exception as e:
         print(f"    ⚠️  Playwright Accenture error: {e}")
         return []
@@ -1020,14 +1095,14 @@ def scrape_accenture():
                "Referer": ACCENTURE_BASE}
 
     jobs, offset, totale = [], 0, None
-    while True:
+    for _ in range(MAX_PAGINE):
         dati = _accenture_post({"appliedFacets": {"locationCountry": [ITALIA_ID]},
                                 "limit": LIMIT, "offset": offset, "searchText": ""}, headers)
         if dati is None:
             break
         if totale is None:
-            totale = dati.get("total", 0)
-        page_jobs = dati.get("jobPostings", [])
+            totale = dati.get("total") or 0
+        page_jobs = dati.get("jobPostings") or []
         if not page_jobs:
             break
         jobs.extend(page_jobs)
@@ -1036,9 +1111,16 @@ def scrape_accenture():
             break
         time.sleep(1.0)
 
-    if not jobs:
-        print("    → requests senza risultati, provo dal browser (Playwright)...")
-        jobs = _accenture_playwright(ITALIA_ID, LIMIT)
+    # Anche una raccolta interrotta a metà (es. 429 dopo qualche pagina) passa
+    # dal browser: le offerte saltate tornerebbero domani come false "nuove".
+    if not jobs or (totale and len(jobs) < totale):
+        if jobs:
+            print(f"    → raccolte {len(jobs)} su {totale} via requests, riprovo dal browser...")
+        else:
+            print("    → requests senza risultati, provo dal browser (Playwright)...")
+        jobs_pw = _accenture_playwright(ITALIA_ID, LIMIT)
+        if len(jobs_pw) > len(jobs):
+            jobs = jobs_pw
 
     risultati, visti = [], set()
     for j in jobs:
@@ -1069,9 +1151,9 @@ def scrape_nttdata():
     print("🔍 NTT DATA Italia...")
     BASE = "https://it.nttdata.com/career/posizioni-aperte"
     risultati = []
-    page = 1
+    visti = set()
 
-    while True:
+    for page in range(1, MAX_PAGINE + 1):
         url = f"{BASE}/page/{page}" if page > 1 else BASE
         r = http_get(url)
         if not r:
@@ -1080,19 +1162,25 @@ def scrape_nttdata():
         cards = soup.select("a.job-detail-link")
         if not cards:
             break
+        nuovi = 0
         for a in cards:
             titolo_el = a.select_one(".is-h5")
             loc_el    = a.select_one(".is-small")
             href      = a.get("href", "")
             if href and not href.startswith("http"):
                 href = "https://it.nttdata.com" + href
+            if href in visti:
+                continue
+            visti.add(href)
+            nuovi += 1
             risultati.append({
                 "titolo":   titolo_el.get_text(strip=True) if titolo_el else "N/D",
                 "location": f"NTT DATA · {loc_el.get_text(strip=True)}" if loc_el else "NTT DATA Italia",
                 "url":      href,
                 "data":     "",
             })
-        page += 1
+        if nuovi == 0:          # pagina ripetuta (oltre la fine) → stop
+            break
         time.sleep(0.3)
 
     print(f"   → {len(risultati)} offerte trovate")
@@ -1115,28 +1203,31 @@ def scrape_bip():
     headers = {**HEADERS, "Accept": "application/json"}
     offset = 0
     totale_dichiarato = None
-    while True:
+    visti = set()
+    for _ in range(MAX_PAGINE):
         finder = (f"findReqs;siteNumber=CX_1,limit={LIMIT},offset={offset},"
                   f"sortBy=POSTING_DATES_DESC")
         params = {"onlyData": "true", "expand": "requisitionList", "finder": finder}
+        j_resp = _json(http_get(API, headers=headers, params=params))
         try:
-            r = requests.get(API, headers=headers, params=params, timeout=15)
-            r.raise_for_status()
-            dati = r.json()["items"][0]
-        except Exception as e:
-            print(f"    ⚠️  GET Oracle Bip → {e}")
+            dati = j_resp["items"][0]
+        except (TypeError, KeyError, IndexError):
+            print("    ⚠️  Oracle Bip: risposta assente o inattesa")
             break
 
         if totale_dichiarato is None:
-            totale_dichiarato = dati.get("TotalJobsCount", 0)
+            totale_dichiarato = dati.get("TotalJobsCount") or 0
 
-        reqs = dati.get("requisitionList", [])
+        reqs = dati.get("requisitionList") or []
         if not reqs:
             break
         for j in reqs:
             if j.get("PrimaryLocationCountry") != "IT":
                 continue
             job_id = j.get("Id", "")
+            if job_id and job_id in visti:
+                continue
+            visti.add(job_id)
             risultati.append({
                 "titolo":   j.get("Title") or "N/D",
                 "location": "Bip Italia",
@@ -1145,7 +1236,8 @@ def scrape_bip():
             })
 
         offset += LIMIT
-        if offset >= totale_dichiarato:
+        # Senza totale dichiarato si va avanti finché arrivano pagine piene
+        if (totale_dichiarato and offset >= totale_dichiarato) or len(reqs) < LIMIT:
             break
         time.sleep(0.2)
 
@@ -1165,9 +1257,9 @@ def scrape_digital360():
     print("🔍 Digital360 (gruppo: Digital360, P4I, FPA, GOV, Cryptonet Labs)...")
     BASE = "https://www.digital360.it/posizioni-aperte"
     risultati = []
-    page = 1
+    visti = set()
 
-    while True:
+    for page in range(1, MAX_PAGINE + 1):
         r = http_get(BASE, params={"page": page})
         if not r:
             break
@@ -1175,6 +1267,7 @@ def scrape_digital360():
         cards = soup.select("div.positions-item")
         if not cards:
             break
+        nuovi = 0
         for c in cards:
             tag_el = c.select(".item-pre-heading p")
             azienda  = tag_el[0].get_text(strip=True) if len(tag_el) > 0 else "Digital360"
@@ -1185,13 +1278,20 @@ def scrape_digital360():
             href = a.get("href", "") if a else ""
             if href and citta:
                 href = f"{href}#{citta.lower().replace(' ', '-')}"
+            titolo = h3.get_text(strip=True) if h3 else "N/D"
+            chiave = href or f"{titolo}|{citta}"
+            if chiave in visti:
+                continue
+            visti.add(chiave)
+            nuovi += 1
             risultati.append({
-                "titolo":   h3.get_text(strip=True) if h3 else "N/D",
+                "titolo":   titolo,
                 "location": f"{azienda} · {citta}" + (f" ({modalita})" if modalita else ""),
                 "url":      href,
                 "data":     "",
             })
-        page += 1
+        if nuovi == 0:          # pagina ripetuta (oltre la fine) → stop
+            break
         time.sleep(0.3)
 
     print(f"   → {len(risultati)} offerte trovate")
@@ -1212,27 +1312,29 @@ def scrape_capgemini():
     risultati = []
 
     headers = {**HEADERS, "Accept": "application/json"}
-    page = 1
     totale_dichiarato = None
-    while True:
+    visti = set()
+    for page in range(1, MAX_PAGINE + 1):
         params = {"country_code": "it-it", "page": page, "size": SIZE}
-        try:
-            r = requests.get(URL, headers=headers, params=params, timeout=15)
-            r.raise_for_status()
-            dati = r.json()
-        except Exception as e:
-            print(f"    ⚠️  GET Capgemini → {e}")
+        dati = _json(http_get(URL, headers=headers, params=params))
+        if not isinstance(dati, dict):
             break
 
         if totale_dichiarato is None:
-            totale_dichiarato = dati.get("total", 0)
+            totale_dichiarato = dati.get("total") or 0
 
-        jobs = dati.get("data", [])
+        jobs = dati.get("data") or []
         if not jobs:
             break
+        nuovi = 0
         for j in jobs:
             # "tcsource=apply" apre subito il modulo di candidatura: lo togliamo
             url_annuncio = (j.get("apply_job_url", "") or "").replace("&tcsource=apply", "")
+            chiave = url_annuncio or f"{j.get('title')}|{j.get('location')}"
+            if chiave in visti:
+                continue
+            visti.add(chiave)
+            nuovi += 1
             risultati.append({
                 "titolo":   j.get("title") or "N/D",
                 "location": f"Capgemini · {j.get('location','')}".rstrip(" ·"),
@@ -1240,8 +1342,9 @@ def scrape_capgemini():
                 "data":     "",
             })
 
-        page += 1
-        if len(risultati) >= totale_dichiarato:
+        if nuovi == 0 or len(jobs) < SIZE:
+            break
+        if totale_dichiarato and len(risultati) >= totale_dichiarato:
             break
         time.sleep(0.2)
 
@@ -1363,7 +1466,7 @@ def genera_html(tutte, totale_trovate, problemi=None, fonti=None, nascoste=None)
             voci += f"""
           <tr><td style="padding:14px 0;border-top:1px solid {linea};">
             <a href="{url}" style="{serif}font-size:18px;line-height:1.35;color:{inchiostro};
-               text-decoration:none;">{esc(o['titolo'])}</a>
+               text-decoration:none;">{esc(o.get('titolo') or 'N/D')}</a>
             <div style="margin-top:6px;{sans}font-size:13px;line-height:1.6;color:{grigio};">
               {' &nbsp;·&nbsp; '.join(meta)}</div>
             <div style="margin-top:6px;{sans}font-size:13px;line-height:1.8;">
@@ -1475,21 +1578,27 @@ def invia_email(html_body, totale):
     # passati solo a sendmail(), cioè a livello di trasporto SMTP.
     msg["To"]      = GMAIL_MITTENTE
     msg.attach(MIMEText(html_body, "html", "utf-8"))
-    try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
-            s.login(GMAIL_MITTENTE, GMAIL_PASSWORD)
-            # Il mittente riceve anch'esso la copia (è nel campo "A"): lo si aggiunge
-            # una sola volta per non ricevere doppioni se è già tra i destinatari.
-            invio_a = list(dict.fromkeys([GMAIL_MITTENTE] + destinatari))
-            s.sendmail(GMAIL_MITTENTE, invio_a, msg.as_string())
-        print(f"✅ Email inviata in CCN a {len(destinatari)} destinatari")
-        return "ok"
-    except smtplib.SMTPAuthenticationError:
-        print("❌ Errore autenticazione → rigenera App Password su myaccount.google.com")
-        return "auth"
-    except Exception as e:
-        print(f"❌ Errore invio: {e}")
-        return "errore"
+    # Il mittente riceve anch'esso la copia (è nel campo "A"): lo si aggiunge
+    # una sola volta per non ricevere doppioni se è già tra i destinatari.
+    invio_a = list(dict.fromkeys([GMAIL_MITTENTE] + destinatari))
+
+    # Errori temporanei (rete, Gmail momentaneamente non disponibile): si
+    # riprova. Le credenziali rifiutate invece non si risolvono riprovando.
+    attese = (0, 10, 30)
+    for tentativo, attesa in enumerate(attese, 1):
+        time.sleep(attesa)
+        try:
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=60) as s:
+                s.login(GMAIL_MITTENTE, GMAIL_PASSWORD)
+                s.sendmail(GMAIL_MITTENTE, invio_a, msg.as_string())
+            print(f"✅ Email inviata in CCN a {len(destinatari)} destinatari")
+            return "ok"
+        except smtplib.SMTPAuthenticationError:
+            print("❌ Errore autenticazione → rigenera App Password su myaccount.google.com")
+            return "auth"
+        except Exception as e:
+            print(f"❌ Errore invio (tentativo {tentativo}/{len(attese)}): {e}")
+    return "errore"
 
 # ============================================================
 # 🚀  MAIN
@@ -1500,7 +1609,15 @@ def main():
     print(f"  BIG4 JOB NEWSLETTER  {datetime.now():%d/%m/%Y %H:%M}")
     print(f"{'='*55}\n")
 
-    seen, storico = carica_seen()
+    try:
+        seen, storico = carica_seen()
+    except SeenIlleggibile as e:
+        # Nessun invio e nessuna scrittura: il file va sistemato a mano
+        # (di solito basta ripristinarne la versione precedente da git).
+        print(f"❌ {e}")
+        print("   Run interrotta: senza lo storico tutte le offerte risulterebbero nuove.")
+        sys.exit(1)
+    seen_iniziale = set(seen)
 
     scrapers = [
         ("EY",         scrape_ey),
@@ -1522,7 +1639,7 @@ def main():
 
     for nome, fn in scrapers:
         try:
-            offerte = fn()
+            offerte = fn() or []
             tutte_trovate[nome] = offerte
             if offerte:
                 nuove, seen = filtra_nuove(nome, offerte, seen)
@@ -1552,7 +1669,6 @@ def main():
 
     # Lo storico si aggiorna comunque, così la mediana resta rappresentativa
     storico = storico + [{"data": datetime.now().strftime("%Y-%m-%d"), "conteggi": conteggi}]
-    salva_seen(seen, storico)
 
     totale_trovate = sum(conteggi.values())
     totale_nuove   = sum(nuove_per_fonte.values())
@@ -1580,6 +1696,15 @@ def main():
     html, totale = genera_html(tutte_nuove, totale_trovate, problemi,
                                fonti=[n for n, _ in scrapers], nascoste=nascoste)
     stato_invio  = invia_email(html, totale)
+
+    # Le offerte si segnano come "viste" SOLO se l'email è partita: se l'invio
+    # fallisce, domani verranno riproposte invece di andare perse. Lo storico
+    # dei conteggi si salva in ogni caso.
+    if stato_invio == "ok":
+        salva_seen(seen, storico)
+    else:
+        print("⚠️  Email non inviata: le offerte di oggi NON vengono segnate come viste")
+        salva_seen(seen_iniziale, storico)
     print("\n✨ Done!\n")
 
     # --- Esito del workflow ---

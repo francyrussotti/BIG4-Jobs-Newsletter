@@ -11,9 +11,18 @@ on:
 permissions:
   contents: write
 
+# Mai due run in parallelo (es. avvio manuale mentre gira quella pianificata):
+# manderebbero due email e andrebbero in conflitto sul push di seen_jobs.json.
+concurrency:
+  group: newsletter
+  cancel-in-progress: false
+
 jobs:
   newsletter:
     runs-on: ubuntu-latest
+    # Se un sito resta appeso, la run si ferma (il default di GitHub è 6 ore).
+    # Una run normale dura pochi minuti.
+    timeout-minutes: 50
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -44,6 +53,8 @@ jobs:
       - name: Debug files before run
         run: ls -la
       - name: Run newsletter script
+        # Limite più basso di quello del job: resta tempo per il commit dello storico
+        timeout-minutes: 40
         env:
           GMAIL_MITTENTE: ${{ secrets.GMAIL_MITTENTE }}
           GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
