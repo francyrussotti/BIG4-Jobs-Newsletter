@@ -2,11 +2,27 @@ name: 📰 Big4 Job Newsletter
 
 on:
   schedule:
-    # GitHub Actions usa sempre UTC e non applica l'ora legale.
-    # 05:30 UTC = 07:30 CEST (ora legale, in vigore da fine marzo a fine ottobre).
-    # In ora solare (CET) scatterà alle 06:30 locali: limite noto del cron GitHub, che non gestisce il DST.
-    - cron: "30 5 * * *"
+    # La pianificazione di GitHub NON è puntuale: nelle ore di punta parte con
+    # ore di ritardo (a ottobre 2026 il cron delle 05:30 UTC partiva tra le 09:30
+    # e le 13:30 UTC). Per questo ci sono più orari di riserva, anticipati e
+    # non allo scoccare dell'ora (i minuti :00 e :30 sono i più congestionati):
+    # la prima run che parte invia la newsletter, le successive vedono
+    # "ultimo_invio" = oggi in seen_jobs.json e si fermano subito.
+    # Orari in UTC (GitHub non gestisce l'ora legale):
+    #   03:07 UTC = 04:07 ora solare / 05:07 ora legale
+    #   04:07 UTC = 05:07 ora solare / 06:07 ora legale
+    #   05:07 UTC = 06:07 ora solare / 07:07 ora legale
+    - cron: "7 3 * * *"
+    - cron: "7 4 * * *"
+    - cron: "7 5 * * *"
+  # Avvio manuale da GitHub, oppure da un servizio esterno all'orario esatto
+  # (POST /repos/<owner>/<repo>/actions/workflows/newsletter.yml/dispatches).
   workflow_dispatch:
+    inputs:
+      forza:
+        description: "Invia anche se la newsletter di oggi è già partita"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -27,6 +43,10 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
+          # Ultima versione del branch al momento dell'avvio (non quella di quando
+          # la run è stata messa in coda): così una run rimasta in attesa dietro
+          # un'altra vede il seen_jobs.json appena aggiornato e non reinvia.
+          ref: ${{ github.ref }}
           persist-credentials: true
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -59,6 +79,7 @@ jobs:
           GMAIL_MITTENTE: ${{ secrets.GMAIL_MITTENTE }}
           GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
           EMAIL_DESTINATARIO: ${{ secrets.EMAIL_DESTINATARIO }}
+          NEWSLETTER_FORZA: ${{ inputs.forza }}
         run: python job_newsletter.py
       - name: Debug files after run
         run: ls -la

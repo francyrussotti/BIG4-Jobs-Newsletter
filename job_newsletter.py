@@ -14,6 +14,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import json, time, re, os, hashlib, sys
 import html as html_lib
+from zoneinfo import ZoneInfo
 
 try:
     from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
@@ -179,7 +180,19 @@ def carica_seen() -> tuple[set, list]:
     print(f"📂 Caricati {len(ids)} ID già visti da {SEEN_FILE} · storico: {len(storico)} run")
     return ids, storico
 
-def salva_seen(seen: set, storico: list):
+def oggi_italia() -> str:
+    """Data di oggi in Italia (AAAA-MM-GG): GitHub gira in UTC."""
+    return datetime.now(ZoneInfo("Europe/Rome")).strftime("%Y-%m-%d")
+
+def leggi_ultimo_invio():
+    """Data (ora italiana) dell'ultima newsletter inviata con successo, o None."""
+    try:
+        with open(SEEN_FILE, "r", encoding="utf-8") as f:
+            return json.load(f).get("ultimo_invio")
+    except Exception:
+        return None
+
+def salva_seen(seen: set, storico: list, ultimo_invio=None):
     """Scrittura atomica: si scrive un file temporaneo e lo si rinomina. Se la
     run si interrompe a metà scrittura, seen_jobs.json resta quello di prima
     invece di rimanere troncato (e illeggibile alla run successiva)."""
@@ -189,6 +202,9 @@ def salva_seen(seen: set, storico: list):
             json.dump({
                 "ids":               sorted(seen),   # ordinati: diff git stabili tra una run e l'altra
                 "aggiornato":        datetime.now().isoformat(),
+                # Serve a inviare UNA sola newsletter al giorno anche se il
+                # workflow parte più volte (più orari pianificati + avvio esterno)
+                "ultimo_invio":      ultimo_invio or leggi_ultimo_invio(),
                 "storico_conteggi":  storico[-STORICO_MAX_RUN:],   # solo le ultime N run
             }, f, indent=2)
             f.flush()
@@ -1619,6 +1635,15 @@ def main():
         sys.exit(1)
     seen_iniziale = set(seen)
 
+    # Il workflow può partire più volte al giorno (più orari di riserva perché
+    # la pianificazione di GitHub arriva anche con ore di ritardo): la prima
+    # run che parte invia, le altre si fermano qui. NEWSLETTER_FORZA=true
+    # (avvio manuale con "forza") invia comunque.
+    forza = os.environ.get("NEWSLETTER_FORZA", "").strip().lower() in ("1", "true", "yes", "si", "sì")
+    if not forza and leggi_ultimo_invio() == oggi_italia():
+        print(f"✅ Newsletter di oggi ({oggi_italia()}) già inviata: niente da fare.")
+        return
+
     scrapers = [
         ("EY",         scrape_ey),
         ("PwC Italia", scrape_pwc_italia),
@@ -1701,7 +1726,7 @@ def main():
     # fallisce, domani verranno riproposte invece di andare perse. Lo storico
     # dei conteggi si salva in ogni caso.
     if stato_invio == "ok":
-        salva_seen(seen, storico)
+        salva_seen(seen, storico, ultimo_invio=oggi_italia())
     else:
         print("⚠️  Email non inviata: le offerte di oggi NON vengono segnate come viste")
         salva_seen(seen_iniziale, storico)

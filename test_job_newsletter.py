@@ -203,6 +203,29 @@ class TestMain(ConFileTemporaneo):
         self.assertEqual(dati["ids"], [])                  # verranno riproposte domani
         self.assertEqual(len(dati["storico_conteggi"]), 1)  # lo storico si aggiorna comunque
 
+    def test_una_sola_newsletter_al_giorno(self):
+        dati = self.esegui("ok")
+        self.assertEqual(dati["ultimo_invio"], jn.oggi_italia())
+        # Seconda run dello stesso giorno: si ferma prima di raccogliere e inviare
+        with mock.patch.object(jn, "invia_email") as invio, \
+             mock.patch.object(jn, "scrape_ey") as ey:
+            jn.main()
+        invio.assert_not_called()
+        ey.assert_not_called()
+
+    def test_forza_invia_di_nuovo(self):
+        self.esegui("ok")
+        with mock.patch.dict(os.environ, {"NEWSLETTER_FORZA": "true"}):
+            dati = self.esegui("ok")
+        self.assertEqual(len(dati["storico_conteggi"]), 2)
+
+    def test_invio_fallito_lascia_riprovare(self):
+        dati = self.esegui("errore")
+        self.assertIsNone(dati.get("ultimo_invio"))
+        dati = self.esegui("ok")                         # l'orario di riserva riprova
+        self.assertEqual(dati["ultimo_invio"], jn.oggi_italia())
+        self.assertEqual(len(dati["ids"]), len(self.NOMI))
+
     def test_seen_corrotto_non_invia_e_non_sovrascrive(self):
         with open(self.seen_file, "w") as f:
             f.write("{rotto")
