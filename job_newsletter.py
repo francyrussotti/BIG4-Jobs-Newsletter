@@ -449,10 +449,21 @@ EY_CITTA = [
     ("firenze", "Italia"), ("genova", "Italia"), ("brescia", "Italia"),
     ("verona", "Italia"), ("bari", "Italia"), ("treviso", "Italia"),
     ("ancona", "Italia"), ("bergamo", "Italia"),
+    # Aggiunte a ottobre 2026 dopo la verifica di completezza (verifica_siti.py):
+    # c'erano offerte a Trieste e Siena che nessuna ricerca trovava. Le ricerche
+    # per paese ("italia", "italy") coprono le sedi minori non elencate; le
+    # offerte estere che ne escono vengono scartate dal controllo del paese.
+    ("trieste", "Italia"), ("siena", "Italia"), ("cagliari", "Italia"),
+    ("palermo", "Italia"), ("catania", "Italia"), ("pescara", "Italia"),
+    ("perugia", "Italia"), ("italia", "Italia"), ("italy", "Italia"),
     # Belgio
     ("brussels", "Belgio"), ("bruxelles", "Belgio"), ("antwerp", "Belgio"),
     ("antwerpen", "Belgio"), ("ghent", "Belgio"), ("gent", "Belgio"),
     ("liege", "Belgio"), ("diegem", "Belgio"), ("hasselt", "Belgio"),
+    # Aggiunte a ottobre 2026: offerte a Tournai e Gosselies non trovate
+    ("tournai", "Belgio"), ("gosselies", "Belgio"), ("charleroi", "Belgio"),
+    ("namur", "Belgio"), ("mons", "Belgio"), ("leuven", "Belgio"),
+    ("mechelen", "Belgio"), ("belgium", "Belgio"), ("belgique", "Belgio"),
 ]
 
 EY_BOARD_ID = "c1riT--B2O-KySgYWsZO1Q"
@@ -460,8 +471,8 @@ EY_BOARD_ID = "c1riT--B2O-KySgYWsZO1Q"
 # Riconosce la sede nel titolo dell'offerta (solo parole intere: "roma" non
 # deve scattare su "Romania", "gent" non su "agent").
 EY_SEDE_RE = re.compile(
-    r"\b(" + "|".join(sorted({c for c, _ in EY_CITTA} | {"trieste", "cagliari", "palermo",
-                                                         "catania", "pescara", "perugia"},
+    r"\b(" + "|".join(sorted({c for c, _ in EY_CITTA
+                               if c not in ("italia", "italy", "belgium", "belgique")},
                               key=len, reverse=True)) + r")\b", re.I)
 
 _MESI_IT = {"gennaio": 1, "febbraio": 2, "marzo": 3, "aprile": 4, "maggio": 5, "giugno": 6,
@@ -1125,7 +1136,7 @@ def scrape_accenture():
         offset += LIMIT
         if offset >= totale:
             break
-        time.sleep(1.0)
+        time.sleep(2.5)   # Workday limita le richieste ravvicinate (HTTP 429)
 
     # Anche una raccolta interrotta a metà (es. 429 dopo qualche pagina) passa
     # dal browser: le offerte saltate tornerebbero domani come false "nuove".

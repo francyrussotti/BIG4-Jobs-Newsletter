@@ -146,29 +146,55 @@ def verifica_pwc_belgio(trovate):
         esito("PwC Belgio", f"{site}: {len(mancanti)} offerte belghe trovate con ricerca testuale e non dallo scraper")
 
 
-def verifica_deloitte(trovate):
-    """Che cosa filtrano i parametri 729/731 dell'URL, e quante offerte
-    italiane restano fuori togliendo il filtro."""
+def _deloitte_raccogli(query):
+    """Tutte le offerte Deloitte per una query di filtri (stessa paginazione dello scraper)."""
     base = "https://deloittecm.avature.net"
-    url_f = (f"{base}/en_US/careers/SearchJobs/?729=5946&729_format=1565&731=%5B6470%2C6471%5D"
-             "&731_format=1567&listFilterMode=1&jobRecordsPerPage=50&jobOffset=0")
-    r = jn.http_get(url_f)
-    if r:
+    out, offset = {}, 0
+    for _ in range(150):
+        r = jn.http_get(f"{base}/en_US/careers/SearchJobs/?{query}&listFilterMode=1"
+                        f"&jobRecordsPerPage=50&jobOffset={offset}")
+        if not r:
+            break
         soup = BeautifulSoup(r.text, "lxml")
-        for nome in ("729", "731"):
-            print(f"  Filtro {nome}:")
-            for inp in soup.select(f"input[name^='{nome}']"):
-                lab = soup.select_one(f"label[for='{inp.get('id')}']") if inp.get("id") else None
-                testo = (lab.get_text(' ', strip=True) if lab else inp.find_parent().get_text(' ', strip=True))[:80]
-                sel = "✔" if inp.has_attr("checked") or inp.get("value") in ("5946", "6470", "6471") else " "
-                print(f"     [{sel}] value={inp.get('value')} → {testo}")
-    for etichetta, url in [("solo filtro paese (729)", f"{base}/en_US/careers/SearchJobs/?729=5946&729_format=1565&listFilterMode=1"),
-                           ("nessun filtro", f"{base}/en_US/careers/SearchJobs/?listFilterMode=1")]:
-        r = jn.http_get(url)
-        m = re.search(r"\d+\s*-\s*\d+\s*of\s*(\d+)", r.text) if r else None
-        print(f"  Totale con {etichetta}: {m.group(1) if m else 'n.d.'}")
-        if m:
-            esito("Deloitte", f"scraper {len(trovate)} · totale con {etichetta}: {m.group(1)}")
+        cards = soup.select("h3 a[href*='/careers/JobDetail/']")
+        nuovi = 0
+        for a in cards:
+            href = base + a["href"] if a["href"].startswith("/") else a["href"]
+            if href not in out:
+                ctx = a.find_parent("li") or a.find_parent("tr") or a.find_parent("div")
+                out[href] = (a.get_text(strip=True), ctx.get_text(" ", strip=True)[:160] if ctx else "")
+                nuovi += 1
+        if not cards or nuovi == 0:
+            break
+        offset += len(cards)
+        time.sleep(0.3)
+    return out
+
+
+def verifica_deloitte(trovate):
+    """Che cosa esclude il filtro 731 dell'URL: elenca le offerte italiane
+    (filtro 729) che lo scraper non raccoglie, e il contesto HTML del filtro."""
+    base = "https://deloittecm.avature.net"
+    r = jn.http_get(f"{base}/en_US/careers/SearchJobs/?729=5946&729_format=1565&listFilterMode=1")
+    if r:
+        for val in ("5946", "6470", "6471"):
+            for m in list(re.finditer(val, r.text))[:2]:
+                frammento = BeautifulSoup(r.text[max(0, m.start() - 300): m.end() + 300], "lxml").get_text(" ", strip=True)
+                print(f"  contesto '{val}': …{frammento[:220]}…")
+        # Etichette delle opzioni del filtro 731 con i relativi conteggi
+        soup = BeautifulSoup(r.text, "lxml")
+        for el in soup.select("[name*='731'], [data-value], option"):
+            if "731" in (el.get("name") or "") or el.name == "option":
+                print(f"  opzione: name={el.get('name')} value={el.get('value')} "
+                      f"testo={el.get_text(' ', strip=True)[:60] or el.find_parent().get_text(' ', strip=True)[:60]}")
+    noti = {o["url"] for o in trovate}
+    solo_paese = _deloitte_raccogli("729=5946&729_format=1565")
+    extra = {h: v for h, v in solo_paese.items() if h not in noti}
+    print(f"  Con il solo filtro 729: {len(solo_paese)} offerte, {len(extra)} non raccolte dallo scraper:")
+    for h, (t, ctx) in list(extra.items())[:40]:
+        print(f"     · {t}  ‖ {ctx}")
+    esito("Deloitte", f"{len(extra)} offerte escluse dal filtro 731 (scraper {len(trovate)}, "
+                      f"solo filtro 729 {len(solo_paese)})")
 
 
 def verifica_kpmg(trovate):
@@ -234,6 +260,10 @@ def main():
     specifiche = {"EY": verifica_ey, "PwC Belgio": verifica_pwc_belgio,
                   "Deloitte": verifica_deloitte, "KPMG": verifica_kpmg, "Bip": verifica_bip}
 
+    import os
+    solo = [x.strip() for x in os.environ.get("VERIFICA_FONTI", "").split(",") if x.strip()]
+    if solo:
+        scrapers = [(n, f) for n, f in scrapers if n in solo]
     raccolte = {}
     for nome, fn in scrapers:
         titolo(f"{nome}: raccolta")

@@ -66,10 +66,14 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
       - name: Install Playwright + Chromium
+        # Gira SEMPRE: requirements.txt dice "playwright>=…", quindi pip può
+        # installare una versione nuova mentre la cache contiene il browser della
+        # vecchia ("Executable doesn't exist", ottobre 2026). Se il browser giusto
+        # è già in cache il comando non scarica nulla.
+        run: playwright install chromium
+      - name: Install Playwright system deps
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: |
-          playwright install chromium
-          sudo $(which playwright) install-deps chromium
+        run: sudo $(which playwright) install-deps chromium
       - name: Debug files before run
         run: ls -la
       - name: Run newsletter script

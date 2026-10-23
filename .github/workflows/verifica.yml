@@ -5,6 +5,10 @@ name: 🔎 Verifica completezza fonti
 # (o automaticamente quando cambia lo script di verifica).
 on:
   workflow_dispatch:
+    inputs:
+      fonti:
+        description: "Fonti da verificare, separate da virgola (vuoto = tutte)"
+        default: ""
   push:
     paths: ["verifica_siti.py", ".github/workflows/verifica.yml"]
 
@@ -27,8 +31,15 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('requirements.txt') }}
       - run: pip install -r requirements.txt
-      - if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: |
-          playwright install chromium
-          sudo $(which playwright) install-deps chromium
+      - name: Install Playwright + Chromium
+        # Gira SEMPRE: requirements.txt dice "playwright>=…", quindi pip può
+        # installare una versione nuova mentre la cache contiene il browser della
+        # vecchia ("Executable doesn't exist", ottobre 2026). Se il browser giusto
+        # è già in cache il comando non scarica nulla.
+        run: playwright install chromium
+      - name: Install Playwright system deps
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: sudo $(which playwright) install-deps chromium
       - run: python -u verifica_siti.py
+        env:
+          VERIFICA_FONTI: ${{ github.event_name == 'push' && 'EY,Deloitte,Accenture' || inputs.fonti }}
