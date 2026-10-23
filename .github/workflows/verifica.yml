@@ -1,0 +1,34 @@
+name: 🔎 Verifica completezza fonti
+
+# Confronta ogni scraper con ricerche più ampie sullo stesso sito.
+# Non invia email e non modifica seen_jobs.json. Si lancia a mano
+# (o automaticamente quando cambia lo script di verifica).
+on:
+  workflow_dispatch:
+  push:
+    paths: ["verifica_siti.py", ".github/workflows/verifica.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  verifica:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('requirements.txt') }}
+      - run: pip install -r requirements.txt
+      - if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: |
+          playwright install chromium
+          sudo $(which playwright) install-deps chromium
+      - run: python -u verifica_siti.py
