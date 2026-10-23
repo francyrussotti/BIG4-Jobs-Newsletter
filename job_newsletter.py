@@ -1055,7 +1055,9 @@ def _accenture_post(body, headers):
     """POST Workday con retry/backoff sui 429, sui 5xx e sugli errori di rete
     (attese più lunghe della sessione generica: il rate limit di Workday è
     severo). Ritorna il JSON o None."""
-    for attesa in (0, 5, 15, 30):
+    # Il blocco 429 di Workday dura fino a qualche minuto: attese crescenti
+    # fino a ~4 minuti in tutto prima di arrendersi (e passare al browser).
+    for attesa in (0, 10, 30, 60, 120):
         time.sleep(attesa)
         try:
             r = requests.post(ACCENTURE_API, headers=headers, json=body, timeout=20)
@@ -1079,20 +1081,26 @@ def _accenture_playwright(ITALIA_ID, LIMIT):
         return []
     JS = """async ([id, limit]) => {
         const url = '/wday/cxs/accenture/AccentureCareers/jobs';
-        let out = [], offset = 0, total = null;
+        let out = [], offset = 0, total = null, tentativi = 0;
         while (true) {
             const r = await fetch(url, {method:'POST',
                 headers:{'Content-Type':'application/json','Accept':'application/json'},
                 body: JSON.stringify({appliedFacets:{locationCountry:[id]},
                                       limit, offset, searchText:''})});
+            if (r.status === 429 && tentativi < 4) {        // rate limit: aspetta e riprova
+                tentativi++;
+                await new Promise(res => setTimeout(res, 30000 * tentativi));
+                continue;
+            }
             if (!r.ok) return {status: r.status, jobs: out};
+            tentativi = 0;
             const d = await r.json();
             if (total === null) total = d.total || 0;
             if (!d.jobPostings || !d.jobPostings.length) break;
             out.push(...d.jobPostings);
             offset += limit;
             if (offset >= total) break;
-            await new Promise(res => setTimeout(res, 1500));
+            await new Promise(res => setTimeout(res, 2500));
         }
         return {status: 200, jobs: out};
     }"""
