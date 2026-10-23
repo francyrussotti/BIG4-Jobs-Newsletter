@@ -106,6 +106,16 @@ class TestDate(unittest.TestCase):
         self.assertIsNone(jn._eta_giorni("2026-02-31"))   # data impossibile
 
 
+class TestRecuperoUnaTantum(unittest.TestCase):
+    def test_offerte_ey_da_recuperare(self):
+        with mock.patch.object(jn, "oggi_italia", return_value="2026-10-24"):
+            self.assertTrue(jn._da_recuperare("EY", {"titolo": "Junior Accounting & Business Consultant - Tournai"}))
+            self.assertFalse(jn._da_recuperare("EY", {"titolo": "Audit Senior - Milano"}))
+            self.assertFalse(jn._da_recuperare("KPMG", {"titolo": "Consultant - Tournai"}))
+        with mock.patch.object(jn, "oggi_italia", return_value="2026-12-01"):   # scaduto
+            self.assertFalse(jn._da_recuperare("EY", {"titolo": "FAAS Trieste - Financial Services"}))
+
+
 class TestPaginazioneSenzaFine(unittest.TestCase):
     """Siti che, oltre l'ultima pagina, ripetono sempre la stessa pagina:
     gli scraper devono fermarsi invece di girare all'infinito."""

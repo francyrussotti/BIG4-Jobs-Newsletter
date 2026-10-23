@@ -59,6 +59,23 @@ SOGLIA_COPERTURA = 0.95
 # Si applica solo alle fonti che forniscono una data. None = filtro disattivato.
 MAX_GIORNI_NUOVA = 30
 
+# Recupero una tantum: offerte mai inviate perché lo scraper non le trovava
+# (EY, ottobre 2026: sedi di Trieste, Siena, Tournai e Gosselies mancanti).
+# Sono più vecchie di MAX_GIORNI_NUOVA ma vanno mostrate UNA volta; dopo
+# l'invio finiscono in seen_jobs.json e non tornano. Valido fino alla data
+# indicata, poi il blocco si può cancellare.
+RECUPERO_UNA_TANTUM = {
+    "fino_al": "2026-11-15",
+    "titoli": {"EY": ["FAAS Trieste", "Healthcare e Life science - Siena",
+                      "Tournai", "Gosselies"]},
+}
+
+def _da_recuperare(fonte, offerta):
+    if oggi_italia() > RECUPERO_UNA_TANTUM["fino_al"]:
+        return False
+    t = (offerta.get("titolo") or "").lower()
+    return any(k.lower() in t for k in RECUPERO_UNA_TANTUM["titoli"].get(fonte, []))
+
 # Etichette mostrate accanto a ogni offerta nell'email, dedotte dal titolo.
 # Per ciascun gruppo vince la PRIMA regola che corrisponde (l'ordine conta);
 # se nessuna corrisponde, l'etichetta del gruppo non compare.
@@ -920,6 +937,11 @@ def scrape_pwc_belgio():
 #  card per pagina. L'offset avanza del numero REALE di card ricevute e ci
 #  si ferma sul totale dichiarato ("1-6 of 215") o quando la pagina non
 #  porta offerte nuove.
+#
+#  Filtri URL: 729=5946 è il paese (Italia; 5947 Grecia, 5948 Malta).
+#  NOTA (ottobre 2026): c'era anche 731=[6470,6471], un filtro sul livello che
+#  escludeva le ~20 offerte "Manager and above". Tolto: le altre fonti
+#  includono già i Manager, che nell'email hanno l'etichetta "Manager".
 # ============================================================
 
 def scrape_deloitte():
@@ -932,8 +954,8 @@ def scrape_deloitte():
 
     for _ in range(150):   # tetto di sicurezza (~900 offerte)
         url = (f"{base}/en_US/careers/SearchJobs/"
-               "?729=5946&729_format=1565&731=%5B6470%2C6471%5D"
-               f"&731_format=1567&listFilterMode=1&jobRecordsPerPage=50&jobOffset={offset}")
+               "?729=5946&729_format=1565"
+               f"&listFilterMode=1&jobRecordsPerPage=50&jobOffset={offset}")
         r = http_get(url)
         if not r: break
         if totale is None:
@@ -1689,7 +1711,8 @@ def main():
                 nuove, seen = filtra_nuove(nome, offerte, seen)
                 if MAX_GIORNI_NUOVA is not None:
                     recenti = [o for o in nuove
-                               if (_eta_giorni(o.get("data")) or 0) <= MAX_GIORNI_NUOVA]
+                               if (_eta_giorni(o.get("data")) or 0) <= MAX_GIORNI_NUOVA
+                               or _da_recuperare(nome, o)]
                     if len(recenti) < len(nuove):
                         nascoste[nome] = len(nuove) - len(recenti)
                         print(f"   → {nascoste[nome]} non mostrate: pubblicate da più di "
