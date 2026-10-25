@@ -3790,24 +3790,9 @@
     "ffbb32588b3c2f6e5128abd5f7e7af42",
     "ffc4991b8bcd70dd82ade2e3acb3a81b"
   ],
-  "aggiornato": "2026-10-24T08:05:23.306254",
-  "ultimo_invio": "2026-10-24",
+  "aggiornato": "2026-10-25T08:22:25.616308",
+  "ultimo_invio": "2026-10-25",
   "storico_conteggi": [
-    {
-      "data": "2026-10-11",
-      "conteggi": {
-        "EY": 146,
-        "PwC Italia": 340,
-        "PwC Belgio": 82,
-        "Deloitte": 226,
-        "KPMG": 224,
-        "Accenture": 165,
-        "NTT DATA": 85,
-        "Bip": 362,
-        "Digital360": 14,
-        "Capgemini": 164
-      }
-    },
     {
       "data": "2026-10-12",
       "conteggi": {
@@ -4001,6 +3986,21 @@
         "Bip": 373,
         "Digital360": 12,
         "Capgemini": 203
+      }
+    },
+    {
+      "data": "2026-10-25",
+      "conteggi": {
+        "EY": 142,
+        "PwC Italia": 343,
+        "PwC Belgio": 74,
+        "Deloitte": 248,
+        "KPMG": 225,
+        "Accenture": 164,
+        "NTT DATA": 94,
+        "Bip": 373,
+        "Digital360": 12,
+        "Capgemini": 202
       }
     }
   ]
