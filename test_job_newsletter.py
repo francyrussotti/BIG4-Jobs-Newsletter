@@ -216,6 +216,31 @@ class TestTesti(unittest.TestCase):
         self.assertNotIn("1 nuove", html)
 
 
+class TestVerificaGiornaliera(ConFileTemporaneo):
+    """La verifica fallisce (→ email di GitHub) solo quando c'è un problema serio."""
+
+    def esegui(self, offerte):
+        import verifica_siti as vs
+        vs.RIEPILOGO.clear()
+        sommario = os.path.join(self.dir.name, "summary.md")
+        with mock.patch.object(jn, "scrape_digital360", return_value=offerte), \
+             mock.patch.dict(os.environ, {"VERIFICA_FONTI": "Digital360",
+                                          "GITHUB_STEP_SUMMARY": sommario}):
+            codice = vs.main()
+        with open(sommario) as f:
+            return codice, f.read()
+
+    def test_fonte_vuota_fa_scattare_l_allarme(self):
+        codice, testo = self.esegui([])
+        self.assertEqual(codice, 1)
+        self.assertIn("🚨", testo)
+
+    def test_fonte_regolare_nessun_allarme(self):
+        codice, testo = self.esegui([{"titolo": "Consultant", "url": "https://d/1"}])
+        self.assertEqual(codice, 0)
+        self.assertIn("Nessun problema", testo)
+
+
 class TestMain(ConFileTemporaneo):
     """Flusso completo con scraper finti."""
 
