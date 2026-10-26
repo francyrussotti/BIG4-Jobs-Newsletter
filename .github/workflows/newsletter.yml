@@ -41,7 +41,7 @@ jobs:
     timeout-minutes: 50
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           # Ultima versione del branch al momento dell'avvio (non quella di quando
           # la run è stata messa in coda): così una run rimasta in attesa dietro
@@ -49,16 +49,16 @@ jobs:
           ref: ${{ github.ref }}
           persist-credentials: true
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Cache pip
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
