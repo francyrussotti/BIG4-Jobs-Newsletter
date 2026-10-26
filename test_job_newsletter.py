@@ -173,19 +173,41 @@ class TestRisposteStrane(unittest.TestCase):
             out = jn.scrape_bip()
         self.assertEqual([o["titolo"] for o in out], ["Analyst"])
 
-    def test_accenture_pagine_con_doppioni_rifa_il_giro(self):
-        def pagina(numeri):
-            return {"total": 40, "jobPostings": [{"title": f"Job {n}", "externalPath": f"/job/{n}"}
-                                                 for n in numeri]}
-        # 1° giro: la 19 compare due volte e la 20 viene saltata; 2° giro completo
-        risposte = iter([pagina(range(0, 20)), pagina([19] + list(range(21, 40))),
-                         pagina(range(0, 20)), pagina(range(20, 40))])
-        with mock.patch.object(jn, "_accenture_post", side_effect=lambda *a: next(risposte)), \
+    def test_accenture_mancanti_recuperate_per_categoria(self):
+        """Workday ripete sempre le stesse offerte in due pagine e non mostra
+        mai le 37-39: si recuperano filtrando per famiglia di lavoro."""
+        def job(n):
+            return {"title": f"Job {n}", "externalPath": f"/job/{n}"}
+        facets = [{"facetParameter": "locationMainGroup", "values": [
+                      {"facetParameter": "locationCountry", "values": [{"id": "IT", "count": 40}]}]},
+                  {"facetParameter": "jobFamilyGroup", "values": [
+                      {"id": "tech", "count": 30}, {"id": "sales", "count": 10}]}]
+
+        def finta_post(body, headers):
+            filtri, off = body["appliedFacets"], body["offset"]
+            if "jobFamilyGroup" in filtri:
+                ids = range(0, 30) if filtri["jobFamilyGroup"] == ["tech"] else range(30, 40)
+            else:   # paginazione "rotta": 36-35-34 ripetute, 37-39 mai mostrate
+                ids = list(range(0, 37)) + [36, 35, 34]
+            pagina = [job(n) for n in list(ids)[off:off + 20]]
+            return {"total": len(ids) if off == 0 else 0, "jobPostings": pagina,
+                    "facets": facets if off == 0 else []}
+
+        with mock.patch.object(jn, "_accenture_post", side_effect=finta_post) as post, \
              mock.patch.object(jn, "_accenture_playwright") as browser:
             out = jn.scrape_accenture()
-        self.assertEqual(len(out), 40)
         self.assertEqual(len({o["url"] for o in out}), 40)
+        self.assertEqual(len(out), 40)
         browser.assert_not_called()
+        self.assertTrue(any("jobFamilyGroup" in c.args[0]["appliedFacets"]
+                            for c in post.call_args_list))
+
+    def test_scelta_filtro_categorie(self):
+        param, valori = jn._workday_facet_categorie([
+            {"facetParameter": "timeType", "values": [{"id": "a", "count": 1}]},
+            {"facetParameter": "jobFamilyGroup", "values": [{"id": "b", "count": 2}]}])
+        self.assertEqual((param, len(valori)), ("jobFamilyGroup", 1))
+        self.assertEqual(jn._workday_facet_categorie([]), (None, []))
 
     def test_bip_risposta_non_json(self):
         with mock.patch.object(jn, "http_get", return_value=FintaRisposta("<html>")):
