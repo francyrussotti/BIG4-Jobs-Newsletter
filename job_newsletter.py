@@ -1097,26 +1097,6 @@ def _accenture_post(body, headers):
     print("    ⚠️  Accenture: errore persistente dopo i retry")
     return None
 
-def _workday_facet_categorie(facets):
-    """Sceglie un filtro Workday con cui dividere le offerte in gruppi piccoli
-    (di preferenza la famiglia di lavoro). Ritorna (parametro, valori con id e
-    count) oppure (None, []) se non ce n'è uno adatto."""
-    candidati = []
-
-    def visita(lista):
-        for f in lista or []:
-            valori = f.get("values") or []
-            param = f.get("facetParameter") or ""
-            if valori and all("id" in v and "count" in v for v in valori):
-                if param and "location" not in param.lower():
-                    candidati.append((param, valori))
-            else:
-                visita(valori)   # gruppi annidati (es. locationMainGroup)
-
-    visita(facets)
-    preferiti = [c for c in candidati if c[0] == "jobFamilyGroup"]
-    return (preferiti or candidati or [(None, [])])[0]
-
 def _accenture_playwright(ITALIA_ID, LIMIT):
     """Fallback: stesse chiamate API, ma eseguite dentro un browser reale."""
     if not PLAYWRIGHT_OK:
@@ -1171,63 +1151,40 @@ def scrape_accenture():
                "Origin": "https://accenture.wd103.myworkdayjobs.com",
                "Referer": ACCENTURE_BASE}
 
-    def tutte_le_pagine(filtri, attese=None):
-        """Scorre le pagine di una ricerca. Ritorna (offerte, totale, facets,
-        completato). Workday indica il totale solo nella prima pagina."""
-        jobs, offset, totale, facets = [], 0, None, []
-        for _ in range(MAX_PAGINE):
-            dati = _accenture_post({"appliedFacets": filtri, "limit": LIMIT,
-                                    "offset": offset, "searchText": ""}, headers)
-            if dati is None:
-                return jobs, totale, facets, False
-            if totale is None:
-                totale = dati.get("total") or attese or 0
-                facets = dati.get("facets") or []
-            page_jobs = dati.get("jobPostings") or []
-            if not page_jobs:
-                break
-            jobs.extend(page_jobs)
-            offset += LIMIT
-            if offset >= totale:
-                break
-            time.sleep(2.5)   # Workday limita le richieste ravvicinate (HTTP 429)
-        return jobs, totale, facets, True
+    jobs, offset, totale = [], 0, None
+    for _ in range(MAX_PAGINE):
+        dati = _accenture_post({"appliedFacets": {"locationCountry": [ITALIA_ID]},
+                                "limit": LIMIT, "offset": offset, "searchText": ""}, headers)
+        if dati is None:
+            break
+        if totale is None:
+            totale = dati.get("total") or 0
+        page_jobs = dati.get("jobPostings") or []
+        if not page_jobs:
+            break
+        jobs.extend(page_jobs)
+        offset += LIMIT
+        if offset >= totale:
+            break
+        time.sleep(2.5)   # Workday limita le richieste ravvicinate (HTTP 429)
 
-    per_path = {}
-    jobs, totale, facets, completato = tutte_le_pagine({"locationCountry": [ITALIA_ID]})
-    for j in jobs:
-        per_path.setdefault(j.get("externalPath", ""), j)
-
-    # Con molte offerte uguali per data, Workday ripete alcune offerte in due
-    # pagine e non ne mostra mai altre (ottobre 2026: 176 righe ma 173 offerte
-    # diverse, sempre le stesse anche rifacendo il giro). Le mancanti si
-    # recuperano cercando categoria per categoria: gruppi piccoli, poche pagine.
-    if completato and totale and len(per_path) < totale:
-        param, valori = _workday_facet_categorie(facets)
-        print(f"    → {len(per_path)} offerte diverse su {totale} (pagine con doppioni): "
-              f"cerco le mancanti per '{param}' ({len(valori)} valori)...")
-        for v in valori:
-            time.sleep(2.5)
-            sub, _, _, ok = tutte_le_pagine({"locationCountry": [ITALIA_ID], param: [v["id"]]},
-                                            attese=v.get("count"))
-            for j in sub:
-                per_path.setdefault(j.get("externalPath", ""), j)
-            if not ok or len(per_path) >= totale:
-                break
-        print(f"    → dopo la ricerca per categoria: {len(per_path)} su {totale}")
-
-    # Una raccolta interrotta (es. 429 dopo qualche pagina) passa dal browser:
-    # le offerte saltate tornerebbero domani come false "nuove".
-    if not per_path or not completato:
-        if per_path:
-            print(f"    → raccolte {len(per_path)} su {totale} via requests, riprovo dal browser...")
+    # Anche una raccolta interrotta a metà (es. 429 dopo qualche pagina) passa
+    # dal browser: le offerte saltate tornerebbero domani come false "nuove".
+    if not jobs or (totale and len(jobs) < totale):
+        if jobs:
+            print(f"    → raccolte {len(jobs)} su {totale} via requests, riprovo dal browser...")
         else:
             print("    → requests senza risultati, provo dal browser (Playwright)...")
-        for j in _accenture_playwright(ITALIA_ID, LIMIT):
-            per_path.setdefault(j.get("externalPath", ""), j)
+        jobs_pw = _accenture_playwright(ITALIA_ID, LIMIT)
+        if len(jobs_pw) > len(jobs):
+            jobs = jobs_pw
 
-    risultati = []
-    for path, j in per_path.items():
+    risultati, visti = [], set()
+    for j in jobs:
+        path = j.get("externalPath", "")
+        if path in visti:
+            continue
+        visti.add(path)
         bullet = j.get("bulletFields", [])
         luogo  = bullet[1] if len(bullet) > 1 else ""
         risultati.append({
@@ -1237,7 +1194,14 @@ def scrape_accenture():
             "data":     _workday_data(j.get("postedOn")),
         })
 
-    registra_copertura("Accenture", len(risultati), totale)
+    # Il totale di Workday conta le righe, e la stessa offerta può comparire in
+    # più righe (ottobre 2026: 176 righe = 173 offerte, sempre le stesse 3
+    # ripetute anche cercando per categoria). La copertura confronta righe con
+    # righe; le offerte inviate restano senza doppioni.
+    registra_copertura("Accenture", len(jobs), totale)
+    if len(risultati) < len(jobs):
+        print(f"    → {len(jobs) - len(risultati)} righe ripetute (stessa offerta): "
+              f"{len(risultati)} offerte diverse")
     print(f"   → {len(risultati)} offerte trovate")
     return risultati
 
