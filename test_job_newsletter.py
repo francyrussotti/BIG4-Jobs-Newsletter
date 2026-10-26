@@ -204,6 +204,18 @@ class TestPrivacyDestinatari(unittest.TestCase):
         self.assertNotRegex(catturato["msg"], r"(?im)^(cc|bcc):")
 
 
+class TestTesti(unittest.TestCase):
+    def test_singolare_e_plurale(self):
+        self.assertEqual(jn.conta_offerte(1), "1 nuova offerta")
+        self.assertEqual(jn.conta_offerte(0), "0 nuove offerte")
+        self.assertEqual(jn.conta_offerte(21), "21 nuove offerte")
+
+    def test_oggetto_e_anteprima_con_una_offerta(self):
+        html, _ = jn.genera_html({"Bip": [{"titolo": "Stage", "url": "https://b/1"}]}, 10)
+        self.assertIn("1 nuova offerta: Bip 1", html)
+        self.assertNotIn("1 nuove", html)
+
+
 class TestMain(ConFileTemporaneo):
     """Flusso completo con scraper finti."""
 

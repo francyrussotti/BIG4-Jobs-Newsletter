@@ -1463,6 +1463,10 @@ def _etichette(titolo):
                 break
     return risultato
 
+def conta_offerte(n: int) -> str:
+    """'1 nuova offerta', '5 nuove offerte' (anche '0 nuove offerte')."""
+    return f"{n} nuova offerta" if n == 1 else f"{n} nuove offerte"
+
 def genera_html(tutte, totale_trovate, problemi=None, fonti=None, nascoste=None):
     # Stile editoriale: pagina bianca, titoli serif, niente riquadri.
     # Layout a tabelle con stili inline: è l'unico modo affidabile per
@@ -1556,7 +1560,7 @@ def genera_html(tutte, totale_trovate, problemi=None, fonti=None, nascoste=None)
             + esc(", ".join(f"{k} {v}" for k, v in nascoste.items())) + ').<br>')
 
     if sezioni:
-        titolo = f"{totale} nuov{'a offerta' if totale == 1 else 'e offerte'} oggi"
+        titolo = f"{conta_offerte(totale)} oggi"
         corpo  = sezioni
     else:
         titolo = "Nessuna offerta nuova oggi"
@@ -1565,7 +1569,7 @@ def genera_html(tutte, totale_trovate, problemi=None, fonti=None, nascoste=None)
         Le {totale_trovate} offerte monitorate sono già state tutte segnalate nei giorni scorsi.
       </td></tr>"""
 
-    anteprima = (f"{totale} nuove offerte: " + ", ".join(
+    anteprima = (f"{conta_offerte(totale)}: " + ", ".join(
         f"{az} {len(of)}" for az, of in tutte.items() if of)) if totale else \
         "Nessuna offerta nuova oggi"
     riga_sommario = (f'<div style="margin-top:14px;{sans}font-size:14px;line-height:1.7;'
@@ -1627,7 +1631,7 @@ def invia_email(html_body, totale):
         d.strip() for d in re.split(r"[,;\s]+", EMAIL_DESTINATARIO) if d.strip()))
 
     msg            = MIMEMultipart("alternative")
-    msg["Subject"] = f"📰 Big4 Jobs {datetime.now():%d/%m/%Y} — {totale} nuove offerte"
+    msg["Subject"] = f"📰 Big4 Jobs {datetime.now():%d/%m/%Y} — {conta_offerte(totale)}"
     msg["From"]    = GMAIL_MITTENTE
     # Destinatari in CCN: nell'intestazione "A" compare solo il mittente e
     # NON si scrive alcun header "Bcc" (altrimenti gli indirizzi sarebbero
