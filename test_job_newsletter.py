@@ -173,6 +173,20 @@ class TestRisposteStrane(unittest.TestCase):
             out = jn.scrape_bip()
         self.assertEqual([o["titolo"] for o in out], ["Analyst"])
 
+    def test_accenture_pagine_con_doppioni_rifa_il_giro(self):
+        def pagina(numeri):
+            return {"total": 40, "jobPostings": [{"title": f"Job {n}", "externalPath": f"/job/{n}"}
+                                                 for n in numeri]}
+        # 1° giro: la 19 compare due volte e la 20 viene saltata; 2° giro completo
+        risposte = iter([pagina(range(0, 20)), pagina([19] + list(range(21, 40))),
+                         pagina(range(0, 20)), pagina(range(20, 40))])
+        with mock.patch.object(jn, "_accenture_post", side_effect=lambda *a: next(risposte)), \
+             mock.patch.object(jn, "_accenture_playwright") as browser:
+            out = jn.scrape_accenture()
+        self.assertEqual(len(out), 40)
+        self.assertEqual(len({o["url"] for o in out}), 40)
+        browser.assert_not_called()
+
     def test_bip_risposta_non_json(self):
         with mock.patch.object(jn, "http_get", return_value=FintaRisposta("<html>")):
             self.assertEqual(jn.scrape_bip(), [])

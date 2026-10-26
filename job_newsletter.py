@@ -1151,40 +1151,54 @@ def scrape_accenture():
                "Origin": "https://accenture.wd103.myworkdayjobs.com",
                "Referer": ACCENTURE_BASE}
 
-    jobs, offset, totale = [], 0, None
-    for _ in range(MAX_PAGINE):
-        dati = _accenture_post({"appliedFacets": {"locationCountry": [ITALIA_ID]},
-                                "limit": LIMIT, "offset": offset, "searchText": ""}, headers)
-        if dati is None:
+    def un_giro():
+        """Tutte le pagine una volta. Ritorna (offerte, totale, completato)."""
+        jobs, offset, totale = [], 0, None
+        for _ in range(MAX_PAGINE):
+            dati = _accenture_post({"appliedFacets": {"locationCountry": [ITALIA_ID]},
+                                    "limit": LIMIT, "offset": offset, "searchText": ""}, headers)
+            if dati is None:
+                return jobs, totale, False
+            if totale is None:
+                totale = dati.get("total") or 0
+            page_jobs = dati.get("jobPostings") or []
+            if not page_jobs:
+                break
+            jobs.extend(page_jobs)
+            offset += LIMIT
+            if offset >= totale:
+                break
+            time.sleep(2.5)   # Workday limita le richieste ravvicinate (HTTP 429)
+        return jobs, totale, True
+
+    # L'ordine delle offerte cambia tra una pagina e l'altra (es. molte offerte
+    # con la stessa data): alcune compaiono due volte e altre vengono saltate
+    # (ottobre 2026: 176 righe ma 173 offerte diverse). Si contano le offerte
+    # DIVERSE e, se ne mancano, si rifà il giro unendo i risultati.
+    per_path, totale = {}, None
+    for giro in range(3):
+        jobs, tot, completato = un_giro()
+        totale = tot or totale
+        for j in jobs:
+            per_path.setdefault(j.get("externalPath", ""), j)
+        if not completato or not totale or len(per_path) >= totale:
             break
-        if totale is None:
-            totale = dati.get("total") or 0
-        page_jobs = dati.get("jobPostings") or []
-        if not page_jobs:
-            break
-        jobs.extend(page_jobs)
-        offset += LIMIT
-        if offset >= totale:
-            break
-        time.sleep(2.5)   # Workday limita le richieste ravvicinate (HTTP 429)
+        print(f"    → {len(per_path)} offerte diverse su {totale} (pagine con doppioni), "
+              f"rifaccio il giro ({giro + 2}/3)...")
+        time.sleep(5)
 
     # Anche una raccolta interrotta a metà (es. 429 dopo qualche pagina) passa
     # dal browser: le offerte saltate tornerebbero domani come false "nuove".
-    if not jobs or (totale and len(jobs) < totale):
-        if jobs:
-            print(f"    → raccolte {len(jobs)} su {totale} via requests, riprovo dal browser...")
+    if not per_path or (totale and len(per_path) < totale):
+        if per_path:
+            print(f"    → raccolte {len(per_path)} su {totale} via requests, riprovo dal browser...")
         else:
             print("    → requests senza risultati, provo dal browser (Playwright)...")
-        jobs_pw = _accenture_playwright(ITALIA_ID, LIMIT)
-        if len(jobs_pw) > len(jobs):
-            jobs = jobs_pw
+        for j in _accenture_playwright(ITALIA_ID, LIMIT):
+            per_path.setdefault(j.get("externalPath", ""), j)
 
-    risultati, visti = [], set()
-    for j in jobs:
-        path = j.get("externalPath", "")
-        if path in visti:
-            continue
-        visti.add(path)
+    risultati = []
+    for path, j in per_path.items():
         bullet = j.get("bulletFields", [])
         luogo  = bullet[1] if len(bullet) > 1 else ""
         risultati.append({
