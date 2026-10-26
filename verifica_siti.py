@@ -2,9 +2,15 @@
 con ricerche più ampie e indipendenti sullo stesso sito, per scoprire offerte
 che la newsletter non vede. Non invia email e non modifica seen_jobs.json.
 
+Gira ogni giorno da GitHub Actions: se trova un problema serio la run
+fallisce, così GitHub manda un'email di avviso. Il riepilogo è anche nella
+pagina della run (Summary).
+
 Avvio:  python verifica_siti.py
 """
+import os
 import re
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -12,16 +18,22 @@ from bs4 import BeautifulSoup
 
 import job_newsletter as jn
 
-RIEPILOGO = []
+RIEPILOGO = []   # (fonte, messaggio, grave)
+
+# Differenze fino a questo numero di offerte non fanno scattare l'allarme:
+# gli annunci cambiano anche mentre la verifica gira (es. Deloitte 238 → 239
+# tra due raccolte a pochi minuti di distanza).
+TOLLERANZA = 2
 
 
 def titolo(t):
     print(f"\n{'=' * 70}\n{t}\n{'=' * 70}")
 
 
-def esito(fonte, msg):
-    RIEPILOGO.append((fonte, msg))
-    print(f"  ➜ {msg}")
+def esito(fonte, msg, grave=False):
+    """grave=True: problema da sistemare, fa fallire la run (email di GitHub)."""
+    RIEPILOGO.append((fonte, msg, grave))
+    print(f"  {'🚨' if grave else '➜'} {msg}")
 
 
 def chiavi(offerte):
@@ -102,7 +114,8 @@ def verifica_ey(trovate):
     for q, t, sede in mancanti[:30]:
         print(f"     · MANCA [{q}] {t} — {sede}")
     esito("EY", f"{len(mancanti)} offerte Italia/Belgio non raccolte dallo scraper"
-                + (" (sedi: " + ", ".join(sorted({s for _, _, s in mancanti if s}))[:300] + ")" if mancanti else ""))
+                + (" (sedi: " + ", ".join(sorted({s for _, _, s in mancanti if s}))[:300] + ")" if mancanti else ""),
+          grave=len(mancanti) > TOLLERANZA)
 
 
 def verifica_pwc_belgio(trovate):
@@ -143,7 +156,8 @@ def verifica_pwc_belgio(trovate):
                     break
         for t, l in mancanti[:20]:
             print(f"     · MANCA [{site}] {t} — {l}")
-        esito("PwC Belgio", f"{site}: {len(mancanti)} offerte belghe trovate con ricerca testuale e non dallo scraper")
+        esito("PwC Belgio", f"{site}: {len(mancanti)} offerte belghe trovate con ricerca testuale e non dallo scraper",
+              grave=len(mancanti) > TOLLERANZA)
 
 
 def _deloitte_raccogli(query):
@@ -194,7 +208,7 @@ def verifica_deloitte(trovate):
     for h, (t, ctx) in list(extra.items())[:40]:
         print(f"     · {t}  ‖ {ctx}")
     esito("Deloitte", f"{len(extra)} offerte escluse dal filtro 731 (scraper {len(trovate)}, "
-                      f"solo filtro 729 {len(solo_paese)})")
+                      f"solo filtro 729 {len(solo_paese)})", grave=len(extra) > TOLLERANZA)
 
 
 def verifica_kpmg(trovate):
@@ -203,7 +217,8 @@ def verifica_kpmg(trovate):
         testo = BeautifulSoup(r.text, "lxml").get_text(" ", strip=True)
         m = re.search(r"(\d+)\s*[–-]\s*(\d+)\s*(?:di|of)\s*(\d+)", testo)
         if m:
-            esito("KPMG", f"scraper {len(trovate)} · il sito dichiara {m.group(3)}")
+            esito("KPMG", f"scraper {len(trovate)} · il sito dichiara {m.group(3)}",
+                  grave=int(m.group(3)) - len(trovate) > TOLLERANZA)
         else:
             esito("KPMG", f"scraper {len(trovate)} · totale dichiarato non trovato nella pagina")
 
@@ -239,13 +254,13 @@ def verifica_bip(trovate):
     for t, l in extra[:15]:
         print(f"     · MANCA {t} — sede principale {l}")
     esito("Bip", f"{len(extra)} offerte con sede principale estera ma sede secondaria in Italia (non raccolte); "
-                 f"totale globale {tot}")
+                 f"totale globale {tot}", grave=len(extra) > TOLLERANZA)
 
 
 def verifica_conteggi_dichiarati():
     for fonte, (racc, dich) in jn.COPERTURA.items():
         stato = "OK" if racc >= dich else f"MANCANO {dich - racc}"
-        esito(fonte, f"copertura {racc}/{dich} {stato}")
+        esito(fonte, f"copertura {racc}/{dich} {stato}", grave=dich - racc > TOLLERANZA)
 
 
 # ----------------------------------------------------------------------------
@@ -260,7 +275,6 @@ def main():
     specifiche = {"EY": verifica_ey, "PwC Belgio": verifica_pwc_belgio,
                   "Deloitte": verifica_deloitte, "KPMG": verifica_kpmg, "Bip": verifica_bip}
 
-    import os
     solo = [x.strip() for x in os.environ.get("VERIFICA_FONTI", "").split(",") if x.strip()]
     if solo:
         scrapers = [(n, f) for n, f in scrapers if n in solo]
@@ -270,8 +284,11 @@ def main():
         try:
             raccolte[nome] = fn() or []
         except Exception as e:
-            esito(nome, f"ERRORE scraper: {e}")
+            esito(nome, f"ERRORE scraper: {e}", grave=True)
             raccolte[nome] = []
+            continue
+        if not raccolte[nome]:
+            esito(nome, "0 offerte raccolte: lo scraper potrebbe essere rotto", grave=True)
     verifica_conteggi_dichiarati()
 
     for nome, fn in scrapers:
@@ -279,7 +296,8 @@ def main():
         offerte = raccolte[nome]
         fuori, vecchie = non_viste(nome, offerte, seen)
         if vecchie:
-            esito(nome, f"{len(vecchie)} offerte mai segnalate e più vecchie di {jn.MAX_GIORNI_NUOVA} giorni")
+            esito(nome, f"{len(vecchie)} offerte mai segnalate e più vecchie di {jn.MAX_GIORNI_NUOVA} giorni",
+                  grave=len(vecchie) > TOLLERANZA)
         senza_url = sum(1 for o in offerte if not o.get("url"))
         if senza_url:
             esito(nome, f"{senza_url} offerte senza link")
@@ -292,12 +310,36 @@ def main():
             try:
                 specifiche[nome](offerte)
             except Exception as e:
-                esito(nome, f"ERRORE verifica specifica: {e}")
+                esito(nome, f"ERRORE verifica specifica: {e}", grave=True)
 
     titolo("RIEPILOGO")
-    for fonte, msg in RIEPILOGO:
-        print(f"  {fonte:12s} │ {msg}")
+    for fonte, msg, grave in RIEPILOGO:
+        print(f"  {'🚨' if grave else '  '} {fonte:12s} │ {msg}")
+    allarmi = [(f, m) for f, m, g in RIEPILOGO if g]
+    scrivi_sommario(allarmi)
+    if allarmi:
+        print(f"\n🚨 {len(allarmi)} problemi da controllare: la run fallisce per mandare l'avviso.")
+        return 1
+    print("\n✅ Nessun problema: tutte le fonti raccolgono le offerte presenti sui siti.")
+    return 0
+
+
+def scrivi_sommario(allarmi):
+    """Riepilogo in Markdown nella pagina della run su GitHub (scheda Summary)."""
+    percorso = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not percorso:
+        return
+    righe = ["## 🔎 Verifica fonti", ""]
+    if allarmi:
+        righe += [f"### 🚨 {len(allarmi)} problemi da controllare", ""]
+        righe += [f"- **{f}**: {m}" for f, m in allarmi]
+    else:
+        righe.append("✅ Nessun problema.")
+    righe += ["", "### Tutti i controlli", "", "| | Fonte | Esito |", "|---|---|---|"]
+    righe += [f"| {'🚨' if g else '✅'} | {f} | {m.replace('|', '/')} |" for f, m, g in RIEPILOGO]
+    with open(percorso, "a", encoding="utf-8") as fh:
+        fh.write("\n".join(righe) + "\n")
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

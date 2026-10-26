@@ -173,6 +173,25 @@ class TestRisposteStrane(unittest.TestCase):
             out = jn.scrape_bip()
         self.assertEqual([o["titolo"] for o in out], ["Analyst"])
 
+    def test_accenture_righe_ripetute_non_sono_offerte_mancanti(self):
+        """Workday dichiara 40 righe e ne restituisce 40, ma 3 sono la stessa
+        offerta ripetuta: 37 offerte diverse e copertura completa."""
+        ids = list(range(37)) + [36, 35, 34]
+
+        def finta_post(body, headers):
+            off = body["offset"]
+            return {"total": 40 if off == 0 else 0,
+                    "jobPostings": [{"title": f"Job {n}", "externalPath": f"/job/{n}"}
+                                    for n in ids[off:off + 20]]}
+
+        jn.COPERTURA.clear()
+        with mock.patch.object(jn, "_accenture_post", side_effect=finta_post), \
+             mock.patch.object(jn, "_accenture_playwright") as browser:
+            out = jn.scrape_accenture()
+        self.assertEqual(len(out), 37)
+        self.assertEqual(jn.COPERTURA["Accenture"], (40, 40))
+        browser.assert_not_called()
+
     def test_bip_risposta_non_json(self):
         with mock.patch.object(jn, "http_get", return_value=FintaRisposta("<html>")):
             self.assertEqual(jn.scrape_bip(), [])
@@ -214,6 +233,31 @@ class TestTesti(unittest.TestCase):
         html, _ = jn.genera_html({"Bip": [{"titolo": "Stage", "url": "https://b/1"}]}, 10)
         self.assertIn("1 nuova offerta: Bip 1", html)
         self.assertNotIn("1 nuove", html)
+
+
+class TestVerificaGiornaliera(ConFileTemporaneo):
+    """La verifica fallisce (→ email di GitHub) solo quando c'è un problema serio."""
+
+    def esegui(self, offerte):
+        import verifica_siti as vs
+        vs.RIEPILOGO.clear()
+        sommario = os.path.join(self.dir.name, "summary.md")
+        with mock.patch.object(jn, "scrape_digital360", return_value=offerte), \
+             mock.patch.dict(os.environ, {"VERIFICA_FONTI": "Digital360",
+                                          "GITHUB_STEP_SUMMARY": sommario}):
+            codice = vs.main()
+        with open(sommario) as f:
+            return codice, f.read()
+
+    def test_fonte_vuota_fa_scattare_l_allarme(self):
+        codice, testo = self.esegui([])
+        self.assertEqual(codice, 1)
+        self.assertIn("🚨", testo)
+
+    def test_fonte_regolare_nessun_allarme(self):
+        codice, testo = self.esegui([{"titolo": "Consultant", "url": "https://d/1"}])
+        self.assertEqual(codice, 0)
+        self.assertIn("Nessun problema", testo)
 
 
 class TestMain(ConFileTemporaneo):

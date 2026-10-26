@@ -1,9 +1,15 @@
 name: 🔎 Verifica completezza fonti
 
 # Confronta ogni scraper con ricerche più ampie sullo stesso sito.
-# Non invia email e non modifica seen_jobs.json. Si lancia a mano
-# (o automaticamente quando cambia lo script di verifica).
+# Non invia la newsletter e non modifica seen_jobs.json.
+# Gira ogni giorno su tutte le fonti: se trova un problema serio la run
+# fallisce e GitHub manda un'email "Run failed"; il dettaglio è nella
+# scheda Summary della run. Si può lanciare anche a mano.
 on:
+  schedule:
+    # 14:17 UTC = 15:17 ora solare / 16:17 ora legale: dopo la newsletter
+    # (che parte in mattinata), così non si sovrappone e non provoca 429.
+    - cron: "17 14 * * *"
   workflow_dispatch:
     inputs:
       fonti:

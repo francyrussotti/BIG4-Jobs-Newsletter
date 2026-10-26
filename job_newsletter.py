@@ -1194,7 +1194,14 @@ def scrape_accenture():
             "data":     _workday_data(j.get("postedOn")),
         })
 
-    registra_copertura("Accenture", len(risultati), totale)
+    # Il totale di Workday conta le righe, e la stessa offerta può comparire in
+    # più righe (ottobre 2026: 176 righe = 173 offerte, sempre le stesse 3
+    # ripetute anche cercando per categoria). La copertura confronta righe con
+    # righe; le offerte inviate restano senza doppioni.
+    registra_copertura("Accenture", len(jobs), totale)
+    if len(risultati) < len(jobs):
+        print(f"    → {len(jobs) - len(risultati)} righe ripetute (stessa offerta): "
+              f"{len(risultati)} offerte diverse")
     print(f"   → {len(risultati)} offerte trovate")
     return risultati
 
