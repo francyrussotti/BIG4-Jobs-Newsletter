@@ -228,7 +228,7 @@ class TestRisposteStrane(unittest.TestCase):
              mock.patch.object(jn, "_accenture_playwright") as browser:
             out = jn.scrape_accenture()
         self.assertEqual(len(out), 37)
-        self.assertEqual(jn.COPERTURA["Accenture"], (40, 40))
+        self.assertEqual(jn.COPERTURA["Accenture Italia"], (40, 40))
         browser.assert_not_called()
 
     def test_bip_risposta_non_json(self):

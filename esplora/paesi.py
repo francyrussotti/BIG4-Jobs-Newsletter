@@ -1,68 +1,79 @@
-"""Esplorazione temporanea (3): portali nazionali di EY, KPMG, Deloitte, PwC."""
+"""Esplorazione temporanea (4): siti caricati via JavaScript."""
 import re, json, requests
 H = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
-     "Accept-Language": "en,it;q=0.8", "Accept": "text/html,application/json,*/*"}
+     "Accept-Language": "en,it;q=0.8", "Accept": "application/json, text/html, */*"}
 def T(t): print("\n" + "=" * 90 + "\n" + t + "\n" + "=" * 90, flush=True)
-def testo(html): return re.sub(r"\s+", " ", re.sub(r"<(script|style)[\s\S]*?</\1>|<[^>]+>", " ", html))
 
-def guarda(u, job_re=r'href="([^"]*(?:/job/|/jobs/|vacature|vacancy|JobDetail|/offer/)[^"]*)"', n=6, mostra=0):
+T("SuccessFactors Career Site Builder: API /services/recruiting/v1/jobs")
+for host in ["https://careers.kpmg.lu", "https://jobs.deloitte.lu"]:
+    s = requests.Session()
     try:
-        r = requests.get(u, headers=H, timeout=30)
+        s.get(host + "/search/?q=", headers=H, timeout=30)
+        body = {"locale": "en_US", "pageNumber": 0, "sortBy": "", "keywords": "", "location": "",
+                "facetFilters": {}, "brand": "", "skills": [], "categoryId": 0, "alertId": "", "rcmCandidateId": ""}
+        r = s.post(host + "/services/recruiting/v1/jobs", json=body,
+                   headers={**H, "Content-Type": "application/json", "Origin": host, "Referer": host + "/search/?q="}, timeout=30)
+        print(host, r.status_code, r.text[:1500])
     except Exception as e:
-        print(f"\n▶ {u}\n  ERRORE {e}"); return None
-    print(f"\n▶ {u}\n  {r.status_code} {r.url} ({len(r.text)})")
-    t = testo(r.text)
-    for m in set(re.findall(r"(?:\d+\s*[–-]\s*\d+\s*(?:of|di|van)\s*\d+|\d[\d.,]*\s*(?:results?|risultati|vacatures|vacancies|jobs|offres|positions|resultaten))", t, re.I)):
-        print("  conteggio:", m)
-    links = list(dict.fromkeys(re.findall(job_re, r.text, re.I)))
-    print(f"  link offerta: {len(links)}")
-    for l in links[:n]:
-        print("    ·", l[:170])
-    for m in list(dict.fromkeys(re.findall(r'["\']((?:https?://[^"\']+)?/[^"\'\s]*(?:api|graphql|ajax|search\.json|/wp-json/)[^"\'\s]*)["\']', r.text)))[:10]:
-        print("  api?:", m[:170])
-    if mostra:
-        print("  testo:", t[:mostra])
-    return r
+        print(host, "ERR", e)
 
-T("EY careers.ey.com (SuccessFactors)")
-for q in ["Italy", "Belgium", "Luxembourg", "Ireland", "Netherlands"]:
-    r = guarda(f"https://careers.ey.com/ey/search/?q=&locationsearch={q}", n=3)
-    if r is not None and q == "Ireland":
-        m = re.search(r'<tr class="data-row[\s\S]{0,1500}', r.text)
-        print("  RIGA:", m.group(0)[:1500] if m else "nessuna data-row")
-for u in ["https://careers.ey.com/ey/search/?q=&optionsFacetsDD_country=IE",
-          "https://careers.ey.com/ey/search/?q=&optionsFacetsDD_country=IT",
-          "https://careers.ey.com/ey/search/?q=&optionsFacetsDD_country=NL"]:
-    guarda(u, n=2)
+T("KPMG ema-careers per paese")
+for q in ["Ireland", "Netherlands", "Luxembourg", "Belgium"]:
+    r = requests.get(f"https://ema-careers.kpmg.com/search/?q=&locationsearch={q}", headers=H, timeout=30)
+    t = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", r.text))
+    m = re.search(r"\d+\s*[–-]\s*\d+\s*of\s*\d+", t)
+    locs = re.findall(r'<span class="jobLocation">\s*([^<]+?)\s*</span>', r.text)
+    print(f"  {q}: {m.group(0) if m else 'nessun conteggio'} · sedi: {sorted(set(locs))[:12]}")
+r = requests.get("https://ema-careers.kpmg.com/search/?q=&locationsearch=Belgium", headers=H, timeout=30)
+m = re.search(r'<tr class="data-row[\s\S]{0,1600}', r.text)
+print("  RIGA:", m.group(0) if m else "-")
 
-T("KPMG")
-guarda("https://careers.kpmg.lu/search/?q=", mostra=600)
-guarda("https://ema-careers.kpmg.com/", mostra=600)
-guarda("https://ema-careers.kpmg.com/search/?q=&locationsearch=Belgium", mostra=400)
-r = guarda("https://kpmg.com/ie/en/careers.html", job_re=r'href="([^"]*(?:job|vacanc|apply|search|career)[^"]*)"', n=40)
-guarda("https://www.werkenbijkpmg.nl/vacatures", mostra=600)
-guarda("https://www.werkenbijkpmg.nl/en/vacancies", mostra=300)
+T("EY careers.ey.com: riga completa e paginazione")
+r = requests.get("https://careers.ey.com/ey/search/?q=&optionsFacetsDD_country=IT&startrow=25", headers=H, timeout=30)
+t = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", r.text))
+print("  startrow=25:", re.search(r"\d+\s*[–-]\s*\d+\s*of\s*\d+", t).group(0) if re.search(r"\d+\s*[–-]\s*\d+\s*of\s*\d+", t) else "-")
+for m in re.finditer(r'<th[^>]*id="(hdr\w+)"', r.text):
+    print("  colonna:", m.group(1))
+m = re.search(r'<tr class="data-row[\s\S]{0,2500}?</tr>', r.text)
+print("  RIGA:", m.group(0) if m else "-")
 
-T("DELOITTE")
-r = guarda("https://deloittebe.avature.net/en_US/careers/SearchJobs/?jobRecordsPerPage=50", n=3)
-if r is not None:
-    print("  cards h3 JobDetail:", len(re.findall(r"<h3[^>]*>\s*<a[^>]+JobDetail", r.text)))
-r = guarda("https://jobs.deloitte.lu/go/View-all-Jobs/9826901/", n=3)
-if r is not None:
-    m = re.search(r'<tr class="data-row[\s\S]{0,1200}', r.text)
-    print("  RIGA:", m.group(0)[:1200] if m else "nessuna data-row")
-for site in ["Early_Careers", "Experienced_Professionals"]:
-    try:
-        d = requests.post(f"https://deloitteie.wd3.myworkdayjobs.com/wday/cxs/deloitteie/{site}/jobs",
-                          json={"appliedFacets": {}, "limit": 3, "offset": 0, "searchText": ""},
-                          headers={**H, "Content-Type": "application/json", "Accept": "application/json"}, timeout=30).json()
-        print(f"  Deloitte IE {site}: total {d.get('total')} · es. {[(j.get('title'), j.get('locationsText'), j.get('postedOn'), j.get('externalPath')) for j in d.get('jobPostings', [])[:2]]}")
-    except Exception as e:
-        print("  Deloitte IE", site, "ERR", e)
-guarda("https://werkenbijdeloitte.nl/vacatures/", mostra=600)
-guarda("https://werkenbijdeloitte.nl/en/vacancies/", mostra=300)
-
-T("PWC Paesi Bassi")
-guarda("https://werkenbijpwc.nl/", mostra=300)
-guarda("https://werkenbijpwc.nl/vacatures", mostra=600)
-guarda("https://www.pwc.nl/nl/werken-bij-pwc.html", job_re=r'href="([^"]*(?:vacature|job|werkenbij|myworkday|career)[^"]*)"', n=15)
+T("Playwright: chiamate XHR")
+from playwright.sync_api import sync_playwright
+PAGINE = ["https://www.werkenbijkpmg.nl/vacatures", "https://werkenbijdeloitte.nl/vacatures/",
+          "https://werkenbijpwc.nl/vacatures", "https://www.pwc.nl/nl/vacatures.html",
+          "https://kpmg.com/ie/en/careers/experienced-professionals.html", "https://careers.kpmg.lu/search/?q=",
+          "https://jobs.deloitte.lu/go/View-all-Jobs/9826901/"]
+with sync_playwright() as p:
+    b = p.chromium.launch(headless=True, args=["--no-sandbox"])
+    for url in PAGINE:
+        print(f"\n▶ {url}", flush=True)
+        ctx = b.new_context(user_agent=H["User-Agent"], locale="en-US")
+        pg = ctx.new_page()
+        def on_resp(resp, url=url):
+            rt = resp.request.resource_type
+            if rt in ("xhr", "fetch") and not re.search(r"google|gtm|analytics|cookie|consent|hotjar|linkedin|facebook|doubleclick|clarity|bing|secureprivacy|onetrust|cdn", resp.url, re.I):
+                try:
+                    txt = resp.text()
+                except Exception:
+                    txt = ""
+                print(f"  XHR {resp.status} {resp.request.method} {resp.url[:200]}")
+                if resp.request.method == "POST":
+                    print("     body:", (resp.request.post_data or "")[:400])
+                if re.search(r"vacan|job|title", txt[:5000], re.I):
+                    print("     resp:", txt[:900].replace("\n", " "))
+        pg.on("response", on_resp)
+        try:
+            pg.goto(url, wait_until="networkidle", timeout=60000)
+            pg.wait_for_timeout(5000)
+            html = pg.content()
+            t = re.sub(r"\s+", " ", re.sub(r"<(script|style)[\s\S]*?</\1>|<[^>]+>", " ", html))
+            for m in set(re.findall(r"\d[\d.]*\s*(?:vacatures|vacancies|results|jobs|resultaten)|\d+\s*[–-]\s*\d+\s*of\s*\d+", t, re.I)):
+                print("  conteggio:", m)
+            links = list(dict.fromkeys(re.findall(r'href="([^"]*(?:/vacature|/vacancies/|/job/|/jobs/|myworkday|JobDetail)[^"]*)"', html, re.I)))
+            print(f"  link offerta: {len(links)}")
+            for l in links[:8]:
+                print("    ·", l[:180])
+        except Exception as e:
+            print("  ERRORE", e)
+        ctx.close()
+    b.close()

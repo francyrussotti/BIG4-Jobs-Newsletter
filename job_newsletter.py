@@ -1107,6 +1107,15 @@ def _accenture_post(body, headers):
     print("    ⚠️  Accenture: errore persistente dopo i retry")
     return None
 
+# ID del facet "locationCountry" di Workday (letti dal facet, ottobre 2026)
+ACCENTURE_PAESI = {
+    "Italia":      "8cd04a563fd94da7b06857a79faaf815",
+    "Belgio":      "a04ea128f43a42e59b1e6a19e8f0b374",
+    "Lussemburgo": "328b82f597514643a7683a78fc67c3f1",
+    "Irlanda":     "04a05835925f45b3a59406a2a6b72c8a",
+    "Paesi Bassi": "9696868b09c64d52a62ee13b052383cc",
+}
+
 def _accenture_playwright(ITALIA_ID, LIMIT):
     """Fallback: stesse chiamate API, ma eseguite dentro un browser reale."""
     if not PLAYWRIGHT_OK:
@@ -1153,9 +1162,9 @@ def _accenture_playwright(ITALIA_ID, LIMIT):
         print(f"    ⚠️  Playwright Accenture error: {e}")
         return []
 
-def scrape_accenture():
-    print("🔍 Accenture Italia (Workday)...")
-    ITALIA_ID = "8cd04a563fd94da7b06857a79faaf815"
+def scrape_accenture(paese="Italia"):
+    print(f"🔍 Accenture {paese} (Workday)...")
+    ITALIA_ID = ACCENTURE_PAESI[paese]      # (nome storico: è l'ID del paese richiesto)
     LIMIT = 20
     headers = {**HEADERS, "Content-Type": "application/json", "Accept": "application/json",
                "Origin": "https://accenture.wd103.myworkdayjobs.com",
@@ -1199,7 +1208,7 @@ def scrape_accenture():
         luogo  = bullet[1] if len(bullet) > 1 else ""
         risultati.append({
             "titolo":   j.get("title") or "N/D",
-            "location": "Accenture Italia" + (f" · {luogo}" if luogo and luogo != "Location Negotiable" else ""),
+            "location": f"Accenture {paese}" + (f" · {luogo}" if luogo and luogo != "Location Negotiable" else ""),
             "url":      f"{ACCENTURE_BASE}{path}" if path else "",
             "data":     _workday_data(j.get("postedOn")),
         })
@@ -1208,7 +1217,7 @@ def scrape_accenture():
     # più righe (ottobre 2026: 176 righe = 173 offerte, sempre le stesse 3
     # ripetute anche cercando per categoria). La copertura confronta righe con
     # righe; le offerte inviate restano senza doppioni.
-    registra_copertura("Accenture", len(jobs), totale)
+    registra_copertura(f"Accenture {paese}", len(jobs), totale)
     if len(risultati) < len(jobs):
         print(f"    → {len(jobs) - len(risultati)} righe ripetute (stessa offerta): "
               f"{len(risultati)} offerte diverse")
@@ -1326,24 +1335,36 @@ def _nttdata_salesforce_id(url):
         re.search(r"/jobs/([a-z0-9]{15,18})-", url or "", re.I)
     return m.group(1).lower() if m else None
 
+# Nome del paese per il portale Phenom (filtro "country")
+NTT_PAESI = {"Italia": "Italy", "Belgio": "Belgium", "Lussemburgo": "Luxembourg",
+             "Irlanda": "Ireland", "Paesi Bassi": "Netherlands"}
+
 def _nttdata_offerta(j, paese_it):
     link = j.get("applyUrl") or ""
     link = re.sub(r"\?utm_[^#]*$", "", link)        # careers.emeal: toglie ?utm_medium=…
     citta = (j.get("city") or "").strip()
     citta = NTT_CITTA.get(citta.lower(), citta)
+    # Offerta multi-sede la cui sede principale è in un altro paese (es. Milano
+    # nella ricerca "Belgium"): la città indicata sarebbe fuorviante
+    if j.get("country") and j.get("country") != NTT_PAESI.get(paese_it):
+        citta = ""
     return {"titolo":   j.get("title") or "N/D",
             "location": f"NTT DATA {paese_it}" + (f" · {citta}" if citta else ""),
             "url":      _senza_apply(link),                    # Workday: pagina dell'offerta
             "_id_src":  f"ntt-phenom:{j.get('jobId')}",        # stabile anche se cambia il link
             "data":     (j.get("postedDate") or "")[:10]}
 
-def scrape_nttdata_belgio():
-    print("🔍 NTT DATA Belgio (portale globale Phenom)...")
-    jobs, totale = _nttdata_phenom("Belgium")
-    risultati = [_nttdata_offerta(j, "Belgio") for j in jobs]
-    registra_copertura("NTT DATA Belgio", len(risultati), totale)
+def scrape_nttdata_paese(paese):
+    """NTT DATA fuori dall'Italia: solo dal portale globale Phenom."""
+    print(f"🔍 NTT DATA {paese} (portale globale Phenom)...")
+    jobs, totale = _nttdata_phenom(NTT_PAESI[paese])
+    risultati = [_nttdata_offerta(j, paese) for j in jobs]
+    registra_copertura(f"NTT DATA {paese}", len(risultati), totale)
     print(f"   → {len(risultati)} offerte trovate")
     return risultati
+
+def scrape_nttdata_belgio():
+    return scrape_nttdata_paese("Belgio")
 
 # ============================================================
 # 🏢  BIP  —  Oracle Recruiting Cloud (requests, API REST diretta)
@@ -1464,8 +1485,13 @@ def scrape_digital360():
 #  Paginazione: page/size, ci si ferma al "total" dichiarato.
 # ============================================================
 
-def scrape_capgemini():
-    print("🔍 Capgemini Italia...")
+# country_code dell'API per paese (verificati a ottobre 2026: le varianti
+# "be-nl", "nl-en", "lu-fr"… restituiscono 0 risultati senza errore)
+CAPGEMINI_PAESI = {"Italia": "it-it", "Belgio": "be-en", "Lussemburgo": "lu-en",
+                   "Irlanda": "ie-en", "Paesi Bassi": "nl-nl"}
+
+def scrape_capgemini(paese="Italia"):
+    print(f"🔍 Capgemini {paese}...")
     URL  = "https://cg-jobstream-api.azurewebsites.net/api/job-search"
     SIZE = 50
     risultati = []
@@ -1474,7 +1500,7 @@ def scrape_capgemini():
     totale_dichiarato = None
     visti = set()
     for page in range(1, MAX_PAGINE + 1):
-        params = {"country_code": "it-it", "page": page, "size": SIZE}
+        params = {"country_code": CAPGEMINI_PAESI[paese], "page": page, "size": SIZE}
         dati = _json(http_get(URL, headers=headers, params=params))
         if not isinstance(dati, dict):
             break
@@ -1496,7 +1522,7 @@ def scrape_capgemini():
             nuovi += 1
             risultati.append({
                 "titolo":   j.get("title") or "N/D",
-                "location": f"Capgemini · {j.get('location','')}".rstrip(" ·"),
+                "location": f"Capgemini {paese} · {j.get('location','')}".rstrip(" ·"),
                 "url":      url_annuncio,
                 "data":     "",
             })
@@ -1507,6 +1533,7 @@ def scrape_capgemini():
             break
         time.sleep(0.2)
 
+    registra_copertura(f"Capgemini {paese}", len(risultati), totale_dichiarato)
     print(f"   → {len(risultati)} offerte trovate")
     return risultati
 
