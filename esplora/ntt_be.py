@@ -1,11 +1,26 @@
-"""Prova temporanea dei nuovi scraper NTT DATA sui siti veri."""
-import sys, os
+"""Prova temporanea di tutte le fonti nuove sui siti veri."""
+import sys, os, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import job_newsletter as jn
-for fn in (jn.scrape_nttdata_belgio, jn.scrape_nttdata):
-    out = fn()
-    print(f"\n{fn.__name__}: {len(out)} offerte · copertura {jn.COPERTURA}")
-    for o in out[:12] + (["…"] if len(out) > 24 else []) + out[-12:]:
-        print("   ·", o if o == "…" else f"[{o['data'] or 's.d.'}] {o['titolo']} | {o['location']} | {o['url'][:110]}")
-    ids = [jn._job_id(fn.__name__, o) for o in out]
-    print("   ID duplicati:", len(ids) - len(set(ids)))
+NUOVE = [n for n, _ in jn.elenco_fonti()
+         if n not in ("EY", "PwC Italia", "Deloitte Italia", "KPMG Italia", "Accenture Italia",
+                      "NTT DATA Italia", "Capgemini Italia", "Bip", "Digital360", "PwC Belgio")]
+fonti = dict(jn.elenco_fonti())
+riepilogo = []
+for nome in NUOVE:
+    t0 = time.time()
+    try:
+        out = fonti[nome]()
+    except Exception as e:
+        riepilogo.append(f"{nome:24s} ERRORE {e}")
+        continue
+    datate = sum(1 for o in out if jn._eta_giorni(o.get("data")) is not None)
+    recenti = sum(1 for o in out if (jn._eta_giorni(o.get("data")) or 99) <= 7)
+    ids = {jn._job_id(nome, o) for o in out}
+    cop = jn.COPERTURA.get(nome)
+    riepilogo.append(f"{nome:24s} {len(out):4d} offerte · copertura {cop} · con data {datate} · ultimi 7gg {recenti}"
+                     f" · ID unici {len(ids)} · {time.time()-t0:.0f}s")
+    for o in out[:3]:
+        print(f"   · [{o.get('data') or 's.d.'}] {o['titolo']} | {o['location']} | {o['url'][:120]}")
+print("\n" + "=" * 80 + "\nRIEPILOGO\n" + "=" * 80)
+print("\n".join(riepilogo))
