@@ -1,9 +1,12 @@
 # ============================================================
-#  📰 JOB NEWSLETTER — Big4 & consulting Italia/Belgio
-#  EY | PwC Italia | PwC Belgio | Deloitte | KPMG | Accenture
-#  NTT DATA Italia | NTT DATA Belgio | Bip | Digital360 | Capgemini
+#  📰 JOB NEWSLETTER — Big4 & consulting
+#  Paesi: Italia, Belgio, Lussemburgo, Irlanda, Paesi Bassi
+#  Aziende: EY | PwC | Deloitte | KPMG | Accenture | NTT DATA | Capgemini
+#           Bip e Digital360 (solo Italia)
+#  Solo siti carriere ufficiali delle aziende (nessun aggregatore).
+#  L'elenco completo delle fonti è in elenco_fonti().
 #
-#  Scheduling: GitHub Actions (gira ogni giorno alle 07:30 CET)
+#  Scheduling: GitHub Actions (vedi .github/workflows/newsletter.yml)
 # ============================================================
 
 import requests
@@ -1018,7 +1021,10 @@ def scrape_deloitte(paese="Italia"):
             loc  = ""
             if ctx:
                 loc_el = ctx.select_one("[class*='location'],[class*='city'],td:nth-child(2)")
-                if loc_el: loc = loc_el.get_text(strip=True)
+                if loc_el: loc = loc_el.get_text(" ", strip=True)
+            # Deloitte Belgio: la seconda colonna sono i pulsanti, non la sede
+            if re.search(r"apply|share|email|linkedin", loc, re.I):
+                loc = ""
             risultati.append({"titolo": a.get_text(strip=True),
                                "location": f"Deloitte {paese}" + (f" · {loc}" if loc else ""),
                                "url": href, "data": ""})
@@ -1167,6 +1173,15 @@ def _sf_classico(base, ricerca, nome, sigla_paese=None):
 # Sigla paese del filtro di careers.ey.com
 EY_SF_PAESI = {"Italia": "IT", "Belgio": "BE", "Lussemburgo": "LU", "Irlanda": "IE", "Paesi Bassi": "NL"}
 
+def _titolo_norm(t):
+    """Titolo confrontabile tra portali: minuscolo, senza la città finale
+    ("Senior Consultant - Milano" ≈ "Senior Consultant")."""
+    t = (t or "").lower()
+    t = re.sub(r"\s*[-–|,]\s*(milano|roma|torino|bologna|napoli|padova|firenze|genova|bari|verona|"
+               r"brescia|treviso|ancona|bergamo|trieste|siena|diegem|brussels|bruxelles|antwerp|"
+               r"antwerpen|ghent|gent|liege|liège|hasselt)\b.*$", "", t)
+    return re.sub(r"[^a-z0-9]+", " ", t).strip()
+
 def scrape_ey_experienced(paese):
     """EY: careers.ey.com è il portale delle posizioni experienced (il board
     Yello letto da scrape_ey è soprattutto per neolaureati e stage)."""
@@ -1208,7 +1223,10 @@ def _sf_csb_requests(host, categoria, locale, pagina_ricerca):
          "Origin": host, "Referer": host + pagina_ricerca}
     if token:
         h["X-CSRF-Token"] = token.group(1)
-    risultati, totale = [], None
+    # NOTA (ottobre 2026): le pagine si sovrappongono (la stessa offerta torna in
+    # pagine diverse), quindi si conta per ID e ci si ferma solo dopo pagine
+    # che non portano nulla di nuovo.
+    risultati, ids, totale, a_vuoto = [], set(), None, 0
     for pagina in range(MAX_PAGINE):
         d = s.post(host + "/services/recruiting/v1/jobs", json=_sf_csb_corpo(pagina, categoria, locale),
                    headers=h, timeout=30).json()
@@ -1216,8 +1234,11 @@ def _sf_csb_requests(host, categoria, locale, pagina_ricerca):
         blocco = [x.get("response") or {} for x in d.get("jobSearchResult") or []]
         if not blocco:
             break
-        risultati += blocco
-        if totale and len(risultati) >= totale:
+        nuovi = [j for j in blocco if j.get("id") not in ids]
+        ids.update(j.get("id") for j in nuovi)
+        risultati += nuovi
+        a_vuoto = 0 if nuovi else a_vuoto + 1
+        if (totale and len(ids) >= totale) or a_vuoto >= 3:
             break
         time.sleep(0.4)
     return risultati, totale
@@ -1226,7 +1247,7 @@ def _sf_csb_playwright(host, categoria, locale, pagina_ricerca):
     if not PLAYWRIGHT_OK:
         return [], None
     JS = """async ([categoria, locale]) => {
-        let out = [], totale = null;
+        let out = [], totale = null, ids = new Set(), aVuoto = 0;
         for (let pagina = 0; pagina < 100; pagina++) {
             const r = await fetch('/services/recruiting/v1/jobs', {method: 'POST',
                 headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
@@ -1237,8 +1258,11 @@ def _sf_csb_playwright(host, categoria, locale, pagina_ricerca):
             if (totale === null) totale = d.totalJobs;
             const blocco = (d.jobSearchResult || []).map(x => x.response || {});
             if (!blocco.length) break;
-            out.push(...blocco);
-            if (totale && out.length >= totale) break;
+            const nuovi = blocco.filter(j => !ids.has(j.id));
+            nuovi.forEach(j => ids.add(j.id));
+            out.push(...nuovi);
+            aVuoto = nuovi.length ? 0 : aVuoto + 1;
+            if ((totale && ids.size >= totale) || aVuoto >= 3) break;
         }
         return {out, totale};
     }"""
@@ -1274,7 +1298,7 @@ def _sf_csb(host, nome, categoria=0, locale="en_GB", pagina_ricerca="/search/?q=
         citta  = (luoghi[0].split(",")[0].strip() if luoghi else "")
         out.append({"titolo":   titolo,
                     "location": nome + (f" · {citta}" if citta else ""),
-                    "url":      f"{host}/job/{j.get('urlTitle') or 'job'}/{jid}-{locale}",
+                    "url":      f"{host}/job/{html_lib.unescape(j.get('urlTitle') or 'job')}/{jid}-{locale}",
                     "_id_src":  f"{host}/job/{jid}",       # stabile anche se cambia il titolo
                     "data":     j.get("unifiedStandardStart") or ""})   # "16/09/2025"
     registra_copertura(nome, len(out), totale)
@@ -1621,6 +1645,7 @@ def scrape_nttdata():
     # comunque l'elenco di it.nttdata.com.
     gia = {_nttdata_salesforce_id(o["url"]) for o in risultati} - {None}
     phenom, _ = _nttdata_phenom("Italy")
+    phenom = [j for j in phenom if _ntt_link_valido(j)]
     extra = [_nttdata_offerta(j, "Italia") for j in phenom
              if _nttdata_salesforce_id(j.get("applyUrl")) not in gia]
     if extra:
@@ -1702,10 +1727,16 @@ def _nttdata_offerta(j, paese_it):
             "_id_src":  f"ntt-phenom:{j.get('jobId')}",        # stabile anche se cambia il link
             "data":     (j.get("postedDate") or "")[:10]}
 
+def _ntt_link_valido(j):
+    """Il portale globale contiene a volte offerte di prova con link verso un
+    ambiente di anteprima SAP (es. career8preview.sapsf.com, NTTDTEST2)."""
+    return not re.search(r"preview\.sapsf|[?&]company=\w*test", j.get("applyUrl") or "", re.I)
+
 def scrape_nttdata_paese(paese):
     """NTT DATA fuori dall'Italia: solo dal portale globale Phenom."""
     print(f"🔍 NTT DATA {paese} (portale globale Phenom)...")
     jobs, totale = _nttdata_phenom(NTT_PAESI[paese])
+    jobs = [j for j in jobs if _ntt_link_valido(j)]
     risultati = [_nttdata_offerta(j, paese) for j in jobs]
     registra_copertura(f"NTT DATA {paese}", len(risultati), totale)
     print(f"   → {len(risultati)} offerte trovate")
@@ -2259,6 +2290,14 @@ def main():
     for nome, fn in scrapers:
         try:
             offerte = fn() or []
+            # EY Italia/Belgio: le offerte già presenti nel board Yello ("EY")
+            # non si ripetono nella sezione di careers.ey.com
+            if nome in ("EY Italia", "EY Belgio") and tutte_trovate.get("EY"):
+                yello = {_titolo_norm(o.get("titolo")) for o in tutte_trovate["EY"]}
+                prima = len(offerte)
+                offerte = [o for o in offerte if _titolo_norm(o.get("titolo")) not in yello]
+                if prima > len(offerte):
+                    print(f"   → {prima - len(offerte)} già presenti nel board EY (Yello): tolte")
             tutte_trovate[nome] = offerte
             if offerte:
                 nuove, seen = filtra_nuove(nome, offerte, seen)
@@ -2304,7 +2343,7 @@ def main():
     totale_trovate = sum(conteggi.values())
     totale_nuove   = sum(nuove_per_fonte.values())
 
-    print(f"\n📊 Riepilogo:")
+    print("\n📊 Riepilogo:")
     for n in [s[0] for s in scrapers]:
         cop = ""
         if n in COPERTURA:

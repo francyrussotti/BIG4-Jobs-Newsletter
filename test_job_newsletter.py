@@ -235,6 +235,17 @@ class TestPortaliNazionali(unittest.TestCase):
         self.assertEqual(out[0]["data"], "2026-05-26")
 
 
+class TestRifiniture(unittest.TestCase):
+    def test_ntt_scarta_le_offerte_di_prova(self):
+        self.assertFalse(jn._ntt_link_valido({"applyUrl": "https://career8preview.sapsf.com/career?company=NTTDTEST2&x=1"}))
+        self.assertTrue(jn._ntt_link_valido({"applyUrl": "https://nttlimited.wd3.myworkdayjobs.com/NTT_Careers/job/X/QA-Test-Engineer_R-1"}))
+
+    def test_ey_titoli_confrontabili(self):
+        self.assertEqual(jn._titolo_norm("Senior Consultant Technology Risk - Milano"),
+                         jn._titolo_norm("Senior Consultant Technology Risk"))
+        self.assertNotEqual(jn._titolo_norm("Senior Consultant"), jn._titolo_norm("Manager"))
+
+
 class TestPaginazioneSenzaFine(unittest.TestCase):
     """Siti che, oltre l'ultima pagina, ripetono sempre la stessa pagina:
     gli scraper devono fermarsi invece di girare all'infinito."""
