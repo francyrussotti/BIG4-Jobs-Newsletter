@@ -116,6 +116,44 @@ class TestRecuperoUnaTantum(unittest.TestCase):
             self.assertFalse(jn._da_recuperare("EY", {"titolo": "FAAS Trieste - Financial Services"}))
 
 
+class TestNttData(unittest.TestCase):
+    JOB_EMEAL = {"jobId": "P-1", "title": "SAP Service manager", "city": "Bruselas",
+                 "postedDate": "2026-10-20T00:00:00.000+0000",
+                 "applyUrl": "https://careers.emeal.nttdata.com/s/offer/a1JKA000000UXni2AG/sap-service-manager"
+                             "?utm_medium=phenom&utm_source=OneNTTCareerPage"}
+    JOB_WD = {"jobId": "R-2", "title": "Sales Specialist Network", "city": "Diegem",
+              "postedDate": "2026-10-01T00:00:00.000+0000",
+              "applyUrl": "https://nttlimited.wd3.myworkdayjobs.com/NTT_Careers/job/Diegem-Belgium/Sales_R-1/apply"}
+
+    def test_belgio(self):
+        with mock.patch.object(jn, "_nttdata_phenom", return_value=([self.JOB_EMEAL, self.JOB_WD], 2)):
+            out = jn.scrape_nttdata_belgio()
+        self.assertEqual(out[0]["location"], "NTT DATA Belgio · Bruxelles")
+        self.assertNotIn("utm_", out[0]["url"])
+        self.assertFalse(out[1]["url"].endswith("/apply"))
+        self.assertEqual(out[1]["data"], "2026-10-01")
+        self.assertEqual(jn._job_id("x", out[0]), jn._job_id("x", dict(out[0], url="altro")))  # ID stabile
+
+    def test_italia_senza_doppioni(self):
+        # Stessa offerta su it.nttdata.com (ID minuscolo nello slug) e sul portale globale
+        html = ('<a class="job-detail-link" href="/jobs/a1jka000000uxni2ag-sap-service-manager">'
+                '<span class="is-h5">SAP Service manager</span></a>')
+        vuoto = FintaRisposta("<html></html>")
+        with mock.patch.object(jn, "http_get", side_effect=[FintaRisposta(html), vuoto]), \
+             mock.patch.object(jn, "_nttdata_phenom", return_value=([self.JOB_EMEAL, self.JOB_WD], 2)), \
+             mock.patch.object(jn.time, "sleep"):
+            out = jn.scrape_nttdata()
+        self.assertEqual([o["titolo"] for o in out], ["SAP Service manager", "Sales Specialist Network"])
+
+    def test_storico_rinominato(self):
+        with tempfile.TemporaryDirectory() as d, \
+             mock.patch.object(jn, "SEEN_FILE", os.path.join(d, "s.json")):
+            with open(jn.SEEN_FILE, "w") as f:
+                json.dump({"ids": [], "storico_conteggi": [{"conteggi": {"NTT DATA": 95}}]}, f)
+            _, storico = jn.carica_seen()
+        self.assertEqual(storico[0]["conteggi"], {"NTT DATA Italia": 95})
+
+
 class TestPaginazioneSenzaFine(unittest.TestCase):
     """Siti che, oltre l'ultima pagina, ripetono sempre la stessa pagina:
     gli scraper devono fermarsi invece di girare all'infinito."""
@@ -128,7 +166,8 @@ class TestPaginazioneSenzaFine(unittest.TestCase):
     def test_ntt_data(self):
         html = ('<a class="job-detail-link" href="/job/1"><span class="is-h5">A</span></a>'
                 '<a class="job-detail-link" href="/job/2"><span class="is-h5">B</span></a>')
-        with mock.patch.object(jn, "http_get", return_value=FintaRisposta(html)) as g:
+        with mock.patch.object(jn, "http_get", return_value=FintaRisposta(html)) as g, \
+             mock.patch.object(jn, "_nttdata_phenom", return_value=([], None)):
             out = jn.scrape_nttdata()
         self.assertEqual(len(out), 2)
         self.assertEqual(g.call_count, 2)
@@ -264,7 +303,7 @@ class TestMain(ConFileTemporaneo):
     """Flusso completo con scraper finti."""
 
     NOMI = ["scrape_ey", "scrape_pwc_italia", "scrape_pwc_belgio", "scrape_deloitte",
-            "scrape_kpmg", "scrape_accenture", "scrape_nttdata", "scrape_bip",
+            "scrape_kpmg", "scrape_accenture", "scrape_nttdata", "scrape_nttdata_belgio", "scrape_bip",
             "scrape_digital360", "scrape_capgemini"]
 
     def esegui(self, stato_invio):

@@ -1,7 +1,7 @@
 # ============================================================
 #  📰 JOB NEWSLETTER — Big4 & consulting Italia/Belgio
 #  EY | PwC Italia | PwC Belgio | Deloitte | KPMG | Accenture
-#  NTT DATA | Bip | Digital360 | Capgemini
+#  NTT DATA Italia | NTT DATA Belgio | Bip | Digital360 | Capgemini
 #
 #  Scheduling: GitHub Actions (gira ogni giorno alle 07:30 CET)
 # ============================================================
@@ -172,6 +172,9 @@ def _workday_data(testo):
         return (testo or "").replace("Offerta pubblicata ", "")
     return (datetime.now() - timedelta(days=eta)).strftime("%Y-%m-%d")
 
+# Nomi di fonte cambiati nel tempo (vecchio → nuovo), per lo storico dei conteggi
+FONTI_RINOMINATE = {"NTT DATA": "NTT DATA Italia"}
+
 class SeenIlleggibile(Exception):
     """seen_jobs.json esiste ma non si riesce a leggere."""
 
@@ -192,6 +195,13 @@ def carica_seen() -> tuple[set, list]:
             raise ValueError("struttura inattesa (manca la lista 'ids')")
         ids     = {i for i in data.get("ids", []) if isinstance(i, str)}
         storico = [r for r in (data.get("storico_conteggi") or []) if isinstance(r, dict)]
+        # Fonti rinominate: lo storico dei conteggi resta collegato al nuovo nome
+        for run in storico:
+            c = run.get("conteggi")
+            if isinstance(c, dict):
+                for vecchio, nuovo in FONTI_RINOMINATE.items():
+                    if vecchio in c and nuovo not in c:
+                        c[nuovo] = c.pop(vecchio)
     except Exception as e:
         raise SeenIlleggibile(f"{SEEN_FILE} illeggibile: {e}") from e
     print(f"📂 Caricati {len(ids)} ID già visti da {SEEN_FILE} · storico: {len(storico)} run")
@@ -1239,7 +1249,7 @@ def scrape_nttdata():
             nuovi += 1
             risultati.append({
                 "titolo":   titolo_el.get_text(strip=True) if titolo_el else "N/D",
-                "location": f"NTT DATA · {loc_el.get_text(strip=True)}" if loc_el else "NTT DATA Italia",
+                "location": f"NTT DATA Italia · {loc_el.get_text(strip=True)}" if loc_el else "NTT DATA Italia",
                 "url":      href,
                 "data":     "",
             })
@@ -1247,6 +1257,91 @@ def scrape_nttdata():
             break
         time.sleep(0.3)
 
+    # NOTA (ottobre 2026): it.nttdata.com mostra solo la consulenza. Le offerte
+    # italiane delle infrastrutture (ex NTT Ltd, es. Milano/Segrate) sono solo
+    # sul portale globale: si aggiungono quelle che non sono già nell'elenco
+    # (confronto per ID Salesforce). Se il portale non risponde si tiene
+    # comunque l'elenco di it.nttdata.com.
+    gia = {_nttdata_salesforce_id(o["url"]) for o in risultati} - {None}
+    phenom, _ = _nttdata_phenom("Italy")
+    extra = [_nttdata_offerta(j, "Italia") for j in phenom
+             if _nttdata_salesforce_id(j.get("applyUrl")) not in gia]
+    if extra:
+        print(f"    → +{len(extra)} dal portale globale NTT DATA (non presenti su it.nttdata.com)")
+    risultati += extra
+
+    print(f"   → {len(risultati)} offerte trovate")
+    return risultati
+
+# ============================================================
+# 🏢  NTT DATA  —  portale globale careers.nttdata.com (Phenom)
+#
+#  NOTA (ottobre 2026): NTT DATA pubblica le offerte su due sistemi:
+#  - la consulenza (ex everis) su Salesforce, careers.emeal.nttdata.com;
+#    per l'Italia le stesse offerte sono su it.nttdata.com;
+#  - le infrastrutture (ex NTT Ltd) su Workday, nttlimited.wd3.myworkdayjobs.com.
+#  Il portale globale Phenom le raccoglie entrambe e si filtra per paese
+#  (stesso endpoint POST /widgets di PwC Italia). Il Belgio (22 offerte)
+#  non ha un elenco sul sito nazionale: si legge solo da qui.
+# ============================================================
+
+NTT_PHENOM = "https://careers.nttdata.com"
+# Nomi di città come li scrive Phenom (spesso in spagnolo) → nome locale
+NTT_CITTA = {"bruselas": "Bruxelles", "brussels": "Bruxelles", "milán": "Milano", "milan": "Milano",
+             "roma": "Roma", "rome": "Roma", "turín": "Torino", "turin": "Torino", "nápoles": "Napoli"}
+
+def _nttdata_phenom(paese):
+    """Tutte le offerte del portale globale NTT DATA per un paese ("Belgium",
+    "Italy"). Ritorna (lista di job Phenom, totale dichiarato) o ([], None)."""
+    jobs, totale, visti = [], None, set()
+    for _ in range(10):
+        body = {"lang": "en_global", "deviceType": "desktop", "country": "global",
+                "pageName": "search-results", "ddoKey": "refineSearch", "sortBy": "",
+                "subsearch": "", "from": len(jobs), "jobs": True, "counts": True,
+                "all_fields": ["category", "country", "state", "city", "type"],
+                "size": 200, "clearAll": False, "jdsource": "facets", "isSliderEnable": False,
+                "pageId": "page20", "siteType": "external", "keywords": "", "global": True,
+                "selected_fields": {"country": [paese]}, "locationData": {}}
+        d = _json(http_post(f"{NTT_PHENOM}/widgets", json=body, timeout=30,
+                            headers={"Content-Type": "application/json", "Accept": "application/json"}))
+        try:
+            rs = d["refineSearch"]
+            pagina = rs["data"]["jobs"] or []
+        except (TypeError, KeyError):
+            print(f"    ⚠️  Phenom NTT DATA ({paese}): risposta assente o inattesa")
+            break
+        if totale is None:
+            totale = rs.get("totalHits")
+        nuovi = [j for j in pagina if j.get("jobId") not in visti]
+        visti.update(j.get("jobId") for j in nuovi)
+        jobs.extend(nuovi)
+        if not nuovi or (totale and len(jobs) >= totale):
+            break
+    return jobs, totale
+
+def _nttdata_salesforce_id(url):
+    """ID Salesforce dell'offerta (minuscolo), da careers.emeal.nttdata.com/s/offer/<ID>/…
+    o da it.nttdata.com/jobs/<id>-slug: serve a non contare due volte la stessa offerta."""
+    m = re.search(r"/s/offer/([A-Za-z0-9]{15,18})/", url or "") or \
+        re.search(r"/jobs/([a-z0-9]{15,18})-", url or "", re.I)
+    return m.group(1).lower() if m else None
+
+def _nttdata_offerta(j, paese_it):
+    link = j.get("applyUrl") or ""
+    link = re.sub(r"\?utm_[^#]*$", "", link)        # careers.emeal: toglie ?utm_medium=…
+    citta = (j.get("city") or "").strip()
+    citta = NTT_CITTA.get(citta.lower(), citta)
+    return {"titolo":   j.get("title") or "N/D",
+            "location": f"NTT DATA {paese_it}" + (f" · {citta}" if citta else ""),
+            "url":      _senza_apply(link),                    # Workday: pagina dell'offerta
+            "_id_src":  f"ntt-phenom:{j.get('jobId')}",        # stabile anche se cambia il link
+            "data":     (j.get("postedDate") or "")[:10]}
+
+def scrape_nttdata_belgio():
+    print("🔍 NTT DATA Belgio (portale globale Phenom)...")
+    jobs, totale = _nttdata_phenom("Belgium")
+    risultati = [_nttdata_offerta(j, "Belgio") for j in jobs]
+    registra_copertura("NTT DATA Belgio", len(risultati), totale)
     print(f"   → {len(risultati)} offerte trovate")
     return risultati
 
@@ -1426,7 +1521,8 @@ BRAND_COLORS = {
     "Deloitte":   ("#86BC25", "#1a1a1a"),
     "KPMG":       ("#00338D", "#ffffff"),
     "Accenture":  ("#A100FF", "#ffffff"),
-    "NTT DATA":   ("#FF0033", "#ffffff"),
+    "NTT DATA Italia": ("#FF0033", "#ffffff"),
+    "NTT DATA Belgio": ("#FF0033", "#ffffff"),
     "Bip":        ("#1a1a2e", "#ffffff"),
     "Digital360": ("#0d1b2a", "#ffffff"),
     "Capgemini":  ("#0070AD", "#ffffff"),
@@ -1703,7 +1799,8 @@ def main():
         ("Deloitte",   scrape_deloitte),
         ("KPMG",       scrape_kpmg),
         ("Accenture",  scrape_accenture),
-        ("NTT DATA",   scrape_nttdata),
+        ("NTT DATA Italia", scrape_nttdata),
+        ("NTT DATA Belgio", scrape_nttdata_belgio),
         ("Bip",        scrape_bip),
         ("Digital360", scrape_digital360),
         ("Capgemini",  scrape_capgemini),

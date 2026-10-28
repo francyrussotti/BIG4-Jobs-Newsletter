@@ -270,7 +270,8 @@ def main():
     scrapers = [("EY", jn.scrape_ey), ("PwC Italia", jn.scrape_pwc_italia),
                 ("PwC Belgio", jn.scrape_pwc_belgio), ("Deloitte", jn.scrape_deloitte),
                 ("KPMG", jn.scrape_kpmg), ("Accenture", jn.scrape_accenture),
-                ("NTT DATA", jn.scrape_nttdata), ("Bip", jn.scrape_bip),
+                ("NTT DATA Italia", jn.scrape_nttdata),
+                ("NTT DATA Belgio", jn.scrape_nttdata_belgio), ("Bip", jn.scrape_bip),
                 ("Digital360", jn.scrape_digital360), ("Capgemini", jn.scrape_capgemini)]
     specifiche = {"EY": verifica_ey, "PwC Belgio": verifica_pwc_belgio,
                   "Deloitte": verifica_deloitte, "KPMG": verifica_kpmg, "Bip": verifica_bip}
