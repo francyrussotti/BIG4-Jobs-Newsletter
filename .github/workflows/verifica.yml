@@ -48,4 +48,4 @@ jobs:
         run: sudo $(which playwright) install-deps chromium
       - run: python -u verifica_siti.py
         env:
-          VERIFICA_FONTI: ${{ github.event_name == 'push' && 'EY,Deloitte,Accenture' || inputs.fonti }}
+          VERIFICA_FONTI: ${{ github.event_name == 'push' && 'EY,EY Italia,Deloitte Italia' || inputs.fonti }}
