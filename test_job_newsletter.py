@@ -88,6 +88,13 @@ class TestHealthCheck(unittest.TestCase):
         pb = jn.health_check({"EY": 0}, {}, [])
         self.assertEqual(pb[0][0], "bloccante")
 
+    def test_zero_su_fonte_piccola_e_solo_sospetto(self):
+        storico = [{"conteggi": {"Capgemini Irlanda": 1}}] * 3
+        pb = jn.health_check({"Capgemini Irlanda": 0}, {}, storico)
+        self.assertEqual(pb[0][0], "sospetto")
+        storico = [{"conteggi": {"KPMG Italia": 200}}] * 3
+        self.assertEqual(jn.health_check({"KPMG Italia": 0}, {}, storico)[0][0], "bloccante")
+
     def test_gli_zeri_storici_non_abbassano_la_mediana(self):
         # Storico: 100 offerte con 3 giorni a zero (scraper rotto). Oggi 40:
         # con gli zeri inclusi la mediana scenderebbe e il calo non verrebbe visto.
@@ -116,6 +123,136 @@ class TestRecuperoUnaTantum(unittest.TestCase):
             self.assertFalse(jn._da_recuperare("EY", {"titolo": "FAAS Trieste - Financial Services"}))
 
 
+class TestNttData(unittest.TestCase):
+    JOB_EMEAL = {"jobId": "P-1", "title": "SAP Service manager", "city": "Bruselas",
+                 "postedDate": "2026-10-20T00:00:00.000+0000",
+                 "applyUrl": "https://careers.emeal.nttdata.com/s/offer/a1JKA000000UXni2AG/sap-service-manager"
+                             "?utm_medium=phenom&utm_source=OneNTTCareerPage"}
+    JOB_WD = {"jobId": "R-2", "title": "Sales Specialist Network", "city": "Diegem",
+              "postedDate": "2026-10-01T00:00:00.000+0000",
+              "applyUrl": "https://nttlimited.wd3.myworkdayjobs.com/NTT_Careers/job/Diegem-Belgium/Sales_R-1/apply"}
+
+    def test_belgio(self):
+        with mock.patch.object(jn, "_nttdata_phenom", return_value=([self.JOB_EMEAL, self.JOB_WD], 2)):
+            out = jn.scrape_nttdata_belgio()
+        self.assertEqual(out[0]["location"], "NTT DATA Belgio · Bruxelles")
+        self.assertNotIn("utm_", out[0]["url"])
+        self.assertFalse(out[1]["url"].endswith("/apply"))
+        self.assertEqual(out[1]["data"], "2026-10-01")
+        self.assertEqual(jn._job_id("x", out[0]), jn._job_id("x", dict(out[0], url="altro")))  # ID stabile
+
+    def test_italia_senza_doppioni(self):
+        # Stessa offerta su it.nttdata.com (ID minuscolo nello slug) e sul portale globale
+        html = ('<a class="job-detail-link" href="/jobs/a1jka000000uxni2ag-sap-service-manager">'
+                '<span class="is-h5">SAP Service manager</span></a>')
+        vuoto = FintaRisposta("<html></html>")
+        with mock.patch.object(jn, "http_get", side_effect=[FintaRisposta(html), vuoto]), \
+             mock.patch.object(jn, "_nttdata_phenom", return_value=([self.JOB_EMEAL, self.JOB_WD], 2)), \
+             mock.patch.object(jn.time, "sleep"):
+            out = jn.scrape_nttdata()
+        self.assertEqual([o["titolo"] for o in out], ["SAP Service manager", "Sales Specialist Network"])
+
+    def test_storico_rinominato(self):
+        with tempfile.TemporaryDirectory() as d, \
+             mock.patch.object(jn, "SEEN_FILE", os.path.join(d, "s.json")):
+            with open(jn.SEEN_FILE, "w") as f:
+                json.dump({"ids": [], "storico_conteggi": [{"conteggi": {"NTT DATA": 95}}]}, f)
+            _, storico = jn.carica_seen()
+        self.assertEqual(storico[0]["conteggi"], {"NTT DATA Italia": 95})
+
+
+class TestNuoviPaesi(unittest.TestCase):
+    def test_colori_e_nomi(self):
+        self.assertEqual(jn.colore_marchio("Accenture Irlanda"), jn.BRAND_COLORS["Accenture"][0])
+        self.assertEqual(jn.colore_marchio("EY Paesi Bassi"), jn.BRAND_COLORS["EY"][0])
+        self.assertEqual(jn._azienda("NTT DATA Paesi Bassi"), "NTT DATA")
+        self.assertEqual(jn._azienda("Digital360"), "Digital360")
+
+    def test_successfactors_filtra_il_paese(self):
+        riga = ('<tr class="data-row"><td><a class="jobTitle-link" href="/ey/job/{0}/">Job {0}</a></td>'
+                '<td><span class="jobLocation">{1}</span></td></tr>')
+        html = ("<p>1 – 3 of 3</p><table>" + riga.format(1, "Dublin, IE") + riga.format(2, "Cork, IE")
+                + riga.format(3, "Hoboken, NJ, US") + "</table>")
+        with mock.patch.object(jn, "http_get", return_value=FintaRisposta(html)), \
+             mock.patch.object(jn.time, "sleep"):
+            out = jn._sf_classico("https://careers.ey.com", "/ey/search/?q=", "EY Irlanda", "IE")
+        self.assertEqual([o["location"] for o in out], ["EY Irlanda · Dublin", "EY Irlanda · Cork"])
+        self.assertEqual(jn.COPERTURA["EY Irlanda"], (3, 3))
+
+    def test_workday_esclude_belfast(self):
+        dati = {"total": 2, "jobPostings": [
+            {"title": "Audit Senior", "locationsText": "Belfast", "externalPath": "/job/Belfast/A_1"},
+            {"title": "Tax Senior", "locationsText": "Dublin", "externalPath": "/job/Dublin/B_2",
+             "postedOn": "Posted Today"}]}
+        with mock.patch.object(jn, "http_post", return_value=FintaRisposta(dati=dati)), \
+             mock.patch.object(jn.time, "sleep"):
+            out = jn._workday("deloitteie.wd3.myworkdayjobs.com", "deloitteie", "Experienced_Professionals",
+                              "Deloitte Irlanda", escludi="belfast")
+        self.assertEqual([o["titolo"] for o in out], ["Tax Senior"])
+        self.assertTrue(out[0]["url"].startswith("https://deloitteie.wd3.myworkdayjobs.com/en-US/"))
+
+
+class TestPortaliNazionali(unittest.TestCase):
+    def setUp(self):
+        p = mock.patch.object(jn.time, "sleep")
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_successfactors_nuovo(self):
+        jobs = [{"id": "1967", "urlTitle": "Junior-Auditor", "unifiedStandardTitle": "Junior Auditor &amp; Tax",
+                 "unifiedStandardStart": "16/09/2026", "jobLocationShort": ["Luxembourg, LUX, "]},
+                {"id": "1967", "urlTitle": "Junior-Auditor", "unifiedStandardTitle": "Junior Auditor"}]
+        with mock.patch.object(jn, "_sf_csb_requests", return_value=(jobs, 1)):
+            out = jn._sf_csb("https://careers.kpmg.lu", "KPMG Lussemburgo")
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["titolo"], "Junior Auditor & Tax")
+        self.assertEqual(out[0]["location"], "KPMG Lussemburgo · Luxembourg")
+        self.assertEqual(out[0]["url"], "https://careers.kpmg.lu/job/Junior-Auditor/1967-en_GB")
+        self.assertIsNotNone(jn._eta_giorni(out[0]["data"]))
+
+    def test_successfactors_nuovo_prova_il_browser(self):
+        with mock.patch.object(jn, "_sf_csb_requests", return_value=([], 0)), \
+             mock.patch.object(jn, "_sf_csb_playwright", return_value=([{"id": "5", "urlTitle": "X",
+                                                                         "unifiedStandardTitle": "X"}], 1)) as pw:
+            out = jn._sf_csb("https://jobs.deloitte.lu", "Deloitte Lussemburgo", categoria=9826901)
+        pw.assert_called_once()
+        self.assertEqual(len(out), 1)
+
+    def test_kpmg_paesi_bassi(self):
+        dati = [{"title": "Test I am interested In", "searchable": None, "term_location": {"": ""}},
+                {"title": "Cyber Defense Manager", "searchable": "<h1>Cyber</h1>",
+                 "term_location": {"amstelveen": "Amstelveen", "utrecht": "Utrecht"},
+                 "created": '<time datetime="2026-10-20T12:21:34+01:00">di</time>'}]
+        with mock.patch.object(jn, "http_get", return_value=FintaRisposta(dati=dati)):
+            out = jn.scrape_kpmg_paesi_bassi()
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["url"], "https://www.werkenbijkpmg.nl/vacature/cyber-defense-manager")
+        self.assertEqual(out[0]["location"], "KPMG Paesi Bassi · Amstelveen, Utrecht")
+        self.assertEqual(out[0]["data"], "2026-10-20")
+
+    def test_deloitte_paesi_bassi(self):
+        dati = [{"identifier": "a", "slug": "/vacature/senior-consultant-ref1/", "name": "Senior Consultant ",
+                 "datePosted": "2026-05-26T09:50:12.356Z", "locale": "nl"},
+                {"identifier": "a", "slug": "/en/vacancy/senior-consultant-ref1/", "name": "Senior Consultant",
+                 "locale": "en"}]
+        with mock.patch.object(jn, "http_get", return_value=FintaRisposta(dati=dati)):
+            out = jn.scrape_deloitte_paesi_bassi()
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["url"], "https://werkenbijdeloitte.nl/vacature/senior-consultant-ref1/")
+        self.assertEqual(out[0]["data"], "2026-05-26")
+
+
+class TestRifiniture(unittest.TestCase):
+    def test_ntt_scarta_le_offerte_di_prova(self):
+        self.assertFalse(jn._ntt_link_valido({"applyUrl": "https://career8preview.sapsf.com/career?company=NTTDTEST2&x=1"}))
+        self.assertTrue(jn._ntt_link_valido({"applyUrl": "https://nttlimited.wd3.myworkdayjobs.com/NTT_Careers/job/X/QA-Test-Engineer_R-1"}))
+
+    def test_ey_titoli_confrontabili(self):
+        self.assertEqual(jn._titolo_norm("Senior Consultant Technology Risk - Milano"),
+                         jn._titolo_norm("Senior Consultant Technology Risk"))
+        self.assertNotEqual(jn._titolo_norm("Senior Consultant"), jn._titolo_norm("Manager"))
+
+
 class TestPaginazioneSenzaFine(unittest.TestCase):
     """Siti che, oltre l'ultima pagina, ripetono sempre la stessa pagina:
     gli scraper devono fermarsi invece di girare all'infinito."""
@@ -128,7 +265,8 @@ class TestPaginazioneSenzaFine(unittest.TestCase):
     def test_ntt_data(self):
         html = ('<a class="job-detail-link" href="/job/1"><span class="is-h5">A</span></a>'
                 '<a class="job-detail-link" href="/job/2"><span class="is-h5">B</span></a>')
-        with mock.patch.object(jn, "http_get", return_value=FintaRisposta(html)) as g:
+        with mock.patch.object(jn, "http_get", return_value=FintaRisposta(html)) as g, \
+             mock.patch.object(jn, "_nttdata_phenom", return_value=([], None)):
             out = jn.scrape_nttdata()
         self.assertEqual(len(out), 2)
         self.assertEqual(g.call_count, 2)
@@ -189,7 +327,7 @@ class TestRisposteStrane(unittest.TestCase):
              mock.patch.object(jn, "_accenture_playwright") as browser:
             out = jn.scrape_accenture()
         self.assertEqual(len(out), 37)
-        self.assertEqual(jn.COPERTURA["Accenture"], (40, 40))
+        self.assertEqual(jn.COPERTURA["Accenture Italia"], (40, 40))
         browser.assert_not_called()
 
     def test_bip_risposta_non_json(self):
@@ -263,9 +401,11 @@ class TestVerificaGiornaliera(ConFileTemporaneo):
 class TestMain(ConFileTemporaneo):
     """Flusso completo con scraper finti."""
 
-    NOMI = ["scrape_ey", "scrape_pwc_italia", "scrape_pwc_belgio", "scrape_deloitte",
-            "scrape_kpmg", "scrape_accenture", "scrape_nttdata", "scrape_bip",
-            "scrape_digital360", "scrape_capgemini"]
+    NOMI = ["scrape_ey", "scrape_ey_experienced", "scrape_pwc_italia", "scrape_pwc_belgio",
+            "scrape_pwc_paese", "scrape_deloitte", "scrape_deloitte_irlanda", "scrape_kpmg",
+            "scrape_kpmg_belgio", "scrape_accenture", "scrape_nttdata", "scrape_nttdata_paese",
+            "scrape_bip", "scrape_digital360", "scrape_capgemini", "scrape_kpmg_lussemburgo",
+            "scrape_deloitte_lussemburgo", "scrape_deloitte_paesi_bassi", "scrape_kpmg_paesi_bassi"]
 
     def esegui(self, stato_invio):
         patches = [mock.patch.object(jn, n, return_value=[
@@ -317,6 +457,33 @@ class TestMain(ConFileTemporaneo):
         dati = self.esegui("ok")                         # l'orario di riserva riprova
         self.assertEqual(dati["ultimo_invio"], jn.oggi_italia())
         self.assertEqual(len(dati["ids"]), len(self.NOMI))
+
+    def test_fonte_nuova_mostra_solo_le_offerte_recenti(self):
+        oggi = jn.datetime.now().strftime("%Y-%m-%d")
+        vecchia = (jn.datetime.now() - jn.timedelta(days=20)).strftime("%Y-%m-%d")
+        storico = [{"data": "2026-10-01", "conteggi": {"EY": 5}}]   # "Accenture Irlanda" non c'è
+        with open(self.seen_file, "w") as f:
+            json.dump({"ids": [], "storico_conteggi": storico}, f)
+        offerte = [{"titolo": "Nuova", "url": "https://a/1", "data": oggi},
+                   {"titolo": "Vecchia", "url": "https://a/2", "data": vecchia},
+                   {"titolo": "Senza data", "url": "https://a/3", "data": ""}]
+        catturato = {}
+        def finta_html(tutte, *a, **k):
+            catturato.update(tutte=tutte, avviate=k.get("avviate"))
+            return "<html></html>", sum(len(v) for v in tutte.values())
+        with mock.patch.object(jn, "elenco_fonti", return_value=[("Accenture Irlanda", lambda: offerte),
+                                                                  ("EY", lambda: [])]), \
+             mock.patch.object(jn, "genera_html", side_effect=finta_html), \
+             mock.patch.object(jn, "invia_email", return_value="ok"), \
+             mock.patch.object(jn.time, "sleep"):
+            try:
+                jn.main()
+            except SystemExit:
+                pass
+        self.assertEqual([o["titolo"] for o in catturato["tutte"]["Accenture Irlanda"]], ["Nuova"])
+        self.assertEqual(catturato["avviate"], {"Accenture Irlanda": 2})
+        with open(self.seen_file) as f:
+            self.assertEqual(len(json.load(f)["ids"]), 3)          # tutte registrate come viste
 
     def test_seen_corrotto_non_invia_e_non_sovrascrive(self):
         with open(self.seen_file, "w") as f:

@@ -1,9 +1,12 @@
 # ============================================================
-#  📰 JOB NEWSLETTER — Big4 & consulting Italia/Belgio
-#  EY | PwC Italia | PwC Belgio | Deloitte | KPMG | Accenture
-#  NTT DATA | Bip | Digital360 | Capgemini
+#  📰 JOB NEWSLETTER — Big4 & consulting
+#  Paesi: Italia, Belgio, Lussemburgo, Irlanda, Paesi Bassi
+#  Aziende: EY | PwC | Deloitte | KPMG | Accenture | NTT DATA | Capgemini
+#           Bip e Digital360 (solo Italia)
+#  Solo siti carriere ufficiali delle aziende (nessun aggregatore).
+#  L'elenco completo delle fonti è in elenco_fonti().
 #
-#  Scheduling: GitHub Actions (gira ogni giorno alle 07:30 CET)
+#  Scheduling: GitHub Actions (vedi .github/workflows/newsletter.yml)
 # ============================================================
 
 import requests
@@ -52,6 +55,9 @@ SOGLIA_NUOVE_ANOMALE = 0.9
 # DICHIARA, la raccolta è incompleta: le offerte mancanti riemergeranno nei
 # giorni successivi come false "nuove". Va segnalato.
 SOGLIA_COPERTURA = 0.95
+# Sotto questa mediana storica una fonte è "piccola": 0 offerte è un avviso,
+# non un errore che fa fallire la run
+SOGLIA_FONTE_PICCOLA = 5
 
 # Le offerte "nuove" per il tracker ma pubblicate da più di questi giorni NON
 # vengono mostrate nell'email (restano comunque salvate come viste). Capita con
@@ -172,6 +178,16 @@ def _workday_data(testo):
         return (testo or "").replace("Offerta pubblicata ", "")
     return (datetime.now() - timedelta(days=eta)).strftime("%Y-%m-%d")
 
+# Nomi di fonte cambiati nel tempo (vecchio → nuovo), per lo storico dei conteggi
+FONTI_RINOMINATE = {"NTT DATA": "NTT DATA Italia", "Accenture": "Accenture Italia",
+                    "Deloitte": "Deloitte Italia", "KPMG": "KPMG Italia",
+                    "Capgemini": "Capgemini Italia"}
+
+# Prima run di una fonte appena aggiunta: tutte le sue offerte risulterebbero
+# "nuove" (centinaia). Si mostrano solo quelle pubblicate negli ultimi N giorni;
+# le altre (e quelle senza data) si registrano come viste senza mostrarle.
+GIORNI_FONTE_NUOVA = 7
+
 class SeenIlleggibile(Exception):
     """seen_jobs.json esiste ma non si riesce a leggere."""
 
@@ -192,6 +208,13 @@ def carica_seen() -> tuple[set, list]:
             raise ValueError("struttura inattesa (manca la lista 'ids')")
         ids     = {i for i in data.get("ids", []) if isinstance(i, str)}
         storico = [r for r in (data.get("storico_conteggi") or []) if isinstance(r, dict)]
+        # Fonti rinominate: lo storico dei conteggi resta collegato al nuovo nome
+        for run in storico:
+            c = run.get("conteggi")
+            if isinstance(c, dict):
+                for vecchio, nuovo in FONTI_RINOMINATE.items():
+                    if vecchio in c and nuovo not in c:
+                        c[nuovo] = c.pop(vecchio)
     except Exception as e:
         raise SeenIlleggibile(f"{SEEN_FILE} illeggibile: {e}") from e
     print(f"📂 Caricati {len(ids)} ID già visti da {SEEN_FILE} · storico: {len(storico)} run")
@@ -278,9 +301,17 @@ def health_check(conteggi: dict, nuove_per_fonte: dict, storico: list) -> list:
                    and isinstance(run["conteggi"].get(fonte), int) and run["conteggi"][fonte] > 0]
 
         if trovate == 0:
-            problemi.append(("bloccante", fonte,
-                             "0 offerte trovate — scraper probabilmente rotto "
-                             "(selettori cambiati, sito irraggiungibile o filtro non più valido)"))
+            # Fonti piccole (es. Capgemini Irlanda: 1 offerta) possono restare
+            # davvero a zero: lì lo zero è solo da verificare, altrimenti la run
+            # risulterebbe fallita (con email di errore da GitHub) ogni giorno.
+            if passati and _mediana(passati) < SOGLIA_FONTE_PICCOLA:
+                problemi.append(("sospetto", fonte,
+                                 f"0 offerte trovate (di solito {_mediana(passati):.0f}): "
+                                 "possibile, ma da verificare"))
+            else:
+                problemi.append(("bloccante", fonte,
+                                 "0 offerte trovate — scraper probabilmente rotto "
+                                 "(selettori cambiati, sito irraggiungibile o filtro non più valido)"))
             continue
 
         if len(passati) >= STORICO_MIN_RUN:
@@ -301,7 +332,7 @@ def health_check(conteggi: dict, nuove_per_fonte: dict, storico: list) -> list:
 
         # Deduplica: con uno storico già presente, quasi tutto "nuovo" è anomalo
         nuove = nuove_per_fonte.get(fonte, 0)
-        if storico and trovate > 0 and (nuove / trovate) > SOGLIA_NUOVE_ANOMALE and nuove > 5:
+        if passati and trovate > 0 and (nuove / trovate) > SOGLIA_NUOVE_ANOMALE and nuove > 5:
             problemi.append(("sospetto", fonte,
                              f"{nuove} nuove su {trovate} trovate ({100*nuove/trovate:.0f}%) — "
                              "possibile deduplica non funzionante (URL instabili o ID che cambiano)"))
@@ -805,7 +836,20 @@ PWC_BE_SEDI = re.compile(
     r"gand|li[eè]ge|luik|hasselt|kortrijk|courtrai|namur|namen|leuven|louvain|mechelen|"
     r"malines|charleroi|mons|bruges|brugge|belgium|belgique|belgi[eë])\b", re.I)
 
-def _pwc_belgio_workday():
+# Sedi riconosciute nel facet "locations" di Workday per gli altri paesi.
+# Belfast (Irlanda del Nord) è Regno Unito: non rientra in "Irlanda".
+PWC_SEDI = {
+    "Belgio":      (PWC_BE_SEDI, "Belgium"),
+    "Lussemburgo": (re.compile(r"\b(luxembourg|luxemburg|kirchberg|leudelange)\b", re.I), "Luxembourg"),
+    "Irlanda":     (re.compile(r"\b(dublin|cork|limerick|galway|waterford|kilkenny|ireland)\b", re.I), "Ireland"),
+    # NOTA (ottobre 2026): werkenbijpwc.nl rifiuta la connessione e pwc.nl blocca
+    # gli accessi automatici. Dal Workday globale arrivano solo le offerte NL
+    # pubblicate lì (poche): copertura parziale.
+    "Paesi Bassi": (re.compile(r"\b(amsterdam|rotterdam|utrecht|eindhoven|groningen|zwolle|den haag|"
+                               r"the hague|amstelveen|arnhem|maastricht|netherlands)\b", re.I), "Netherlands"),
+}
+
+def _pwc_belgio_workday(paese="Belgio"):
     """API Workday (CXS) dei due career site PwC, max 20 risultati a pagina.
 
     NOTA (ottobre 2026): prima si filtrava con searchText="Belgium", che
@@ -816,11 +860,12 @@ def _pwc_belgio_workday():
     out, visti = [], set()
     tot_dichiarate = 0
     h = {**HEADERS, "Content-Type": "application/json", "Accept": "application/json"}
+    sedi_re, testo_paese = PWC_SEDI[paese]
     for site in ["Global_Campus_Careers", "Global_Experienced_Careers"]:
         api = f"https://pwc.wd3.myworkdayjobs.com/wday/cxs/pwc/{site}/jobs"
 
-        # 1) ID delle sedi belghe dal facet "locations"
-        filtro = {"appliedFacets": {}, "searchText": "Belgium"}   # fallback
+        # 1) ID delle sedi del paese dal facet "locations"
+        filtro = {"appliedFacets": {}, "searchText": testo_paese}   # fallback
         try:
             r = SESSION.post(api, headers=h, timeout=20,
                               json={"appliedFacets": {}, "limit": 1, "offset": 0, "searchText": ""})
@@ -828,11 +873,11 @@ def _pwc_belgio_workday():
             ids = [v["id"]
                    for f in r.json().get("facets", []) if f.get("facetParameter") == "locationMainGroup"
                    for g in f.get("values", []) if g.get("facetParameter") == "locations"
-                   for v in g.get("values", []) if PWC_BE_SEDI.search(v.get("descriptor", ""))]
+                   for v in g.get("values", []) if sedi_re.search(v.get("descriptor", ""))]
             if ids:
                 filtro = {"appliedFacets": {"locations": ids}, "searchText": ""}
             else:
-                print(f"    ⚠️  Workday {site}: nessuna sede belga nel facet, uso il filtro testuale")
+                print(f"    ⚠️  Workday {site}: nessuna sede ({paese}) nel facet, uso il filtro testuale")
         except Exception as e:
             print(f"    ⚠️  Workday {site} facet → {e} (uso il filtro testuale)")
 
@@ -860,7 +905,8 @@ def _pwc_belgio_workday():
                 visti.add(path)
                 url_apply = f"https://pwc.wd3.myworkdayjobs.com/{site}{path}/apply"
                 out.append({"titolo": j.get("title") or "N/D",
-                            "location": j.get("locationsText") or "Belgio",
+                            "location": f"PwC {paese} · {j.get('locationsText')}" if paese != "Belgio" and j.get("locationsText")
+                                        else (j.get("locationsText") or paese),
                             "url": _senza_apply(url_apply),   # pagina dell'offerta
                             "_id_src": url_apply,             # ID invariato rispetto al passato
                             "data": _workday_data(j.get("postedOn"))})
@@ -868,8 +914,15 @@ def _pwc_belgio_workday():
             if offset >= totale:
                 break
             time.sleep(0.4)
-    registra_copertura("PwC Belgio", len(out), tot_dichiarate)
+    registra_copertura(f"PwC {paese}", len(out), tot_dichiarate)
     return out
+
+def scrape_pwc_paese(paese):
+    """PwC Lussemburgo e Irlanda: stessi career site Workday globali del Belgio."""
+    print(f"🔍 PwC {paese} (Workday API)...")
+    risultati = _pwc_belgio_workday(paese)
+    print(f"   → {len(risultati)} offerte trovate")
+    return risultati
 
 def scrape_pwc_belgio():
     print("🔍 PwC Belgio (Workday API)...")
@@ -944,18 +997,24 @@ def scrape_pwc_belgio():
 #  includono già i Manager, che nell'email hanno l'etichetta "Manager".
 # ============================================================
 
-def scrape_deloitte():
-    print("🔍 Deloitte Italia (Avature)...")
-    base      = "https://deloittecm.avature.net"
+# Portali Avature di Deloitte: (base, filtri URL). Deloitte Belgio ha un
+# portale tutto suo, quindi senza filtro paese.
+DELOITTE_AVATURE = {
+    "Italia": ("https://deloittecm.avature.net", "729=5946&729_format=1565&"),
+    "Belgio": ("https://deloittebe.avature.net", ""),
+}
+
+def scrape_deloitte(paese="Italia"):
+    print(f"🔍 Deloitte {paese} (Avature)...")
+    base, filtri = DELOITTE_AVATURE[paese]
     risultati = []
     visti     = set()
     offset    = 0
     totale    = None
 
     for _ in range(150):   # tetto di sicurezza (~900 offerte)
-        url = (f"{base}/en_US/careers/SearchJobs/"
-               "?729=5946&729_format=1565"
-               f"&listFilterMode=1&jobRecordsPerPage=50&jobOffset={offset}")
+        url = (f"{base}/en_US/careers/SearchJobs/?{filtri}"
+               f"listFilterMode=1&jobRecordsPerPage=50&jobOffset={offset}")
         r = http_get(url)
         if not r: break
         if totale is None:
@@ -973,16 +1032,19 @@ def scrape_deloitte():
             loc  = ""
             if ctx:
                 loc_el = ctx.select_one("[class*='location'],[class*='city'],td:nth-child(2)")
-                if loc_el: loc = loc_el.get_text(strip=True)
+                if loc_el: loc = loc_el.get_text(" ", strip=True)
+            # Deloitte Belgio: la seconda colonna sono i pulsanti, non la sede
+            if re.search(r"apply|share|email|linkedin", loc, re.I):
+                loc = ""
             risultati.append({"titolo": a.get_text(strip=True),
-                               "location": loc or "Italia",
+                               "location": f"Deloitte {paese}" + (f" · {loc}" if loc else ""),
                                "url": href, "data": ""})
         if nuovi == 0: break
         offset += len(cards)
         if totale and offset >= totale: break
         time.sleep(0.4)
 
-    registra_copertura("Deloitte", len(risultati), totale)
+    registra_copertura(f"Deloitte {paese}", len(risultati), totale)
     print(f"   → {len(risultati)} offerte trovate")
     return risultati
 
@@ -1058,6 +1120,337 @@ def scrape_kpmg():
     return risultati
 
 # ============================================================
+# 🏢  PORTALI SuccessFactors "classici" (tabella tr.data-row)
+#
+#  Usati da EY (careers.ey.com, posizioni experienced in tutti i paesi) e da
+#  KPMG Belgio (ema-careers.kpmg.com). Ogni pagina ha 25-50 righe con
+#  a.jobTitle-link e span.jobLocation ("Limerick, IE"); paginazione con
+#  &startrow=N; il totale è in "1 – 25 of 155".
+# ============================================================
+
+def _sf_classico(base, ricerca, nome, sigla_paese=None):
+    """Tutte le offerte di una ricerca SuccessFactors. Con sigla_paese ("IE")
+    si tengono solo le righe con sede in quel paese: le offerte multi-sede
+    possono mostrare una sede principale estera (es. "Hoboken, NJ" nella
+    ricerca Paesi Bassi)."""
+    out, visti, totale, startrow, escluse = [], set(), None, 0, 0
+    for _ in range(MAX_PAGINE):
+        r = http_get(f"{base}{ricerca}&startrow={startrow}")
+        if not r:
+            break
+        if totale is None:
+            m = re.search(r"\d+\s*[–-]\s*\d+\s*(?:of|di|van|sur)\s*([\d.,]+)",
+                          BeautifulSoup(r.text, "lxml").get_text(" ", strip=True))
+            totale = int(re.sub(r"\D", "", m.group(1))) if m else None
+        soup = BeautifulSoup(r.text, "lxml")
+        righe = soup.select("tr.data-row")
+        if not righe:
+            break
+        nuove = 0
+        for tr in righe:
+            a = tr.select_one("a.jobTitle-link")
+            if not a:
+                continue
+            href = a.get("href", "")
+            if href and not href.startswith("http"):
+                href = base + href
+            if href in visti:
+                continue
+            visti.add(href)
+            nuove += 1
+            loc_el  = tr.select_one(".jobLocation")
+            data_el = tr.select_one(".jobDate, .colDate")
+            loc = loc_el.get_text(" ", strip=True) if loc_el else ""
+            loc = re.sub(r"\s*\+\d+\s*more.*$", "", loc)
+            if sigla_paese and loc and not re.search(rf",\s*{sigla_paese}\b", loc):
+                escluse += 1
+                continue
+            citta = loc.split(",")[0].strip()          # "Milano, IT, 20123" → "Milano"
+            out.append({"titolo":   a.get_text(strip=True),
+                        "location": nome + (f" · {citta}" if citta else ""),
+                        "url":      href,
+                        "data":     data_el.get_text(strip=True) if data_el else ""})
+        if nuove == 0:
+            break
+        startrow += len(righe)
+        if totale and startrow >= totale:
+            break
+        time.sleep(0.4)
+    if escluse:
+        print(f"    → escluse {escluse} offerte con sede principale fuori dal paese")
+    registra_copertura(nome, len(out) + escluse, totale)
+    return out
+
+# Sigla paese del filtro di careers.ey.com
+EY_SF_PAESI = {"Italia": "IT", "Belgio": "BE", "Lussemburgo": "LU", "Irlanda": "IE", "Paesi Bassi": "NL"}
+
+def _titolo_norm(t):
+    """Titolo confrontabile tra portali: minuscolo, senza la città finale
+    ("Senior Consultant - Milano" ≈ "Senior Consultant")."""
+    t = (t or "").lower()
+    t = re.sub(r"\s*[-–|,]\s*(milano|roma|torino|bologna|napoli|padova|firenze|genova|bari|verona|"
+               r"brescia|treviso|ancona|bergamo|trieste|siena|diegem|brussels|bruxelles|antwerp|"
+               r"antwerpen|ghent|gent|liege|liège|hasselt)\b.*$", "", t)
+    return re.sub(r"[^a-z0-9]+", " ", t).strip()
+
+def scrape_ey_experienced(paese):
+    """EY: careers.ey.com è il portale delle posizioni experienced (il board
+    Yello letto da scrape_ey è soprattutto per neolaureati e stage)."""
+    nome = f"EY {paese}"
+    print(f"🔍 {nome} (careers.ey.com)...")
+    sigla = EY_SF_PAESI[paese]
+    out = _sf_classico("https://careers.ey.com", f"/ey/search/?q=&optionsFacetsDD_country={sigla}",
+                       nome, sigla)
+    print(f"   → {len(out)} offerte trovate")
+    return out
+
+def scrape_kpmg_belgio():
+    print("🔍 KPMG Belgio (ema-careers.kpmg.com)...")
+    out = _sf_classico("https://ema-careers.kpmg.com", "/search/?q=&locationsearch=Belgium",
+                       "KPMG Belgio", "BE")
+    print(f"   → {len(out)} offerte trovate")
+    return out
+
+# ============================================================
+# 🏢  SuccessFactors "Career Site Builder" (nuova interfaccia, API JSON)
+#
+#  KPMG Lussemburgo (careers.kpmg.lu) e Deloitte Lussemburgo (jobs.deloitte.lu):
+#  la pagina carica le offerte con POST /services/recruiting/v1/jobs.
+#  Se le chiamate dirette non restituiscono nulla (il sito vuole i cookie e
+#  il token della sessione del browser) si ripetono dentro Playwright.
+# ============================================================
+
+def _sf_csb_corpo(pagina, categoria, locale):
+    return {"locale": locale, "pageNumber": pagina, "sortBy": "", "keywords": "", "location": "",
+            "facetFilters": {}, "brand": "", "skills": [], "categoryId": categoria,
+            "alertId": "", "rcmCandidateId": ""}
+
+def _sf_csb_requests(host, categoria, locale, pagina_ricerca):
+    s = requests.Session()
+    s.headers.update(HEADERS)
+    r = s.get(host + pagina_ricerca, timeout=30)
+    token = re.search(r'csrf[_-]?token["\']?\s*[:=]\s*["\']([^"\']+)', r.text, re.I)
+    h = {"Content-Type": "application/json", "Accept": "application/json",
+         "Origin": host, "Referer": host + pagina_ricerca}
+    if token:
+        h["X-CSRF-Token"] = token.group(1)
+    # NOTA (ottobre 2026): le pagine si sovrappongono (la stessa offerta torna in
+    # pagine diverse), quindi si conta per ID e ci si ferma solo dopo pagine
+    # che non portano nulla di nuovo.
+    risultati, ids, totale, a_vuoto = [], set(), None, 0
+    for pagina in range(MAX_PAGINE):
+        d = s.post(host + "/services/recruiting/v1/jobs", json=_sf_csb_corpo(pagina, categoria, locale),
+                   headers=h, timeout=30).json()
+        totale = d.get("totalJobs") if totale is None else totale
+        blocco = [x.get("response") or {} for x in d.get("jobSearchResult") or []]
+        if not blocco:
+            break
+        nuovi = [j for j in blocco if j.get("id") not in ids]
+        ids.update(j.get("id") for j in nuovi)
+        risultati += nuovi
+        a_vuoto = 0 if nuovi else a_vuoto + 1
+        if (totale and len(ids) >= totale) or a_vuoto >= 3:
+            break
+        time.sleep(0.4)
+    return risultati, totale
+
+def _sf_csb_playwright(host, categoria, locale, pagina_ricerca):
+    if not PLAYWRIGHT_OK:
+        return [], None
+    JS = """async ([categoria, locale]) => {
+        let out = [], totale = null, ids = new Set(), aVuoto = 0;
+        for (let pagina = 0; pagina < 100; pagina++) {
+            const r = await fetch('/services/recruiting/v1/jobs', {method: 'POST',
+                headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                body: JSON.stringify({locale, pageNumber: pagina, sortBy: '', keywords: '', location: '',
+                    facetFilters: {}, brand: '', skills: [], categoryId: categoria, alertId: '', rcmCandidateId: ''})});
+            if (!r.ok) break;
+            const d = await r.json();
+            if (totale === null) totale = d.totalJobs;
+            const blocco = (d.jobSearchResult || []).map(x => x.response || {});
+            if (!blocco.length) break;
+            const nuovi = blocco.filter(j => !ids.has(j.id));
+            nuovi.forEach(j => ids.add(j.id));
+            out.push(...nuovi);
+            aVuoto = nuovi.length ? 0 : aVuoto + 1;
+            if ((totale && ids.size >= totale) || aVuoto >= 3) break;
+        }
+        return {out, totale};
+    }"""
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+            page = browser.new_context(user_agent=HEADERS["User-Agent"], locale="en-GB").new_page()
+            page.goto(host + pagina_ricerca, wait_until="networkidle", timeout=60_000)
+            res = page.evaluate(JS, [categoria, locale])
+            browser.close()
+            return res.get("out") or [], res.get("totale")
+    except Exception as e:
+        print(f"    ⚠️  Playwright {host}: {e}")
+        return [], None
+
+def _sf_csb(host, nome, categoria=0, locale="en_GB", pagina_ricerca="/search/?q="):
+    try:
+        jobs, totale = _sf_csb_requests(host, categoria, locale, pagina_ricerca)
+    except Exception as e:
+        print(f"    ⚠️  {nome}: API → {e}")
+        jobs, totale = [], None
+    if not jobs:
+        print("    → API senza risultati, riprovo dal browser...")
+        jobs, totale = _sf_csb_playwright(host, categoria, locale, pagina_ricerca)
+    out, visti = [], set()
+    for j in jobs:
+        jid = j.get("id")
+        if not jid or jid in visti:
+            continue
+        visti.add(jid)
+        titolo = html_lib.unescape(j.get("unifiedStandardTitle") or "N/D")
+        luoghi = j.get("jobLocationShort") or []
+        citta  = (luoghi[0].split(",")[0].strip() if luoghi else "")
+        out.append({"titolo":   titolo,
+                    "location": nome + (f" · {citta}" if citta else ""),
+                    "url":      f"{host}/job/{html_lib.unescape(j.get('urlTitle') or 'job')}/{jid}-{locale}",
+                    "_id_src":  f"{host}/job/{jid}",       # stabile anche se cambia il titolo
+                    "data":     j.get("unifiedStandardStart") or ""})   # "16/09/2025"
+    registra_copertura(nome, len(out), totale)
+    return out
+
+def scrape_kpmg_lussemburgo():
+    print("🔍 KPMG Lussemburgo (careers.kpmg.lu)...")
+    out = _sf_csb("https://careers.kpmg.lu", "KPMG Lussemburgo")
+    print(f"   → {len(out)} offerte trovate")
+    return out
+
+def scrape_deloitte_lussemburgo():
+    print("🔍 Deloitte Lussemburgo (jobs.deloitte.lu)...")
+    # 9826901 = categoria "View all Jobs" del portale
+    out = _sf_csb("https://jobs.deloitte.lu", "Deloitte Lussemburgo", categoria=9826901,
+                  pagina_ricerca="/go/View-all-Jobs/9826901/")
+    print(f"   → {len(out)} offerte trovate")
+    return out
+
+# ============================================================
+# 🏢  PAESI BASSI — siti "werken bij" con l'elenco completo in JSON
+# ============================================================
+
+def scrape_deloitte_paesi_bassi():
+    """werkenbijdeloitte.nl carica tutte le offerte da /data/jobpostings.json."""
+    print("🔍 Deloitte Paesi Bassi (werkenbijdeloitte.nl)...")
+    base = "https://werkenbijdeloitte.nl"
+    dati = _json(http_get(f"{base}/data/jobpostings.json", timeout=40))
+    out, visti = [], set()
+    for j in dati if isinstance(dati, list) else []:
+        slug = j.get("slug") or ""
+        chiave = j.get("identifier") or slug
+        if not slug or chiave in visti:
+            continue
+        visti.add(chiave)
+        luogo = ""
+        for k in ("jobLocation", "city", "location", "addressLocality"):
+            v = j.get(k)
+            if isinstance(v, str) and v.strip():
+                luogo = v.strip()
+                break
+            if isinstance(v, dict):
+                luogo = (v.get("city") or v.get("addressLocality") or v.get("name") or "").strip()
+                if luogo:
+                    break
+        out.append({"titolo":   (j.get("name") or "N/D").strip(),
+                    "location": "Deloitte Paesi Bassi" + (f" · {luogo}" if luogo else ""),
+                    "url":      base + slug,
+                    "data":     (j.get("datePosted") or j.get("publishedAt") or "")[:10]})
+    print(f"   → {len(out)} offerte trovate")
+    return out
+
+def _testo_semplice(v):
+    if isinstance(v, dict):
+        v = ", ".join(x for x in v.values() if x)
+    return html_lib.unescape(re.sub(r"<[^>]+>", " ", str(v or ""))).strip()
+
+def scrape_kpmg_paesi_bassi():
+    """werkenbijkpmg.nl: indice di ricerca con tutte le vacature in /_lunr/vacancies."""
+    print("🔍 KPMG Paesi Bassi (werkenbijkpmg.nl)...")
+    base = "https://www.werkenbijkpmg.nl"
+    dati = _json(http_get(f"{base}/_lunr/vacancies", timeout=40))
+    out, visti = [], set()
+    for j in dati if isinstance(dati, list) else []:
+        titolo = _testo_semplice(j.get("title"))
+        if not titolo or not j.get("searchable"):        # voci di prova senza contenuto
+            continue
+        url = ""
+        for k in ("url", "path", "link", "alias", "href"):
+            if isinstance(j.get(k), str) and j[k].strip():
+                url = j[k].strip()
+                break
+        if not url:
+            m = re.search(r'href=["\'](/(?:en/)?(?:vacature|jobs?)/[^"\']+)', json.dumps(j))
+            url = m.group(1) if m else ""
+        if not url:
+            url = "/vacature/" + re.sub(r"[^a-z0-9]+", "-", titolo.lower()).strip("-")
+        if not url.startswith("http"):
+            url = base + url
+        if url in visti:
+            continue
+        visti.add(url)
+        m = re.search(r'datetime=["\\]*"?(\d{4}-\d{2}-\d{2})', str(j.get("created") or ""))
+        luogo = _testo_semplice(j.get("term_location"))
+        out.append({"titolo":   titolo,
+                    "location": "KPMG Paesi Bassi" + (f" · {luogo}" if luogo else ""),
+                    "url":      url,
+                    "data":     m.group(1) if m else ""})
+    print(f"   → {len(out)} offerte trovate")
+    return out
+
+# ============================================================
+# 🏢  WORKDAY generico (API CXS) — Deloitte Irlanda
+# ============================================================
+
+def _workday(host, tenant, site, nome, escludi=None):
+    """Tutte le offerte di un career site Workday (20 per pagina).
+    escludi: regex sulle sedi da scartare."""
+    api = f"https://{host}/wday/cxs/{tenant}/{site}/jobs"
+    out, offset, totale, escluse = [], 0, None, 0
+    for _ in range(MAX_PAGINE):
+        d = _json(http_post(api, json={"appliedFacets": {}, "limit": 20, "offset": offset, "searchText": ""},
+                            headers={"Content-Type": "application/json", "Accept": "application/json"},
+                            timeout=20))
+        if not isinstance(d, dict):
+            break
+        if totale is None:
+            totale = d.get("total") or 0
+        posts = d.get("jobPostings") or []
+        if not posts:
+            break
+        for j in posts:
+            luogo = j.get("locationsText") or ""
+            if escludi and re.search(escludi, luogo, re.I):
+                escluse += 1
+                continue
+            path = j.get("externalPath") or ""
+            out.append({"titolo":   j.get("title") or "N/D",
+                        "location": nome + (f" · {luogo}" if luogo else ""),
+                        "url":      f"https://{host}/en-US/{site}{path}" if path else "",
+                        "data":     _workday_data(j.get("postedOn"))})
+        offset += len(posts)
+        if offset >= totale:
+            break
+        time.sleep(0.4)
+    if escluse:
+        print(f"    → escluse {escluse} offerte fuori dal paese")
+    registra_copertura(nome, len(out) + escluse, totale)
+    return out
+
+def scrape_deloitte_irlanda():
+    print("🔍 Deloitte Irlanda (Workday)...")
+    out = []
+    for site in ["Experienced_Professionals", "Early_Careers"]:
+        # Belfast è Irlanda del Nord (Regno Unito)
+        out += _workday("deloitteie.wd3.myworkdayjobs.com", "deloitteie", site, "Deloitte Irlanda",
+                        escludi=r"belfast|northern ireland")
+    print(f"   → {len(out)} offerte trovate")
+    return out
+
+# ============================================================
 # 🏢  ACCENTURE ITALIA  —  Workday (requests, API REST diretta)
 #
 #  Filtro paese: facet "locationCountry", ID Italia fisso.
@@ -1096,6 +1489,15 @@ def _accenture_post(body, headers):
             return None
     print("    ⚠️  Accenture: errore persistente dopo i retry")
     return None
+
+# ID del facet "locationCountry" di Workday (letti dal facet, ottobre 2026)
+ACCENTURE_PAESI = {
+    "Italia":      "8cd04a563fd94da7b06857a79faaf815",
+    "Belgio":      "a04ea128f43a42e59b1e6a19e8f0b374",
+    "Lussemburgo": "328b82f597514643a7683a78fc67c3f1",
+    "Irlanda":     "04a05835925f45b3a59406a2a6b72c8a",
+    "Paesi Bassi": "9696868b09c64d52a62ee13b052383cc",
+}
 
 def _accenture_playwright(ITALIA_ID, LIMIT):
     """Fallback: stesse chiamate API, ma eseguite dentro un browser reale."""
@@ -1143,9 +1545,9 @@ def _accenture_playwright(ITALIA_ID, LIMIT):
         print(f"    ⚠️  Playwright Accenture error: {e}")
         return []
 
-def scrape_accenture():
-    print("🔍 Accenture Italia (Workday)...")
-    ITALIA_ID = "8cd04a563fd94da7b06857a79faaf815"
+def scrape_accenture(paese="Italia"):
+    print(f"🔍 Accenture {paese} (Workday)...")
+    ITALIA_ID = ACCENTURE_PAESI[paese]      # (nome storico: è l'ID del paese richiesto)
     LIMIT = 20
     headers = {**HEADERS, "Content-Type": "application/json", "Accept": "application/json",
                "Origin": "https://accenture.wd103.myworkdayjobs.com",
@@ -1189,7 +1591,7 @@ def scrape_accenture():
         luogo  = bullet[1] if len(bullet) > 1 else ""
         risultati.append({
             "titolo":   j.get("title") or "N/D",
-            "location": "Accenture Italia" + (f" · {luogo}" if luogo and luogo != "Location Negotiable" else ""),
+            "location": f"Accenture {paese}" + (f" · {luogo}" if luogo and luogo != "Location Negotiable" else ""),
             "url":      f"{ACCENTURE_BASE}{path}" if path else "",
             "data":     _workday_data(j.get("postedOn")),
         })
@@ -1198,7 +1600,7 @@ def scrape_accenture():
     # più righe (ottobre 2026: 176 righe = 173 offerte, sempre le stesse 3
     # ripetute anche cercando per categoria). La copertura confronta righe con
     # righe; le offerte inviate restano senza doppioni.
-    registra_copertura("Accenture", len(jobs), totale)
+    registra_copertura(f"Accenture {paese}", len(jobs), totale)
     if len(risultati) < len(jobs):
         print(f"    → {len(jobs) - len(risultati)} righe ripetute (stessa offerta): "
               f"{len(risultati)} offerte diverse")
@@ -1239,7 +1641,7 @@ def scrape_nttdata():
             nuovi += 1
             risultati.append({
                 "titolo":   titolo_el.get_text(strip=True) if titolo_el else "N/D",
-                "location": f"NTT DATA · {loc_el.get_text(strip=True)}" if loc_el else "NTT DATA Italia",
+                "location": f"NTT DATA Italia · {loc_el.get_text(strip=True)}" if loc_el else "NTT DATA Italia",
                 "url":      href,
                 "data":     "",
             })
@@ -1247,8 +1649,112 @@ def scrape_nttdata():
             break
         time.sleep(0.3)
 
+    # NOTA (ottobre 2026): it.nttdata.com mostra solo la consulenza. Le offerte
+    # italiane delle infrastrutture (ex NTT Ltd, es. Milano/Segrate) sono solo
+    # sul portale globale: si aggiungono quelle che non sono già nell'elenco
+    # (confronto per ID Salesforce). Se il portale non risponde si tiene
+    # comunque l'elenco di it.nttdata.com.
+    gia = {_nttdata_salesforce_id(o["url"]) for o in risultati} - {None}
+    phenom, _ = _nttdata_phenom("Italy")
+    phenom = [j for j in phenom if _ntt_link_valido(j)]
+    extra = [_nttdata_offerta(j, "Italia") for j in phenom
+             if _nttdata_salesforce_id(j.get("applyUrl")) not in gia]
+    if extra:
+        print(f"    → +{len(extra)} dal portale globale NTT DATA (non presenti su it.nttdata.com)")
+    risultati += extra
+
     print(f"   → {len(risultati)} offerte trovate")
     return risultati
+
+# ============================================================
+# 🏢  NTT DATA  —  portale globale careers.nttdata.com (Phenom)
+#
+#  NOTA (ottobre 2026): NTT DATA pubblica le offerte su due sistemi:
+#  - la consulenza (ex everis) su Salesforce, careers.emeal.nttdata.com;
+#    per l'Italia le stesse offerte sono su it.nttdata.com;
+#  - le infrastrutture (ex NTT Ltd) su Workday, nttlimited.wd3.myworkdayjobs.com.
+#  Il portale globale Phenom le raccoglie entrambe e si filtra per paese
+#  (stesso endpoint POST /widgets di PwC Italia). Il Belgio (22 offerte)
+#  non ha un elenco sul sito nazionale: si legge solo da qui.
+# ============================================================
+
+NTT_PHENOM = "https://careers.nttdata.com"
+# Nomi di città come li scrive Phenom (spesso in spagnolo) → nome locale
+NTT_CITTA = {"bruselas": "Bruxelles", "brussels": "Bruxelles", "milán": "Milano", "milan": "Milano",
+             "roma": "Roma", "rome": "Roma", "turín": "Torino", "turin": "Torino", "nápoles": "Napoli"}
+
+def _nttdata_phenom(paese):
+    """Tutte le offerte del portale globale NTT DATA per un paese ("Belgium",
+    "Italy"). Ritorna (lista di job Phenom, totale dichiarato) o ([], None)."""
+    jobs, totale, visti = [], None, set()
+    for _ in range(10):
+        body = {"lang": "en_global", "deviceType": "desktop", "country": "global",
+                "pageName": "search-results", "ddoKey": "refineSearch", "sortBy": "",
+                "subsearch": "", "from": len(jobs), "jobs": True, "counts": True,
+                "all_fields": ["category", "country", "state", "city", "type"],
+                "size": 200, "clearAll": False, "jdsource": "facets", "isSliderEnable": False,
+                "pageId": "page20", "siteType": "external", "keywords": "", "global": True,
+                "selected_fields": {"country": [paese]}, "locationData": {}}
+        d = _json(http_post(f"{NTT_PHENOM}/widgets", json=body, timeout=30,
+                            headers={"Content-Type": "application/json", "Accept": "application/json"}))
+        try:
+            rs = d["refineSearch"]
+            pagina = rs["data"]["jobs"] or []
+        except (TypeError, KeyError):
+            print(f"    ⚠️  Phenom NTT DATA ({paese}): risposta assente o inattesa")
+            break
+        if totale is None:
+            totale = rs.get("totalHits")
+        nuovi = [j for j in pagina if j.get("jobId") not in visti]
+        visti.update(j.get("jobId") for j in nuovi)
+        jobs.extend(nuovi)
+        if not nuovi or (totale and len(jobs) >= totale):
+            break
+    return jobs, totale
+
+def _nttdata_salesforce_id(url):
+    """ID Salesforce dell'offerta (minuscolo), da careers.emeal.nttdata.com/s/offer/<ID>/…
+    o da it.nttdata.com/jobs/<id>-slug: serve a non contare due volte la stessa offerta."""
+    m = re.search(r"/s/offer/([A-Za-z0-9]{15,18})/", url or "") or \
+        re.search(r"/jobs/([a-z0-9]{15,18})-", url or "", re.I)
+    return m.group(1).lower() if m else None
+
+# Nome del paese per il portale Phenom (filtro "country")
+NTT_PAESI = {"Italia": "Italy", "Belgio": "Belgium", "Lussemburgo": "Luxembourg",
+             "Irlanda": "Ireland", "Paesi Bassi": "Netherlands"}
+
+def _nttdata_offerta(j, paese_it):
+    link = j.get("applyUrl") or ""
+    link = re.sub(r"\?utm_[^#]*$", "", link)        # careers.emeal: toglie ?utm_medium=…
+    citta = (j.get("city") or "").strip()
+    citta = NTT_CITTA.get(citta.lower(), citta)
+    # Offerta multi-sede la cui sede principale è in un altro paese (es. Milano
+    # nella ricerca "Belgium"): la città indicata sarebbe fuorviante
+    if j.get("country") and j.get("country") != NTT_PAESI.get(paese_it):
+        citta = ""
+    return {"titolo":   j.get("title") or "N/D",
+            "location": f"NTT DATA {paese_it}" + (f" · {citta}" if citta else ""),
+            "url":      _senza_apply(link),                    # Workday: pagina dell'offerta
+            "_id_src":  f"ntt-phenom:{j.get('jobId')}",        # stabile anche se cambia il link
+            "data":     (j.get("postedDate") or "")[:10]}
+
+def _ntt_link_valido(j):
+    """Il portale globale contiene a volte offerte di prova con link verso un
+    ambiente di anteprima SAP (es. career8preview.sapsf.com, NTTDTEST2)."""
+    return not re.search(r"preview\.sapsf|[?&]company=\w*test", j.get("applyUrl") or "", re.I)
+
+def scrape_nttdata_paese(paese):
+    """NTT DATA fuori dall'Italia: solo dal portale globale Phenom."""
+    print(f"🔍 NTT DATA {paese} (portale globale Phenom)...")
+    jobs, totale = _nttdata_phenom(NTT_PAESI[paese])
+    jobs = [j for j in jobs if _ntt_link_valido(j)]
+    risultati = [_nttdata_offerta(j, paese) for j in jobs]
+    registra_copertura(f"NTT DATA {paese}", len(risultati), totale)
+    print(f"   → {len(risultati)} offerte trovate")
+    return risultati
+
+def scrape_nttdata_belgio():
+    return scrape_nttdata_paese("Belgio")
 
 # ============================================================
 # 🏢  BIP  —  Oracle Recruiting Cloud (requests, API REST diretta)
@@ -1369,8 +1875,13 @@ def scrape_digital360():
 #  Paginazione: page/size, ci si ferma al "total" dichiarato.
 # ============================================================
 
-def scrape_capgemini():
-    print("🔍 Capgemini Italia...")
+# country_code dell'API per paese (verificati a ottobre 2026: le varianti
+# "be-nl", "nl-en", "lu-fr"… restituiscono 0 risultati senza errore)
+CAPGEMINI_PAESI = {"Italia": "it-it", "Belgio": "be-en", "Lussemburgo": "lu-en",
+                   "Irlanda": "ie-en", "Paesi Bassi": "nl-nl"}
+
+def scrape_capgemini(paese="Italia"):
+    print(f"🔍 Capgemini {paese}...")
     URL  = "https://cg-jobstream-api.azurewebsites.net/api/job-search"
     SIZE = 50
     risultati = []
@@ -1379,7 +1890,7 @@ def scrape_capgemini():
     totale_dichiarato = None
     visti = set()
     for page in range(1, MAX_PAGINE + 1):
-        params = {"country_code": "it-it", "page": page, "size": SIZE}
+        params = {"country_code": CAPGEMINI_PAESI[paese], "page": page, "size": SIZE}
         dati = _json(http_get(URL, headers=headers, params=params))
         if not isinstance(dati, dict):
             break
@@ -1401,7 +1912,7 @@ def scrape_capgemini():
             nuovi += 1
             risultati.append({
                 "titolo":   j.get("title") or "N/D",
-                "location": f"Capgemini · {j.get('location','')}".rstrip(" ·"),
+                "location": f"Capgemini {paese} · {j.get('location','')}".rstrip(" ·"),
                 "url":      url_annuncio,
                 "data":     "",
             })
@@ -1412,6 +1923,7 @@ def scrape_capgemini():
             break
         time.sleep(0.2)
 
+    registra_copertura(f"Capgemini {paese}", len(risultati), totale_dichiarato)
     print(f"   → {len(risultati)} offerte trovate")
     return risultati
 
@@ -1421,8 +1933,7 @@ def scrape_capgemini():
 
 BRAND_COLORS = {
     "EY":         ("#FFE600", "#1a1a1a"),
-    "PwC Italia": ("#E0301E", "#ffffff"),
-    "PwC Belgio": ("#E0301E", "#ffffff"),
+    "PwC":        ("#E0301E", "#ffffff"),
     "Deloitte":   ("#86BC25", "#1a1a1a"),
     "KPMG":       ("#00338D", "#ffffff"),
     "Accenture":  ("#A100FF", "#ffffff"),
@@ -1431,6 +1942,25 @@ BRAND_COLORS = {
     "Digital360": ("#0d1b2a", "#ffffff"),
     "Capgemini":  ("#0070AD", "#ffffff"),
 }
+
+PAESI = ["Italia", "Belgio", "Lussemburgo", "Irlanda", "Paesi Bassi"]
+PAESI_TESTO = ", ".join(PAESI[:-1]) + " e " + PAESI[-1]
+
+def _azienda(fonte):
+    """"Accenture Irlanda" → "Accenture"; "EY" → "EY"."""
+    for paese in PAESI:
+        if fonte.endswith(" " + paese):
+            return fonte[: -len(paese) - 1]
+    return fonte
+
+def colore_marchio(fonte):
+    """Colore della fonte; "Accenture Irlanda" usa quello di "Accenture"."""
+    if fonte in BRAND_COLORS:
+        return BRAND_COLORS[fonte][0]
+    for marchio, colori in BRAND_COLORS.items():
+        if fonte.startswith(marchio + " "):
+            return colori[0]
+    return "#6b7280"
 
 _GIORNI_SETT = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
 _MESI_NOME   = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio",
@@ -1474,14 +2004,16 @@ def conta_offerte(n: int) -> str:
     """'1 nuova offerta', '5 nuove offerte' (anche '0 nuove offerte')."""
     return f"{n} nuova offerta" if n == 1 else f"{n} nuove offerte"
 
-def genera_html(tutte, totale_trovate, problemi=None, fonti=None, nascoste=None):
+def genera_html(tutte, totale_trovate, problemi=None, fonti=None, nascoste=None, avviate=None):
     # Stile editoriale: pagina bianca, titoli serif, niente riquadri.
     # Layout a tabelle con stili inline: è l'unico modo affidabile per
     # Gmail, Outlook e Apple Mail (niente flex, gradienti o ombre).
     esc      = html_lib.escape
     oggi_str = _data_estesa(datetime.now())
     totale   = sum(len(v) for v in tutte.values())
-    elenco_fonti = " · ".join(fonti or BRAND_COLORS.keys())
+    # Footer: aziende (senza ripetere il paese) e paesi coperti
+    aziende = list(dict.fromkeys(_azienda(f) for f in (fonti or BRAND_COLORS.keys())))
+    testo_fonti = "siti carriere ufficiali di " + ", ".join(aziende)
     sans  = "font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;"
     serif = "font-family:Georgia,'Times New Roman',serif;"
     inchiostro, grigio, chiaro, linea = "#111827", "#6b7280", "#9ca3af", "#e5e7eb"
@@ -1510,7 +2042,7 @@ def genera_html(tutte, totale_trovate, problemi=None, fonti=None, nascoste=None)
     sezioni = ""
     for azienda, offerte in tutte.items():
         if not offerte: continue
-        accento = BRAND_COLORS.get(azienda, ("#6b7280",))[0]
+        accento = colore_marchio(azienda)
         # Prima le più recenti; quelle senza data in fondo
         ordinate = sorted(offerte, key=lambda o: (_eta_giorni(o.get("data")) is None,
                                                   _eta_giorni(o.get("data")) or 0))
@@ -1566,6 +2098,14 @@ def genera_html(tutte, totale_trovate, problemi=None, fonti=None, nascoste=None)
             f'{"è mostrata" if n == 1 else "sono mostrate"} ('
             + esc(", ".join(f"{k} {v}" for k, v in nascoste.items())) + ').<br>')
 
+    if avviate:
+        n = sum(avviate.values())
+        nota_nascoste += (
+            f"Fonti aggiunte da poco: {n} offerte già aperte sono state registrate senza "
+            f"mostrarle (oggi compaiono solo quelle pubblicate negli ultimi {GIORNI_FONTE_NUOVA} "
+            "giorni; da domani arriveranno tutte le nuove) — "
+            + esc(", ".join(f"{k} {v}" for k, v in avviate.items())) + ".<br>")
+
     if sezioni:
         titolo = f"{conta_offerte(totale)} oggi"
         corpo  = sezioni
@@ -1598,7 +2138,7 @@ def genera_html(tutte, totale_trovate, problemi=None, fonti=None, nascoste=None)
         <div style="{sans}font-size:12px;font-weight:700;letter-spacing:3px;color:{inchiostro};">
           BIG4 JOBS</div>
         <div style="margin-top:2px;{sans}font-size:12px;color:{grigio};">
-          {oggi_str} · Italia e Belgio</div>
+          {oggi_str} · {esc(PAESI_TESTO)}</div>
         <div style="margin-top:18px;{serif}font-size:32px;line-height:1.15;color:{inchiostro};">
           {titolo}</div>
         {riga_sommario}
@@ -1608,7 +2148,7 @@ def genera_html(tutte, totale_trovate, problemi=None, fonti=None, nascoste=None)
       <tr><td style="padding:36px 32px 0;">
         <div style="border-top:1px solid {linea};padding-top:14px;{sans}font-size:11px;
                     line-height:1.6;color:{chiaro};">
-          {nota_nascoste}{totale_trovate} offerte monitorate · Fonti: {esc(elenco_fonti)}<br>
+          {nota_nascoste}{totale_trovate} offerte monitorate · Fonti: {esc(testo_fonti)}<br>
           Le etichette (livello e area) sono dedotte automaticamente dal titolo.
         </div>
       </td></tr>
@@ -1672,6 +2212,58 @@ def invia_email(html_body, totale):
 # 🚀  MAIN
 # ============================================================
 
+def elenco_fonti():
+    """(nome, funzione) di tutte le fonti, raggruppate per paese: l'ordine è
+    quello delle sezioni nell'email. I nomi si risolvono al momento della
+    chiamata (così i test possono sostituire le funzioni)."""
+    g = globals()
+    def f(nome_fn, *args):
+        return lambda: g[nome_fn](*args)
+    return [
+        # Italia (EY: il board Yello copre anche il Belgio)
+        ("EY",                    f("scrape_ey")),
+        ("EY Italia",             f("scrape_ey_experienced", "Italia")),
+        ("PwC Italia",            f("scrape_pwc_italia")),
+        ("Deloitte Italia",       f("scrape_deloitte", "Italia")),
+        ("KPMG Italia",           f("scrape_kpmg")),
+        ("Accenture Italia",      f("scrape_accenture", "Italia")),
+        ("NTT DATA Italia",       f("scrape_nttdata")),
+        ("Capgemini Italia",      f("scrape_capgemini", "Italia")),
+        ("Bip",                   f("scrape_bip")),
+        ("Digital360",            f("scrape_digital360")),
+        # Belgio
+        ("EY Belgio",             f("scrape_ey_experienced", "Belgio")),
+        ("PwC Belgio",            f("scrape_pwc_belgio")),
+        ("Deloitte Belgio",       f("scrape_deloitte", "Belgio")),
+        ("KPMG Belgio",           f("scrape_kpmg_belgio")),
+        ("Accenture Belgio",      f("scrape_accenture", "Belgio")),
+        ("NTT DATA Belgio",       f("scrape_nttdata_paese", "Belgio")),
+        ("Capgemini Belgio",      f("scrape_capgemini", "Belgio")),
+        # Lussemburgo
+        ("EY Lussemburgo",        f("scrape_ey_experienced", "Lussemburgo")),
+        ("PwC Lussemburgo",       f("scrape_pwc_paese", "Lussemburgo")),
+        ("Deloitte Lussemburgo",  f("scrape_deloitte_lussemburgo")),
+        ("KPMG Lussemburgo",      f("scrape_kpmg_lussemburgo")),
+        ("Accenture Lussemburgo", f("scrape_accenture", "Lussemburgo")),
+        ("NTT DATA Lussemburgo",  f("scrape_nttdata_paese", "Lussemburgo")),
+        ("Capgemini Lussemburgo", f("scrape_capgemini", "Lussemburgo")),
+        # Irlanda
+        ("EY Irlanda",            f("scrape_ey_experienced", "Irlanda")),
+        ("PwC Irlanda",           f("scrape_pwc_paese", "Irlanda")),
+        ("Deloitte Irlanda",      f("scrape_deloitte_irlanda")),
+        ("Accenture Irlanda",     f("scrape_accenture", "Irlanda")),
+        ("NTT DATA Irlanda",      f("scrape_nttdata_paese", "Irlanda")),
+        ("Capgemini Irlanda",     f("scrape_capgemini", "Irlanda")),
+        # Paesi Bassi
+        ("EY Paesi Bassi",        f("scrape_ey_experienced", "Paesi Bassi")),
+        ("PwC Paesi Bassi",       f("scrape_pwc_paese", "Paesi Bassi")),
+        ("Deloitte Paesi Bassi",  f("scrape_deloitte_paesi_bassi")),
+        ("KPMG Paesi Bassi",      f("scrape_kpmg_paesi_bassi")),
+        ("Accenture Paesi Bassi", f("scrape_accenture", "Paesi Bassi")),
+        ("NTT DATA Paesi Bassi",  f("scrape_nttdata_paese", "Paesi Bassi")),
+        ("Capgemini Paesi Bassi", f("scrape_capgemini", "Paesi Bassi")),
+    ]
+
 def main():
     print(f"\n{'='*55}")
     print(f"  BIG4 JOB NEWSLETTER  {datetime.now():%d/%m/%Y %H:%M}")
@@ -1696,30 +2288,41 @@ def main():
         print(f"✅ Newsletter di oggi ({oggi_italia()}) già inviata: niente da fare.")
         return
 
-    scrapers = [
-        ("EY",         scrape_ey),
-        ("PwC Italia", scrape_pwc_italia),
-        ("PwC Belgio", scrape_pwc_belgio),
-        ("Deloitte",   scrape_deloitte),
-        ("KPMG",       scrape_kpmg),
-        ("Accenture",  scrape_accenture),
-        ("NTT DATA",   scrape_nttdata),
-        ("Bip",        scrape_bip),
-        ("Digital360", scrape_digital360),
-        ("Capgemini",  scrape_capgemini),
-    ]
+    scrapers = elenco_fonti()
 
     tutte_trovate = {}
     tutte_nuove   = {}
     errori_scraper = {}   # scraper che hanno sollevato un'eccezione
     nascoste       = {}   # fonte → n. offerte nuove ma pubblicate da troppo tempo
+    avviate        = {}   # fonte nuova → n. offerte già aperte registrate senza mostrarle
+    gia_note = {f for run in storico if isinstance(run.get("conteggi"), dict)
+                for f, n in run["conteggi"].items() if n}
 
     for nome, fn in scrapers:
         try:
             offerte = fn() or []
+            # EY Italia/Belgio: le offerte già presenti nel board Yello ("EY")
+            # non si ripetono nella sezione di careers.ey.com
+            if nome in ("EY Italia", "EY Belgio") and tutte_trovate.get("EY"):
+                yello = {_titolo_norm(o.get("titolo")) for o in tutte_trovate["EY"]}
+                prima = len(offerte)
+                offerte = [o for o in offerte if _titolo_norm(o.get("titolo")) not in yello]
+                if prima > len(offerte):
+                    print(f"   → {prima - len(offerte)} già presenti nel board EY (Yello): tolte")
             tutte_trovate[nome] = offerte
             if offerte:
                 nuove, seen = filtra_nuove(nome, offerte, seen)
+                if storico and nome not in gia_note:
+                    # Prima run (riuscita) di una fonte aggiunta da poco
+                    recenti = [o for o in nuove
+                               if _eta_giorni(o.get("data")) is not None
+                               and _eta_giorni(o.get("data")) <= GIORNI_FONTE_NUOVA]
+                    if len(recenti) < len(nuove):
+                        avviate[nome] = len(nuove) - len(recenti)
+                        print(f"   → fonte nuova: {avviate[nome]} offerte già aperte registrate "
+                              f"senza mostrarle (si mostrano solo quelle degli ultimi "
+                              f"{GIORNI_FONTE_NUOVA} giorni)")
+                    nuove = recenti
                 if MAX_GIORNI_NUOVA is not None:
                     recenti = [o for o in nuove
                                if (_eta_giorni(o.get("data")) or 0) <= MAX_GIORNI_NUOVA
@@ -1751,7 +2354,7 @@ def main():
     totale_trovate = sum(conteggi.values())
     totale_nuove   = sum(nuove_per_fonte.values())
 
-    print(f"\n📊 Riepilogo:")
+    print("\n📊 Riepilogo:")
     for n in [s[0] for s in scrapers]:
         cop = ""
         if n in COPERTURA:
@@ -1772,7 +2375,7 @@ def main():
               f"{MAX_GIORNI_NUOVA} giorni: " + ", ".join(f"{k} {v}" for k, v in nascoste.items()) + ")")
 
     html, totale = genera_html(tutte_nuove, totale_trovate, problemi,
-                               fonti=[n for n, _ in scrapers], nascoste=nascoste)
+                               fonti=[n for n, _ in scrapers], nascoste=nascoste, avviate=avviate)
     stato_invio  = invia_email(html, totale)
 
     # Le offerte si segnano come "viste" SOLO se l'email è partita: se l'invio

@@ -267,13 +267,9 @@ def verifica_conteggi_dichiarati():
 
 def main():
     seen, _ = jn.carica_seen()
-    scrapers = [("EY", jn.scrape_ey), ("PwC Italia", jn.scrape_pwc_italia),
-                ("PwC Belgio", jn.scrape_pwc_belgio), ("Deloitte", jn.scrape_deloitte),
-                ("KPMG", jn.scrape_kpmg), ("Accenture", jn.scrape_accenture),
-                ("NTT DATA", jn.scrape_nttdata), ("Bip", jn.scrape_bip),
-                ("Digital360", jn.scrape_digital360), ("Capgemini", jn.scrape_capgemini)]
+    scrapers = jn.elenco_fonti()          # stesso elenco della newsletter
     specifiche = {"EY": verifica_ey, "PwC Belgio": verifica_pwc_belgio,
-                  "Deloitte": verifica_deloitte, "KPMG": verifica_kpmg, "Bip": verifica_bip}
+                  "Deloitte Italia": verifica_deloitte, "KPMG Italia": verifica_kpmg, "Bip": verifica_bip}
 
     solo = [x.strip() for x in os.environ.get("VERIFICA_FONTI", "").split(",") if x.strip()]
     if solo:
@@ -301,7 +297,7 @@ def main():
         senza_url = sum(1 for o in offerte if not o.get("url"))
         if senza_url:
             esito(nome, f"{senza_url} offerte senza link")
-        if nome != "Accenture":          # evita altri 429 da Workday
+        if not nome.startswith("Accenture"):   # evita altri 429 da Workday
             try:
                 stabilita(nome, fn, offerte)
             except Exception as e:
