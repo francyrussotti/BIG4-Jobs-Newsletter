@@ -55,6 +55,9 @@ SOGLIA_NUOVE_ANOMALE = 0.9
 # DICHIARA, la raccolta è incompleta: le offerte mancanti riemergeranno nei
 # giorni successivi come false "nuove". Va segnalato.
 SOGLIA_COPERTURA = 0.95
+# Sotto questa mediana storica una fonte è "piccola": 0 offerte è un avviso,
+# non un errore che fa fallire la run
+SOGLIA_FONTE_PICCOLA = 5
 
 # Le offerte "nuove" per il tracker ma pubblicate da più di questi giorni NON
 # vengono mostrate nell'email (restano comunque salvate come viste). Capita con
@@ -298,9 +301,17 @@ def health_check(conteggi: dict, nuove_per_fonte: dict, storico: list) -> list:
                    and isinstance(run["conteggi"].get(fonte), int) and run["conteggi"][fonte] > 0]
 
         if trovate == 0:
-            problemi.append(("bloccante", fonte,
-                             "0 offerte trovate — scraper probabilmente rotto "
-                             "(selettori cambiati, sito irraggiungibile o filtro non più valido)"))
+            # Fonti piccole (es. Capgemini Irlanda: 1 offerta) possono restare
+            # davvero a zero: lì lo zero è solo da verificare, altrimenti la run
+            # risulterebbe fallita (con email di errore da GitHub) ogni giorno.
+            if passati and _mediana(passati) < SOGLIA_FONTE_PICCOLA:
+                problemi.append(("sospetto", fonte,
+                                 f"0 offerte trovate (di solito {_mediana(passati):.0f}): "
+                                 "possibile, ma da verificare"))
+            else:
+                problemi.append(("bloccante", fonte,
+                                 "0 offerte trovate — scraper probabilmente rotto "
+                                 "(selettori cambiati, sito irraggiungibile o filtro non più valido)"))
             continue
 
         if len(passati) >= STORICO_MIN_RUN:

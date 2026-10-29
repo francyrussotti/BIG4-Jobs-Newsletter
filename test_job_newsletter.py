@@ -88,6 +88,13 @@ class TestHealthCheck(unittest.TestCase):
         pb = jn.health_check({"EY": 0}, {}, [])
         self.assertEqual(pb[0][0], "bloccante")
 
+    def test_zero_su_fonte_piccola_e_solo_sospetto(self):
+        storico = [{"conteggi": {"Capgemini Irlanda": 1}}] * 3
+        pb = jn.health_check({"Capgemini Irlanda": 0}, {}, storico)
+        self.assertEqual(pb[0][0], "sospetto")
+        storico = [{"conteggi": {"KPMG Italia": 200}}] * 3
+        self.assertEqual(jn.health_check({"KPMG Italia": 0}, {}, storico)[0][0], "bloccante")
+
     def test_gli_zeri_storici_non_abbassano_la_mediana(self):
         # Storico: 100 offerte con 3 giorni a zero (scraper rotto). Oggi 40:
         # con gli zeri inclusi la mediana scenderebbe e il calo non verrebbe visto.
