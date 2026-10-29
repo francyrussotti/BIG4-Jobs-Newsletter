@@ -1928,6 +1928,449 @@ def scrape_capgemini(paese="Italia"):
     return risultati
 
 # ============================================================
+# 🏢  ALTRE SOCIETÀ DI CONSULENZA (aggiunte a ottobre 2026)
+#
+#  Arthur D. Little, Gartner, ZS, Roland Berger, Grant Thornton,
+#  IBM Consulting, Simon-Kucher, Oliver Wyman, OC&C, L.E.K.
+#  Quasi tutte pubblicano un unico elenco mondiale: lo si scarica una
+#  volta per run (_una_volta) e lo si filtra per paese (_nel_paese).
+# ============================================================
+
+_CACHE_ELENCHI = {}
+
+def _una_volta(chiave, fn):
+    """Scarica un elenco mondiale una sola volta per run, anche se più fonti
+    (una per paese) lo usano. Gli errori non vengono memorizzati."""
+    if chiave not in _CACHE_ELENCHI:
+        _CACHE_ELENCHI[chiave] = fn()
+    return _CACHE_ELENCHI[chiave]
+
+PAESI_RE = {
+    "Italia": re.compile(r"\b(italy|italia|milan|milano|rome|roma|turin|torino|bologna|naples|napoli|"
+                         r"padova|padua|florence|firenze|genova|genoa|segrate|verona|bari)\b", re.I),
+    "Belgio": re.compile(r"\b(belgium|belgique|belgi[eë]|brussels|bruxelles|brussel|antwerp|antwerpen|"
+                         r"ghent|gent|li[eè]ge|diegem|zaventem|machelen|mechelen|leuven|hasselt|namur|"
+                         r"charleroi|jumet|tournai|kortrijk)\b", re.I),
+    "Lussemburgo": re.compile(r"\b(luxembourg|luxemburg|kirchberg|bertrange|leudelange|belvaux)\b", re.I),
+    "Irlanda": re.compile(r"\b(ireland|dublin|cork|limerick|galway|waterford)\b", re.I),
+    "Paesi Bassi": re.compile(r"\b(netherlands|nederland|holland|amsterdam|rotterdam|utrecht|eindhoven|"
+                              r"the hague|den haag|amstelveen|groningen|zwolle|arnhem|amersfoort|"
+                              r"'s-hertogenbosch|den bosch|maastricht)\b", re.I),
+}
+PAESI_CODICI = {"Italia": {"IT", "ITA"}, "Belgio": {"BE", "BEL"}, "Lussemburgo": {"LU", "LUX"},
+                "Irlanda": {"IE", "IRL"}, "Paesi Bassi": {"NL", "NLD"}}
+
+def _nel_paese(paese, testo="", codici=()):
+    """L'offerta è (anche) in quel paese? Per codice ISO o per nome di città/paese.
+    Belfast / Irlanda del Nord non contano come Irlanda."""
+    if any((c or "").upper() in PAESI_CODICI[paese] for c in codici):
+        return True
+    t = testo or ""
+    if paese == "Irlanda":
+        t = re.sub(r"northern ireland", " ", t, flags=re.I)
+    return bool(PAESI_RE[paese].search(t))
+
+def _offerta(nome, titolo, url, luogo="", data="", id_src=None):
+    o = {"titolo":   html_lib.unescape((titolo or "N/D").strip()),
+         "location": nome + (f" · {luogo.strip()}" if luogo and luogo.strip() else ""),
+         "url":      url or "",
+         "data":     data or ""}
+    if id_src:
+        o["_id_src"] = id_src
+    return o
+
+def _citta_del_paese(paese, testo):
+    """Dalla lista di sedi tiene quelle del paese ("Milan; Paris" → "Milan")."""
+    parti = [p.strip() for p in re.split(r"[;|/]|\s{2,}", testo or "") if p.strip()]
+    utili = [p for p in parti if _nel_paese(paese, p)]
+    return ", ".join(dict.fromkeys(utili))[:80] if utili else ""
+
+# ---------- ZS (iCIMS / Jibe: jobs.zs.com/api/jobs) ----------
+def _zs_tutte():
+    out, totale = [], None
+    for pagina in range(1, 80):
+        d = _json(http_get("https://jobs.zs.com/api/jobs", params={
+            "page": pagina, "sortBy": "posted_date", "descending": "true", "internal": "false"}))
+        if not isinstance(d, dict):
+            break
+        totale = totale or d.get("totalCount")
+        blocco = [x.get("data") or {} for x in d.get("jobs") or []]
+        if not blocco:
+            break
+        out += blocco
+        if totale and len(out) >= totale:
+            break
+        time.sleep(0.2)
+    return out, totale
+
+def scrape_zs(paese):
+    nome = f"ZS {paese}"
+    print(f"🔍 {nome} (jobs.zs.com)...")
+    jobs, _ = _una_volta("zs", _zs_tutte)
+    out, visti = [], set()
+    for j in jobs:
+        sedi = " ; ".join([j.get("full_location") or "", json.dumps(j.get("additional_locations") or "")])
+        if not _nel_paese(paese, sedi, [j.get("country_code")]) or j.get("slug") in visti:
+            continue
+        visti.add(j.get("slug"))
+        out.append(_offerta(nome, j.get("title"), f"https://jobs.zs.com/jobs/{j.get('slug')}?lang=en-us",
+                            _citta_del_paese(paese, j.get("full_location") or "") or j.get("city") or "",
+                            (j.get("posted_date") or "")[:10]))
+    print(f"   → {len(out)} offerte trovate")
+    return out
+
+# ---------- Roland Berger (ricerca del sito, link a SmartRecruiters) ----------
+def _rb_tutte():
+    api = "https://rolandberger-search-api.e-spirit.cloud/v1/prepared_search/JoinJobs/execute/"
+    out, visti, totale = [], set(), None
+    for pagina in range(1, 30):
+        d = _json(http_get(api, params={"language": "en", "query": "*", "page": pagina, "rows": 100}))
+        if not isinstance(d, dict):
+            break
+        totale = totale or d.get("numRows")
+        nuovi = [r for r in d.get("results") or [] if r.get("id") not in visti]
+        if not nuovi:
+            break
+        visti.update(r.get("id") for r in nuovi)
+        out += nuovi
+        if totale and len(out) >= totale:
+            break
+    return out, totale
+
+def scrape_roland_berger(paese):
+    nome = f"Roland Berger {paese}"
+    print(f"🔍 {nome} (rolandberger.com)...")
+    jobs, _ = _una_volta("rolandberger", _rb_tutte)
+    out = []
+    for j in jobs:
+        luoghi = "; ".join(j.get("location") or [])
+        if not _nel_paese(paese, luoghi):
+            continue
+        titolo = (j.get("title") or j.get("positionProfile___alternativejobtitle") or ["N/D"])[0]
+        out.append(_offerta(nome, titolo, j.get("link") or "", _citta_del_paese(paese, luoghi),
+                            id_src=f"rolandberger:{j.get('id')}"))
+    print(f"   → {len(out)} offerte trovate")
+    return out
+
+# ---------- Oliver Wyman (Phenom di Marsh McLennan) ----------
+def _phenom_generico(host, paese_en, extra, size=200):
+    jobs, totale, visti = [], None, set()
+    for _ in range(10):
+        body = {"lang": "en_global", "deviceType": "desktop", "country": "global",
+                "ddoKey": "refineSearch", "sortBy": "", "subsearch": "", "from": len(jobs),
+                "jobs": True, "counts": True, "all_fields": ["category", "country", "state", "city", "type"],
+                "size": size, "clearAll": False, "jdsource": "facets", "isSliderEnable": False,
+                "siteType": "external", "keywords": "", "global": True,
+                "selected_fields": {"country": [paese_en]}, "locationData": {}, **extra}
+        d = _json(http_post(f"{host}/widgets", json=body, timeout=30,
+                            headers={"Content-Type": "application/json", "Accept": "application/json",
+                                     "Origin": host, "Referer": f"{host}/global/en/"}))
+        try:
+            rs = d["refineSearch"]
+            pagina = rs["data"]["jobs"] or []
+        except (TypeError, KeyError):
+            break
+        totale = totale if totale is not None else rs.get("totalHits")
+        nuovi = [j for j in pagina if j.get("jobId") not in visti]
+        visti.update(j.get("jobId") for j in nuovi)
+        jobs += nuovi
+        if not nuovi or (totale and len(jobs) >= totale):
+            break
+    return jobs, totale
+
+def scrape_oliver_wyman(paese):
+    nome = f"Oliver Wyman {paese}"
+    print(f"🔍 {nome} (careers.marsh.com)...")
+    jobs, totale = _phenom_generico("https://careers.marsh.com", NTT_PAESI[paese],
+                                    {"refNum": "MAMCGLOBAL", "pageName": "Oliver Wyman Search",
+                                     "pageId": "page52-prod-ds", "rk": "l-oliver-wyman-search"})
+    out = []
+    for j in jobs:
+        link = j.get("applyUrl") or ""
+        url = (f"https://careers.marsh.com/global/en/job/{j.get('jobId')}" if j.get("jobId") else _senza_apply(link))
+        out.append(_offerta(nome, j.get("title"), url, j.get("city") or "", (j.get("postedDate") or "")[:10],
+                            id_src=f"marsh:{j.get('jobId')}"))
+    registra_copertura(nome, len(out), totale)
+    print(f"   → {len(out)} offerte trovate")
+    return out
+
+# ---------- L.E.K. (Oleeo, job board Europa) ----------
+def _lek_europa():
+    r = http_get("https://lek.tal.net/vx/lang-en-GB/mobile-0/system-42/appcentre-1/brand-2/candidate/jobboard/vacancy/1/adv/")
+    if not r:
+        return []
+    out = []
+    for li in BeautifulSoup(r.text, "lxml").select("li.opp-container"):
+        a = li.select_one("a.subject")
+        loc = li.select_one(".candidate-opp-field-3")
+        if a:
+            out.append({"titolo": a.get_text(" ", strip=True), "url": a.get("href", ""),
+                        "luogo": re.sub(r"^\s*Location:\s*", "", loc.get_text(" ", strip=True)) if loc else ""})
+    return out
+
+def scrape_lek(paese):
+    nome = f"L.E.K. {paese}"
+    print(f"🔍 {nome} (lek.tal.net)...")
+    out = [_offerta(nome, j["titolo"], j["url"], j["luogo"])
+           for j in _una_volta("lek", _lek_europa) if _nel_paese(paese, j["luogo"] + " " + j["titolo"])]
+    print(f"   → {len(out)} offerte trovate")
+    return out
+
+# ---------- OC&C (careers.occstrategy.com, ASP.NET) ----------
+def _occ_tutte():
+    url = "https://careers.occstrategy.com/vacancies/vacancy-search-results.aspx"
+    s = requests.Session()
+    s.headers.update(HEADERS)
+    out, visti = [], set()
+    r = s.get(url, timeout=30)
+    for pagina in range(2, 12):
+        soup = BeautifulSoup(r.text, "lxml")
+        nuovi = 0
+        for box in soup.select("div.vsr-job-big, [id*='VacancyListView'][id$='pnlList']"):
+            a = box.select_one("a[id$='detailsHyperlink']")
+            if not a or a.get("href") in visti:
+                continue
+            visti.add(a.get("href"))
+            nuovi += 1
+            testo = box.get_text(" ", strip=True)
+            m = re.search(r"Location\s+(.*?)\s+(?:Careers Site|Advertising End Date|Closing)", testo)
+            titolo = re.sub(r"^View information for\s+", "", a.get("aria-label") or "")
+            out.append({"titolo": titolo or testo[:80], "luogo": m.group(1) if m else "",
+                        "url": requests.compat.urljoin(url, a.get("href"))})
+        pager = soup.find("a", href=re.compile(rf"VacancyPager.*'{pagina}'"))
+        if not nuovi or not pager:
+            break
+        dati = {i.get("name"): i.get("value", "") for i in soup.select("input[type=hidden]") if i.get("name")}
+        dati.update({"__EVENTTARGET": "ctl00$ContentContainer$ctl01$VacancyPager", "__EVENTARGUMENT": str(pagina)})
+        r = s.post(url, data=dati, timeout=30)
+    return out
+
+def scrape_occ(paese):
+    nome = f"OC&C {paese}"
+    print(f"🔍 {nome} (careers.occstrategy.com)...")
+    out = [_offerta(nome, j["titolo"], j["url"], j["luogo"])
+           for j in _una_volta("occ", _occ_tutte) if _nel_paese(paese, j["luogo"])]
+    print(f"   → {len(out)} offerte trovate")
+    return out
+
+# ---------- Grant Thornton Belgio (Recruitee) ----------
+def scrape_grant_thornton_belgio():
+    print("🔍 Grant Thornton Belgio (careers.grantthornton.be)...")
+    d = _json(http_get("https://careers.grantthornton.be/api/offers/"))
+    out = []
+    for o in (d or {}).get("offers") or []:
+        out.append(_offerta("Grant Thornton Belgio", o.get("title"), o.get("careers_url") or o.get("url"),
+                            o.get("city") or "", (o.get("published_at") or o.get("created_at") or "")[:10],
+                            id_src=f"recruitee:{o.get('id')}"))
+    print(f"   → {len(out)} offerte trovate")
+    return out
+
+# ---------- Grant Thornton Irlanda (Oracle Recruiting Cloud) ----------
+def _oracle_orc(base, sito, nome, codice_paese):
+    api = f"{base}/hcmRestApi/resources/latest/recruitingCEJobRequisitions"
+    out, offset, totale, visti = [], 0, None, set()
+    for _ in range(MAX_PAGINE):
+        d = _json(http_get(api, headers={"Accept": "application/json"}, params={
+            "onlyData": "true", "expand": "requisitionList",
+            "finder": f"findReqs;siteNumber={sito},limit=25,offset={offset},sortBy=POSTING_DATES_DESC"}))
+        try:
+            dati = d["items"][0]
+        except (TypeError, KeyError, IndexError):
+            break
+        totale = totale or dati.get("TotalJobsCount")
+        reqs = dati.get("requisitionList") or []
+        if not reqs:
+            break
+        for j in reqs:
+            if j.get("PrimaryLocationCountry") != codice_paese or j.get("Id") in visti:
+                continue
+            visti.add(j.get("Id"))
+            out.append(_offerta(nome, j.get("Title"),
+                                f"{base}/hcmUI/CandidateExperience/en/sites/{sito}/job/{j.get('Id')}",
+                                (j.get("PrimaryLocation") or "").split(",")[0], j.get("PostedDate") or ""))
+        offset += 25
+        if (totale and offset >= totale) or len(reqs) < 25:
+            break
+        time.sleep(0.2)
+    return out
+
+def scrape_grant_thornton_irlanda():
+    print("🔍 Grant Thornton Irlanda (Oracle)...")
+    out = _oracle_orc("https://ehzq.fa.us2.oraclecloud.com", "GrantThorntonIrelandExperiencedHires",
+                      "Grant Thornton Irlanda", "IE")
+    print(f"   → {len(out)} offerte trovate")
+    return out
+
+# ---------- Simon-Kucher (Cornerstone OnDemand) ----------
+SK_SITO = "https://simon-kucher.csod.com/ux/ats/careersite/6/home?c=simon-kucher"
+
+def _sk_token():
+    """Token pubblico del career site (lo usa la pagina per l'API di ricerca)."""
+    r = http_get(SK_SITO)
+    m = re.search(r'"token"\s*:\s*"([^"]+)"', r.text) if r else None
+    if m:
+        return m.group(1)
+    if not PLAYWRIGHT_OK:
+        return None
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+            page = browser.new_page(user_agent=HEADERS["User-Agent"])
+            token = {}
+            page.on("request", lambda req: token.setdefault("v", req.headers.get("authorization"))
+                    if "rec-job-search" in req.url else None)
+            page.goto(SK_SITO, wait_until="networkidle", timeout=60_000)
+            browser.close()
+            v = token.get("v") or ""
+            return v.replace("Bearer ", "") or None
+    except Exception as e:
+        print(f"    ⚠️  Simon-Kucher token: {e}")
+        return None
+
+def _sk_tutte():
+    token = _sk_token()
+    if not token:
+        print("    ⚠️  Simon-Kucher: token del career site non trovato")
+        return []
+    out, totale = [], None
+    for pagina in range(1, 40):
+        body = {"careerSiteId": 6, "careerSitePageId": 6, "pageNumber": pagina, "pageSize": 100,
+                "cultureId": 1, "searchText": "", "cultureName": "en-US", "states": [],
+                "countryCodes": ["it", "be", "lu", "ie", "nl"], "cities": [], "placeID": "",
+                "radius": None, "postingsWithinDays": None, "customFieldCheckboxKeys": [],
+                "customFieldDropdowns": [], "customFieldRadios": []}
+        d = _json(http_post("https://eu-fra.api.csod.com/rec-job-search/external/jobs", json=body,
+                            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}))
+        dati = (d or {}).get("data") or {}
+        totale = totale or dati.get("totalCount")
+        blocco = dati.get("requisitions") or []
+        if not blocco:
+            break
+        out += blocco
+        if totale and len(out) >= totale:
+            break
+    return out
+
+def scrape_simon_kucher(paese):
+    nome = f"Simon-Kucher {paese}"
+    print(f"🔍 {nome} (Cornerstone)...")
+    out = []
+    for j in _una_volta("simonkucher", _sk_tutte):
+        luoghi = j.get("locations") or []
+        if not any(_nel_paese(paese, l.get("city") or "", [l.get("country")]) for l in luoghi):
+            continue
+        citta = ", ".join(l.get("city") for l in luoghi if l.get("city") and _nel_paese(paese, "", [l.get("country")]))
+        rid = j.get("requisitionId")
+        out.append(_offerta(nome, j.get("displayJobTitle"),
+                            f"https://simon-kucher.csod.com/ux/ats/careersite/6/home/requisition/{rid}?c=simon-kucher",
+                            citta, j.get("postingEffectiveDate") or "", id_src=f"csod-sk:{rid}"))
+    print(f"   → {len(out)} offerte trovate")
+    return out
+
+# ---------- Arthur D. Little (iCIMS, portali Europa occidentale) ----------
+ADL_PORTALI = ["https://experienced-careers-we-adlittle.icims.com", "https://early-careers-we-adlittle.icims.com"]
+
+def _adl_tutte():
+    out, visti = [], set()
+    for base in ADL_PORTALI:
+        for pagina in range(0, 20):
+            r = http_get(f"{base}/jobs/search", params={"ss": 1, "in_iframe": 1, "pr": pagina})
+            if not r:
+                break
+            soup = BeautifulSoup(r.text, "lxml")
+            nuovi = 0
+            for riga in soup.select(".iCIMS_JobsTable .row, li.iCIMS_JobCardItem, .iCIMS_JobsTable tr"):
+                a = riga.select_one("a[href*='/jobs/']")
+                if not a:
+                    continue
+                href = re.sub(r"\?.*$", "", a.get("href", ""))
+                if href in visti:
+                    continue
+                visti.add(href)
+                nuovi += 1
+                titolo = a.get("title") or a.get_text(" ", strip=True)
+                titolo = re.sub(r"^\s*Job Title\s*", "", titolo)
+                testo = riga.get_text(" ", strip=True)
+                m = re.search(r"Job Locations?\s+(.*?)(?:\s+(?:Job ID|ID|Category|Posted|Type)\b|$)", testo)
+                out.append({"titolo": titolo, "url": href, "luogo": m.group(1) if m else testo})
+            if not nuovi:
+                break
+    return out
+
+def scrape_adl(paese):
+    nome = f"Arthur D. Little {paese}"
+    print(f"🔍 {nome} (iCIMS)...")
+    out = [_offerta(nome, j["titolo"], j["url"], _citta_del_paese(paese, j["luogo"]) or "")
+           for j in _una_volta("adl", _adl_tutte) if _nel_paese(paese, j["luogo"])]
+    print(f"   → {len(out)} offerte trovate")
+    return out
+
+# ---------- IBM Consulting (API di ricerca di ibm.com/careers) ----------
+IBM_PAESI = {"Italia": "Italy", "Belgio": "Belgium", "Lussemburgo": "Luxembourg",
+             "Irlanda": "Ireland", "Paesi Bassi": "Netherlands"}
+
+def scrape_ibm(paese):
+    nome = f"IBM Consulting {paese}"
+    print(f"🔍 {nome} (ibm.com/careers)...")
+    out, visti = [], set()
+    for da in range(0, 1000, 100):
+        body = {"appId": "careers", "scopes": ["careers2"], "query": {"bool": {"must": []}},
+                "post_filter": {"bool": {"must": [{"term": {"field_keyword_05": IBM_PAESI[paese]}},
+                                                  {"term": {"field_keyword_08": "Consulting"}}]}},
+                "size": 100, "from": da, "sort": [{"_score": "desc"}, {"pageviews": "desc"}],
+                "lang": "zz", "localeSelector": {}, "sm": {"query": "", "lang": "zz"},
+                "_source": ["_id", "title", "url", "field_keyword_05", "field_keyword_08",
+                            "field_keyword_17", "field_keyword_19"]}
+        d = _json(http_post("https://www-api.ibm.com/search/api/v2", json=body,
+                            headers={"Content-Type": "application/json", "Origin": "https://www.ibm.com",
+                                     "Referer": "https://www.ibm.com/careers/search"}))
+        hits = ((d or {}).get("hits") or {}).get("hits") or []
+        if not hits:
+            break
+        for h in hits:
+            src = h.get("_source") or {}
+            if h.get("_id") in visti:
+                continue
+            visti.add(h.get("_id"))
+            out.append(_offerta(nome, src.get("title"), src.get("url"), src.get("field_keyword_19") or "",
+                                id_src=f"ibm:{h.get('_id')}"))
+        if len(hits) < 100:
+            break
+    print(f"   → {len(out)} offerte trovate")
+    return out
+
+# ---------- Gartner (jobs.gartner.com: pagine dell'elenco) ----------
+def _gartner_tutte():
+    out, visti = [], set()
+    for pagina in range(1, 80):
+        r = http_get("https://jobs.gartner.com/jobs/", params={"page": pagina})
+        if not r:
+            break
+        soup = BeautifulSoup(r.text, "lxml")
+        nuovi = 0
+        for a in soup.select("a[href*='/jobs/job/']"):
+            href = requests.compat.urljoin("https://jobs.gartner.com", a.get("href", ""))
+            if href in visti:
+                continue
+            visti.add(href)
+            nuovi += 1
+            box = a.find_parent(["li", "article", "tr"]) or a.find_parent("div")
+            testo = box.get_text(" | ", strip=True) if box else ""
+            out.append({"titolo": a.get_text(" ", strip=True), "url": href, "luogo": testo})
+        if not nuovi:
+            break
+        time.sleep(0.2)
+    return out
+
+def scrape_gartner(paese):
+    nome = f"Gartner {paese}"
+    print(f"🔍 {nome} (jobs.gartner.com)...")
+    out = [_offerta(nome, j["titolo"], j["url"], _citta_del_paese(paese, j["luogo"].replace("|", ";")))
+           for j in _una_volta("gartner", _gartner_tutte) if _nel_paese(paese, j["luogo"])]
+    print(f"   → {len(out)} offerte trovate")
+    return out
+
+# ============================================================
 # 📧  GENERAZIONE EMAIL HTML
 # ============================================================
 
