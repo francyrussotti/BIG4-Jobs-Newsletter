@@ -44,7 +44,8 @@ for u in ["https://jobs.gartner.com/jobs/?page=41", "https://jobs.gartner.com/jo
     r = requests.get(u, headers=H, timeout=30)
     t = re.sub(r"\s+", " ", re.sub(r"<(script|style)[\s\S]*?</\1>|<[^>]+>", " ", r.text))
     m = re.findall(r"(\d[\d,]*)\s*(?:jobs|results|Jobs|Results)", t)
-    print(f"  {u}: {r.status_code} link {len(set(re.findall(r'/jobs/job/\d+', r.text)))} · conteggi {m[:4]}")
+    n_link = len(set(re.findall(r"/jobs/job/\d+", r.text)))
+    print(f"  {u}: {r.status_code} link {n_link} · conteggi {m[:4]}")
 r = requests.get("https://jobs.gartner.com/jobs/", headers=H, timeout=30)
 print("  form/filtri:", re.findall(r'name="([a-z_\[\]]+)"', r.text)[:30])
 print("  select opzioni paese:", re.findall(r'<option[^>]*value="([^"]*(?:Ireland|Netherlands|Italy|Belgium)[^"]*)"', r.text)[:10])
@@ -56,7 +57,8 @@ for u in ["https://experienced-careers-we-adlittle.icims.com/jobs/search?ss=1", 
     for hdr in [H, {"User-Agent": H["User-Agent"], "Accept": "text/html,application/xhtml+xml", "Accept-Language": "en-US,en;q=0.9"}]:
         try:
             r = requests.get(u, headers=hdr, timeout=30)
-            print(f"  {u} → {r.status_code} ({len(r.text)}) link {len(set(re.findall(r'/jobs/\d+/', r.text)))}")
+            n_link = len(set(re.findall(r"/jobs/\d+/", r.text)))
+            print(f"  {u} → {r.status_code} ({len(r.text)}) link {n_link}")
         except Exception as e:
             print("  ERR", e)
 from playwright.sync_api import sync_playwright
@@ -68,7 +70,8 @@ with sync_playwright() as p:
         try:
             pg.goto(u, wait_until="domcontentloaded", timeout=45000); pg.wait_for_timeout(4000)
             html = pg.content()
-            print(f"  PW {u}: ({len(html)}) link {len(set(re.findall(r'/jobs/\d+/', html)))}")
+            n_link = len(set(re.findall(r"/jobs/\d+/", html)))
+            print(f"  PW {u}: ({len(html)}) link {n_link}")
             i = html.find("/jobs/"); k = html.find("iCIMS_JobsTable")
             print("   tabella:", html[k: k + 1800] if k >= 0 else html[:600])
         except Exception as e:
