@@ -2226,9 +2226,11 @@ def scrape_gartner(paese):
                     continue
                 visti.add(href)
                 nuovi += 1
+                titolo = a.get_text(" ", strip=True)
+                a.extract()                              # il titolo non è una sede
                 testo = card.get_text(" | ", strip=True)
                 luogo = _citta_del_paese(paese, testo.replace("|", ";")) or ("remoto" if "Remote" in valore else "")
-                out.append(_offerta(nome, a.get_text(" ", strip=True), href, luogo))
+                out.append(_offerta(nome, titolo, href, luogo))
             if not nuovi:
                 break
             time.sleep(0.2)

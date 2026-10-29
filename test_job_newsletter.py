@@ -161,14 +161,15 @@ class TestAltreSocieta(unittest.TestCase):
         self.assertEqual(out[0]["data"], "2026-10-20")
 
     def test_gartner(self):
-        pagina = ('<div class="card-job"><a href="/jobs/job/123-analyst/">Research Analyst</a>'
+        pagina = ('<div class="card-job"><a href="/jobs/job/123-analyst/">Analyst Italy</a>'
                   '<span>Milan, Italy</span></div>')
         risposte = [FintaRisposta(testo=pagina), FintaRisposta(testo=pagina), FintaRisposta(testo="")]
         with mock.patch.object(jn, "http_get", side_effect=risposte):
             out = jn.scrape_gartner("Italia")
         self.assertEqual(len(out), 1)                    # la seconda pagina uguale non si duplica
         self.assertEqual(out[0]["url"], "https://jobs.gartner.com/jobs/job/123-analyst/")
-        self.assertEqual(out[0]["titolo"], "Research Analyst")
+        self.assertEqual(out[0]["titolo"], "Analyst Italy")
+        self.assertEqual(out[0]["location"], "Gartner Italia · Milan, Italy")
 
 
 class TestDate(unittest.TestCase):
