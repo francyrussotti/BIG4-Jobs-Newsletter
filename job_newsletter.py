@@ -2345,34 +2345,37 @@ def scrape_ibm(paese):
     print(f"   → {len(out)} offerte trovate")
     return out
 
-# ---------- Gartner (jobs.gartner.com: pagine dell'elenco) ----------
-def _gartner_tutte():
-    out, visti = [], set()
-    for pagina in range(1, 80):
-        r = http_get("https://jobs.gartner.com/jobs/", params={"page": pagina})
-        if not r:
-            break
-        soup = BeautifulSoup(r.text, "lxml")
-        nuovi = 0
-        for a in soup.select("a[href*='/jobs/job/']"):
-            href = requests.compat.urljoin("https://jobs.gartner.com", a.get("href", ""))
-            if href in visti:
-                continue
-            visti.add(href)
-            nuovi += 1
-            box = a.find_parent(["li", "article", "tr"]) or a.find_parent("div")
-            testo = box.get_text(" | ", strip=True) if box else ""
-            out.append({"titolo": a.get_text(" ", strip=True), "url": href, "luogo": testo})
-        if not nuovi:
-            break
-        time.sleep(0.2)
-    return out
+# ---------- Gartner (jobs.gartner.com, filtro per paese del sito) ----------
+GARTNER_PAESI = {"Italia": ["Italy", "Remote - Italy"], "Belgio": ["Belgium", "Remote - Belgium"],
+                 "Irlanda": ["Ireland", "Remote - Ireland"], "Paesi Bassi": ["Netherlands", "Remote - Netherlands"]}
 
 def scrape_gartner(paese):
+    """Il feed RSS non indica la sede e l'elenco senza filtri si ferma a 400
+    offerte: si usa il filtro "country" del sito (anche "Remote - <paese>")."""
     nome = f"Gartner {paese}"
     print(f"🔍 {nome} (jobs.gartner.com)...")
-    out = [_offerta(nome, j["titolo"], j["url"], _citta_del_paese(paese, j["luogo"].replace("|", ";")))
-           for j in _una_volta("gartner", _gartner_tutte) if _nel_paese(paese, j["luogo"])]
+    out, visti = [], set()
+    for valore in GARTNER_PAESI[paese]:
+        for pagina in range(1, 20):
+            r = http_get("https://jobs.gartner.com/jobs/", params={"country": valore, "pagesize": 100, "page": pagina})
+            if not r:
+                break
+            nuovi = 0
+            for card in BeautifulSoup(r.text, "lxml").select("div.card-job"):
+                a = card.select_one("a[href*='/jobs/job/']")
+                if not a:
+                    continue
+                href = requests.compat.urljoin("https://jobs.gartner.com", a.get("href", ""))
+                if href in visti:
+                    continue
+                visti.add(href)
+                nuovi += 1
+                testo = card.get_text(" | ", strip=True)
+                luogo = _citta_del_paese(paese, testo.replace("|", ";")) or ("remoto" if "Remote" in valore else "")
+                out.append(_offerta(nome, a.get_text(" ", strip=True), href, luogo))
+            if not nuovi:
+                break
+            time.sleep(0.2)
     print(f"   → {len(out)} offerte trovate")
     return out
 
