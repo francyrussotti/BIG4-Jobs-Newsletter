@@ -2251,6 +2251,12 @@ def _sk_tutte():
             break
     return out
 
+def _data_usa(testo):
+    """Cornerstone dà le date come mese/giorno/anno ("7/1/2025" = 1 luglio):
+    si convertono in AAAA-MM-GG, altrimenti verrebbero lette come giorno/mese."""
+    m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", (testo or "").strip())
+    return f"{m.group(3)}-{int(m.group(1)):02d}-{int(m.group(2)):02d}" if m else ""
+
 def scrape_simon_kucher(paese):
     nome = f"Simon-Kucher {paese}"
     print(f"🔍 {nome} (Cornerstone)...")
@@ -2263,7 +2269,7 @@ def scrape_simon_kucher(paese):
         rid = j.get("requisitionId")
         out.append(_offerta(nome, j.get("displayJobTitle"),
                             f"https://simon-kucher.csod.com/ux/ats/careersite/6/home/requisition/{rid}?c=simon-kucher",
-                            citta, j.get("postingEffectiveDate") or "", id_src=f"csod-sk:{rid}"))
+                            citta, _data_usa(j.get("postingEffectiveDate")), id_src=f"csod-sk:{rid}"))
     print(f"   → {len(out)} offerte trovate")
     return out
 
