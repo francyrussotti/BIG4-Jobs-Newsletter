@@ -266,7 +266,11 @@ def verifica_conteggi_dichiarati():
 # ----------------------------------------------------------------------------
 
 def main():
-    seen, _ = jn.carica_seen()
+    seen, storico = jn.carica_seen()
+    # Fonti mai passate dalla newsletter: le loro offerte non sono ancora in
+    # seen_jobs.json (verranno registrate alla prima newsletter), non è un problema.
+    gia_note = {f for run in storico if isinstance(run.get("conteggi"), dict)
+                for f, v in run["conteggi"].items() if isinstance(v, int) and v > 0}
     scrapers = jn.elenco_fonti()          # stesso elenco della newsletter
     specifiche = {"EY": verifica_ey, "PwC Belgio": verifica_pwc_belgio,
                   "Deloitte Italia": verifica_deloitte, "KPMG Italia": verifica_kpmg, "Bip": verifica_bip}
@@ -291,7 +295,10 @@ def main():
         titolo(f"{nome}: verifiche")
         offerte = raccolte[nome]
         fuori, vecchie = non_viste(nome, offerte, seen)
-        if vecchie:
+        if vecchie and nome not in gia_note:
+            esito(nome, f"fonte nuova: {len(vecchie)} offerte già aperte verranno registrate "
+                        "alla prima newsletter")
+        elif vecchie:
             esito(nome, f"{len(vecchie)} offerte mai segnalate e più vecchie di {jn.MAX_GIORNI_NUOVA} giorni",
                   grave=len(vecchie) > TOLLERANZA)
         senza_url = sum(1 for o in offerte if not o.get("url"))

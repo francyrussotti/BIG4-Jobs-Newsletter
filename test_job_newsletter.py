@@ -466,6 +466,18 @@ class TestVerificaGiornaliera(ConFileTemporaneo):
         self.assertEqual(codice, 0)
         self.assertIn("Nessun problema", testo)
 
+    def test_offerte_vecchie_di_fonte_nuova_non_sono_un_allarme(self):
+        vecchia = (jn.datetime.now() - jn.timedelta(days=200)).strftime("%Y-%m-%d")
+        offerte = [{"titolo": f"Ruolo {i}", "url": f"https://d/{i}", "data": vecchia} for i in range(20)]
+        # Mai passata dalla newsletter: nessun allarme
+        codice, _ = self.esegui(offerte)
+        self.assertEqual(codice, 0)
+        # Già nota alla newsletter: offerte vecchie mai segnalate → allarme
+        with open(self.seen_file, "w") as f:
+            json.dump({"ids": [], "storico_conteggi": [{"data": "2026-10-01", "conteggi": {"Digital360": 12}}]}, f)
+        codice, _ = self.esegui(offerte)
+        self.assertEqual(codice, 1)
+
 
 class TestMain(ConFileTemporaneo):
     """Flusso completo con scraper finti."""
