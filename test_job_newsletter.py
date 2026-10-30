@@ -103,6 +103,75 @@ class TestHealthCheck(unittest.TestCase):
         self.assertTrue(any(g == "sospetto" for g, _, _ in pb))
 
 
+    def test_zero_su_fonte_nuova_e_solo_sospetto(self):
+        storico = [{"conteggi": {"EY": 50}}] * 3
+        self.assertEqual(jn.health_check({"Gartner Italia": 0}, {}, storico)[0][0], "sospetto")
+        # Dopo una settimana sempre a zero diventa bloccante
+        storico = [{"conteggi": {"EY": 50, "Gartner Italia": 0}}] * 8
+        self.assertEqual(jn.health_check({"Gartner Italia": 0}, {}, storico)[0][0], "bloccante")
+
+
+class TestAltreSocieta(unittest.TestCase):
+    def setUp(self):
+        jn._CACHE_ELENCHI.clear()
+        self.addCleanup(jn._CACHE_ELENCHI.clear)
+        p = mock.patch.object(jn.time, "sleep")
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_nel_paese(self):
+        self.assertTrue(jn._nel_paese("Italia", "Milan, Italy"))
+        self.assertTrue(jn._nel_paese("Belgio", "", ["be"]))
+        self.assertFalse(jn._nel_paese("Irlanda", "Belfast, Northern Ireland"))
+        self.assertTrue(jn._nel_paese("Irlanda", "Dublin"))
+        self.assertFalse(jn._nel_paese("Paesi Bassi", "Paris; Munich"))
+
+    def test_data_usa(self):
+        self.assertEqual(jn._data_usa("7/1/2025"), "2025-07-01")
+        self.assertEqual(jn._data_usa("12/25/2026 10:00"), "2026-12-25")
+        self.assertEqual(jn._data_usa(""), "")
+
+    def test_roland_berger_filtra_il_paese(self):
+        jobs = [{"id": "1", "title": ["Consultant"], "location": ["Milan", "Munich"], "link": "https://rb/1"},
+                {"id": "2", "title": ["Analyst"], "location": ["Paris"], "link": "https://rb/2"}]
+        with mock.patch.object(jn, "_rb_tutte", return_value=(jobs, 2)) as tutte:
+            it = jn.scrape_roland_berger("Italia")
+            nl = jn.scrape_roland_berger("Paesi Bassi")
+        tutte.assert_called_once()                       # scaricato una volta sola
+        self.assertEqual(nl, [])
+        self.assertEqual(len(it), 1)
+        self.assertEqual(it[0]["location"], "Roland Berger Italia · Milan")
+        self.assertEqual(it[0]["_id_src"], "rolandberger:1")
+
+    def test_oliver_wyman_solo_titoli_oliver_wyman(self):
+        jobs = [{"jobId": "R1", "title": "Oliver Wyman - Consultant", "city": "Milan", "postedDate": "2026-10-01T00:00"},
+                {"jobId": "R2", "title": "Mercer - Actuary", "city": "Milan"}]
+        with mock.patch.object(jn, "_phenom_generico", return_value=(jobs, 2)):
+            out = jn.scrape_oliver_wyman("Italia")
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["url"], "https://careers.marsh.com/global/en/job/R1")
+        self.assertEqual(out[0]["data"], "2026-10-01")
+
+    def test_grant_thornton_belgio(self):
+        dati = {"offers": [{"id": 9, "title": "Audit Senior", "careers_url": "https://gt/9",
+                            "city": "Antwerpen", "published_at": "2026-10-20 10:00:00 UTC"}]}
+        with mock.patch.object(jn, "http_get", return_value=FintaRisposta(dati=dati)):
+            out = jn.scrape_grant_thornton_belgio()
+        self.assertEqual(out[0]["location"], "Grant Thornton Belgio · Antwerpen")
+        self.assertEqual(out[0]["data"], "2026-10-20")
+
+    def test_gartner(self):
+        pagina = ('<div class="card-job"><a href="/jobs/job/123-analyst/">Analyst Italy</a>'
+                  '<span>Milan, Italy</span></div>')
+        risposte = [FintaRisposta(testo=pagina), FintaRisposta(testo=pagina), FintaRisposta(testo="")]
+        with mock.patch.object(jn, "http_get", side_effect=risposte):
+            out = jn.scrape_gartner("Italia")
+        self.assertEqual(len(out), 1)                    # la seconda pagina uguale non si duplica
+        self.assertEqual(out[0]["url"], "https://jobs.gartner.com/jobs/job/123-analyst/")
+        self.assertEqual(out[0]["titolo"], "Analyst Italy")
+        self.assertEqual(out[0]["location"], "Gartner Italia · Milan, Italy")
+
+
 class TestDate(unittest.TestCase):
     def test_formati(self):
         self.assertEqual(jn._eta_giorni("oggi"), 0)
@@ -397,6 +466,18 @@ class TestVerificaGiornaliera(ConFileTemporaneo):
         self.assertEqual(codice, 0)
         self.assertIn("Nessun problema", testo)
 
+    def test_offerte_vecchie_di_fonte_nuova_non_sono_un_allarme(self):
+        vecchia = (jn.datetime.now() - jn.timedelta(days=200)).strftime("%Y-%m-%d")
+        offerte = [{"titolo": f"Ruolo {i}", "url": f"https://d/{i}", "data": vecchia} for i in range(20)]
+        # Mai passata dalla newsletter: nessun allarme
+        codice, _ = self.esegui(offerte)
+        self.assertEqual(codice, 0)
+        # Già nota alla newsletter: offerte vecchie mai segnalate → allarme
+        with open(self.seen_file, "w") as f:
+            json.dump({"ids": [], "storico_conteggi": [{"data": "2026-10-01", "conteggi": {"Digital360": 12}}]}, f)
+        codice, _ = self.esegui(offerte)
+        self.assertEqual(codice, 1)
+
 
 class TestMain(ConFileTemporaneo):
     """Flusso completo con scraper finti."""
@@ -405,7 +486,9 @@ class TestMain(ConFileTemporaneo):
             "scrape_pwc_paese", "scrape_deloitte", "scrape_deloitte_irlanda", "scrape_kpmg",
             "scrape_kpmg_belgio", "scrape_accenture", "scrape_nttdata", "scrape_nttdata_paese",
             "scrape_bip", "scrape_digital360", "scrape_capgemini", "scrape_kpmg_lussemburgo",
-            "scrape_deloitte_lussemburgo", "scrape_deloitte_paesi_bassi", "scrape_kpmg_paesi_bassi"]
+            "scrape_deloitte_lussemburgo", "scrape_deloitte_paesi_bassi", "scrape_kpmg_paesi_bassi",
+            "scrape_roland_berger", "scrape_simon_kucher", "scrape_oliver_wyman", "scrape_gartner",
+            "scrape_grant_thornton_belgio", "scrape_grant_thornton_irlanda"]
 
     def esegui(self, stato_invio):
         patches = [mock.patch.object(jn, n, return_value=[
