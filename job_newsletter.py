@@ -77,7 +77,17 @@ RECUPERO_UNA_TANTUM = {
                       "Tournai", "Gosselies"]},
 }
 
+# Fonti intere da recuperare una volta (fonte → ultimo giorno). Ottobre 2026:
+# NTT DATA Irlanda scartava 10 offerte su 16 (link di candidatura sbagliato sul
+# portale); Deloitte e KPMG Lussemburgo ne perdevano fino a 25 e 10 per la
+# paginazione senza ordine. Le offerte ritrovate, anche se più vecchie di
+# MAX_GIORNI_NUOVA, si mostrano una volta; poi il blocco si può cancellare.
+RECUPERO_FONTI = {"NTT DATA Irlanda": "2026-11-07", "Deloitte Lussemburgo": "2026-11-07",
+                  "KPMG Lussemburgo": "2026-11-07"}
+
 def _da_recuperare(fonte, offerta):
+    if fonte in RECUPERO_FONTI and oggi_italia() <= RECUPERO_FONTI[fonte]:
+        return True
     if oggi_italia() > RECUPERO_UNA_TANTUM["fino_al"]:
         return False
     t = (offerta.get("titolo") or "").lower()
@@ -1229,8 +1239,17 @@ def scrape_kpmg_belgio():
 #  il token della sessione del browser) si ripetono dentro Playwright.
 # ============================================================
 
+# NOTA (ottobre 2026): senza ordinamento ("sortBy": "") il sito restituisce le
+# offerte in un ordine diverso a ogni pagina: le pagine si sovrappongono e una
+# parte delle offerte non compare mai (Deloitte 69/79, KPMG 45/55). Con
+# l'ordinamento per data l'elenco è completo e stabile (79/79).
+SF_CSB_ORDINE = "date"
+# Offerte con la stessa data possono ancora scambiarsi di posto tra due pagine:
+# si ripete la raccolta (unendo i risultati) finché non si arriva al totale.
+SF_CSB_GIRI = 3
+
 def _sf_csb_corpo(pagina, categoria, locale):
-    return {"locale": locale, "pageNumber": pagina, "sortBy": "", "keywords": "", "location": "",
+    return {"locale": locale, "pageNumber": pagina, "sortBy": SF_CSB_ORDINE, "keywords": "", "location": "",
             "facetFilters": {}, "brand": "", "skills": [], "categoryId": categoria,
             "alertId": "", "rcmCandidateId": ""}
 
@@ -1246,32 +1265,36 @@ def _sf_csb_requests(host, categoria, locale, pagina_ricerca):
     # NOTA (ottobre 2026): le pagine si sovrappongono (la stessa offerta torna in
     # pagine diverse), quindi si conta per ID e ci si ferma solo dopo pagine
     # che non portano nulla di nuovo.
-    risultati, ids, totale, a_vuoto = [], set(), None, 0
-    for pagina in range(MAX_PAGINE):
-        d = s.post(host + "/services/recruiting/v1/jobs", json=_sf_csb_corpo(pagina, categoria, locale),
-                   headers=h, timeout=30).json()
-        totale = d.get("totalJobs") if totale is None else totale
-        blocco = [x.get("response") or {} for x in d.get("jobSearchResult") or []]
-        if not blocco:
+    risultati, ids, totale = [], set(), None
+    for _giro in range(SF_CSB_GIRI):
+        a_vuoto = 0
+        for pagina in range(MAX_PAGINE):
+            d = s.post(host + "/services/recruiting/v1/jobs", json=_sf_csb_corpo(pagina, categoria, locale),
+                       headers=h, timeout=60).json()
+            totale = d.get("totalJobs") if totale is None else totale
+            blocco = [x.get("response") or {} for x in d.get("jobSearchResult") or []]
+            if not blocco:
+                break
+            nuovi = [j for j in blocco if j.get("id") not in ids]
+            ids.update(j.get("id") for j in nuovi)
+            risultati += nuovi
+            a_vuoto = 0 if nuovi else a_vuoto + 1
+            if (totale and len(ids) >= totale) or a_vuoto >= 3:
+                break
+            time.sleep(0.4)
+        if not risultati or not totale or len(ids) >= totale:
             break
-        nuovi = [j for j in blocco if j.get("id") not in ids]
-        ids.update(j.get("id") for j in nuovi)
-        risultati += nuovi
-        a_vuoto = 0 if nuovi else a_vuoto + 1
-        if (totale and len(ids) >= totale) or a_vuoto >= 3:
-            break
-        time.sleep(0.4)
     return risultati, totale
 
 def _sf_csb_playwright(host, categoria, locale, pagina_ricerca):
     if not PLAYWRIGHT_OK:
         return [], None
-    JS = """async ([categoria, locale]) => {
+    JS = """async ([categoria, locale, ordine]) => {
         let out = [], totale = null, ids = new Set(), aVuoto = 0;
         for (let pagina = 0; pagina < 100; pagina++) {
             const r = await fetch('/services/recruiting/v1/jobs', {method: 'POST',
                 headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-                body: JSON.stringify({locale, pageNumber: pagina, sortBy: '', keywords: '', location: '',
+                body: JSON.stringify({locale, pageNumber: pagina, sortBy: ordine, keywords: '', location: '',
                     facetFilters: {}, brand: '', skills: [], categoryId: categoria, alertId: '', rcmCandidateId: ''})});
             if (!r.ok) break;
             const d = await r.json();
@@ -1291,7 +1314,7 @@ def _sf_csb_playwright(host, categoria, locale, pagina_ricerca):
             browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
             page = browser.new_context(user_agent=HEADERS["User-Agent"], locale="en-GB").new_page()
             page.goto(host + pagina_ricerca, wait_until="networkidle", timeout=60_000)
-            res = page.evaluate(JS, [categoria, locale])
+            res = page.evaluate(JS, [categoria, locale, SF_CSB_ORDINE])
             browser.close()
             return res.get("out") or [], res.get("totale")
     except Exception as e:
@@ -1665,7 +1688,6 @@ def scrape_nttdata():
     # comunque l'elenco di it.nttdata.com.
     gia = {_nttdata_salesforce_id(o["url"]) for o in risultati} - {None}
     phenom, _ = _nttdata_phenom("Italy")
-    phenom = [j for j in phenom if _ntt_link_valido(j)]
     extra = [_nttdata_offerta(j, "Italia") for j in phenom
              if _nttdata_salesforce_id(j.get("applyUrl")) not in gia]
     if extra:
@@ -1735,6 +1757,8 @@ NTT_PAESI = {"Italia": "Italy", "Belgio": "Belgium", "Lussemburgo": "Luxembourg"
 def _nttdata_offerta(j, paese_it):
     link = j.get("applyUrl") or ""
     link = re.sub(r"\?utm_[^#]*$", "", link)        # careers.emeal: toglie ?utm_medium=…
+    if _ntt_link_anteprima(link) or not link:
+        link = _ntt_pagina_phenom(j)
     citta = (j.get("city") or "").strip()
     citta = NTT_CITTA.get(citta.lower(), citta)
     # Offerta multi-sede la cui sede principale è in un altro paese (es. Milano
@@ -1747,16 +1771,23 @@ def _nttdata_offerta(j, paese_it):
             "_id_src":  f"ntt-phenom:{j.get('jobId')}",        # stabile anche se cambia il link
             "data":     (j.get("postedDate") or "")[:10]}
 
-def _ntt_link_valido(j):
-    """Il portale globale contiene a volte offerte di prova con link verso un
-    ambiente di anteprima SAP (es. career8preview.sapsf.com, NTTDTEST2)."""
-    return not re.search(r"preview\.sapsf|[?&]company=\w*test", j.get("applyUrl") or "", re.I)
+def _ntt_link_anteprima(link):
+    """Link di candidatura verso l'ambiente di anteprima SAP (career8preview.sapsf.com,
+    company=NTTDTEST2). NOTA (ottobre 2026): non sono offerte di prova. Sono le
+    offerte vere della consulenza NTT DATA Irlanda (10 su 16, es. "Lead Business
+    Analyst - Lending"), pubblicate sul portale con un link di candidatura
+    sbagliato. La loro pagina pubblica su careers.nttdata.com funziona."""
+    return bool(re.search(r"preview\.sapsf|[?&]company=\w*test", link or "", re.I))
+
+def _ntt_pagina_phenom(j):
+    """Pagina pubblica dell'offerta sul portale globale NTT DATA."""
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", j.get("title") or "").strip("-") or "job"
+    return f"{NTT_PHENOM}/global/en/job/{j.get('jobId')}/{slug}"
 
 def scrape_nttdata_paese(paese):
     """NTT DATA fuori dall'Italia: solo dal portale globale Phenom."""
     print(f"🔍 NTT DATA {paese} (portale globale Phenom)...")
     jobs, totale = _nttdata_phenom(NTT_PAESI[paese])
-    jobs = [j for j in jobs if _ntt_link_valido(j)]
     risultati = [_nttdata_offerta(j, paese) for j in jobs]
     registra_copertura(f"NTT DATA {paese}", len(risultati), totale)
     print(f"   → {len(risultati)} offerte trovate")
