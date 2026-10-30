@@ -192,6 +192,14 @@ class TestRecuperoUnaTantum(unittest.TestCase):
             self.assertFalse(jn._da_recuperare("EY", {"titolo": "FAAS Trieste - Financial Services"}))
 
 
+    def test_fonti_da_recuperare(self):
+        with mock.patch.object(jn, "oggi_italia", return_value="2026-10-31"):
+            self.assertTrue(jn._da_recuperare("NTT DATA Irlanda", {"titolo": "Project Manager"}))
+            self.assertTrue(jn._da_recuperare("Deloitte Lussemburgo", {"titolo": "Audit Senior"}))
+            self.assertFalse(jn._da_recuperare("Deloitte Belgio", {"titolo": "Audit Senior"}))
+        with mock.patch.object(jn, "oggi_italia", return_value="2026-11-08"):   # scaduto
+            self.assertFalse(jn._da_recuperare("KPMG Lussemburgo", {"titolo": "Audit Senior"}))
+
 class TestNttData(unittest.TestCase):
     JOB_EMEAL = {"jobId": "P-1", "title": "SAP Service manager", "city": "Bruselas",
                  "postedDate": "2026-10-20T00:00:00.000+0000",
@@ -279,6 +287,29 @@ class TestPortaliNazionali(unittest.TestCase):
         self.assertEqual(out[0]["url"], "https://careers.kpmg.lu/job/Junior-Auditor/1967-en_GB")
         self.assertIsNotNone(jn._eta_giorni(out[0]["data"]))
 
+    def test_successfactors_ordina_per_data_e_ripete_la_raccolta(self):
+        """Il sito pagina in modo non deterministico: si chiede l'ordine per data
+        e, se mancano offerte rispetto al totale, si ripete la raccolta unendo."""
+        giri = [[["1", "2"], ["2", "3"], []],          # 1° giro: manca "4"
+                [["1", "4"], ["2", "3"], []]]          # 2° giro: arriva "4"
+        corpi, sequenza = [], iter(p for g in giri for p in g)
+
+        class Sessione:
+            headers = {}
+            def get(self, *a, **k):
+                return FintaRisposta(testo="<html></html>")
+            def post(self, url, json=None, **k):
+                corpi.append(json)
+                ids = next(sequenza)
+                return FintaRisposta(dati={"totalJobs": 4,
+                                           "jobSearchResult": [{"response": {"id": i}} for i in ids]})
+
+        with mock.patch.object(jn.requests, "Session", Sessione), mock.patch.object(jn.time, "sleep"):
+            jobs, totale = jn._sf_csb_requests("https://jobs.deloitte.lu", 0, "en_GB", "/search/?q=")
+        self.assertEqual(totale, 4)
+        self.assertEqual(sorted(j["id"] for j in jobs), ["1", "2", "3", "4"])
+        self.assertTrue(all(c["sortBy"] == "date" for c in corpi))
+
     def test_successfactors_nuovo_prova_il_browser(self):
         with mock.patch.object(jn, "_sf_csb_requests", return_value=([], 0)), \
              mock.patch.object(jn, "_sf_csb_playwright", return_value=([{"id": "5", "urlTitle": "X",
@@ -312,9 +343,22 @@ class TestPortaliNazionali(unittest.TestCase):
 
 
 class TestRifiniture(unittest.TestCase):
-    def test_ntt_scarta_le_offerte_di_prova(self):
-        self.assertFalse(jn._ntt_link_valido({"applyUrl": "https://career8preview.sapsf.com/career?company=NTTDTEST2&x=1"}))
-        self.assertTrue(jn._ntt_link_valido({"applyUrl": "https://nttlimited.wd3.myworkdayjobs.com/NTT_Careers/job/X/QA-Test-Engineer_R-1"}))
+    def test_ntt_link_anteprima_diventa_la_pagina_pubblica(self):
+        """Le offerte con link di candidatura all'anteprima SAP sono vere (NTT DATA
+        Irlanda): si tengono, con il link alla pagina pubblica del portale."""
+        j = {"jobId": "390250", "title": "Lead Business Analyst - Lending", "country": "Ireland",
+             "city": "Dublin", "postedDate": "2026-09-15T15:54:42.000+0000",
+             "applyUrl": "https://career8preview.sapsf.com/career?company=NTTDTEST2&career_job_req_id=390250"}
+        wd = {"jobId": "R-1", "title": "QA Test Engineer", "country": "Ireland",
+              "applyUrl": "https://nttlimited.wd3.myworkdayjobs.com/NTT_Careers/job/X/QA-Test-Engineer_R-1/apply"}
+        with mock.patch.object(jn, "_nttdata_phenom", return_value=([j, wd], 2)):
+            out = jn.scrape_nttdata_paese("Irlanda")
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out[0]["url"], "https://careers.nttdata.com/global/en/job/390250/Lead-Business-Analyst-Lending")
+        self.assertEqual(out[0]["location"], "NTT DATA Irlanda · Dublin")
+        self.assertEqual(out[0]["_id_src"], "ntt-phenom:390250")
+        self.assertEqual(out[1]["url"], "https://nttlimited.wd3.myworkdayjobs.com/NTT_Careers/job/X/QA-Test-Engineer_R-1")
+        self.assertEqual(jn.COPERTURA["NTT DATA Irlanda"], (2, 2))
 
     def test_ey_titoli_confrontabili(self):
         self.assertEqual(jn._titolo_norm("Senior Consultant Technology Risk - Milano"),
