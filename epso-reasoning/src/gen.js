@@ -26,7 +26,7 @@ function buildVerbalItem(src){
   if(src.origin==='orig'){
     const p=src.p;
     const opts=p.o.map((o,i)=>({kind:o[0],trap:o[1],text:o[2],why:o[3],key:i===0}));
-    return finishVerbal(p.id,p.topic,p.text,p.q,opts,null);
+    return finishVerbal(p.id,p.topic,p.text,p.q,opts,null,p.stem,p.title);
   }
   // EUR-Lex passage: build a 4-option item from its true / false / cannot-say statements
   const p=src.p, T=p.st.filter(s=>s.k==='true'), F=p.st.filter(s=>s.k==='false'), C=p.st.filter(s=>s.k==='cannot');
@@ -40,11 +40,12 @@ function buildVerbalItem(src){
   return finishVerbal(p.id,p.topic,p.text,q,opts,{url:p.url,recital:p.recital,act:p.topic});
 }
 
-function finishVerbal(id,topic,text,q,opts,source){
+const Q_CORRECT_ALT=['Which of the following statements is correct?','Which of the following statements can be deduced from the text?','Which of the following statements is supported by the passage?'];
+function finishVerbal(id,topic,text,q,opts,source,stem,title){
   const sh=R.shuffle(opts);
   const key=sh.findIndex(o=>o.key);
-  return {sec:'verbal',id,topic,text,q,options:sh,key,source,
-    question:q==='c'?Q_CORRECT:Q_INCORRECT};
+  return {sec:'verbal',id,topic,title:title||null,text,q,options:sh,key,source,
+    question:stem||(q==='c'?R.pick(Q_CORRECT_ALT):Q_INCORRECT)};
 }
 
 // trap label for a wrong verbal choice

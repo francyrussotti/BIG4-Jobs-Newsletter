@@ -212,7 +212,7 @@ function resultLines(rec){
 function renderIntro(){
   const P=S.parts[S.pi], c=SEC[P.sec];
   const tips={
-    verbal:['Leggi prima la domanda: cerca l\'affermazione <b>correct</b> o <b>incorrect</b>?','Poi le 4 opzioni, poi il brano cercando solo ciò che serve.','Vale solo ciò che il testo dice o implica: niente conoscenze esterne.','Attento a some/most/all, may/will, "dopo" vs "a causa di".'],
+    verbal:['Leggi prima la domanda: cerca l\'affermazione <b>correct</b> o <b>incorrect</b>? Alcune domande vanno completate ("According to the passage, …", "Why…?"): vale la stessa regola, conta solo il testo.','Poi le 4 opzioni, poi il brano cercando solo ciò che serve.','Vale solo ciò che il testo dice o implica: niente conoscenze esterne.','Attento a some/most/all, may/will, "dopo" vs "a causa di".'],
     numerical:['Leggi la domanda prima della tabella: individua righe, colonne e unità.','Stima prima di calcolare: spesso le opzioni sono abbastanza distanti.','Usa la calcolatrice a schermo (pulsante in alto), come all\'esame.','Percentuali: la base è il valore di partenza. Punti percentuali ≠ %.'],
     abstract:['Isola un elemento alla volta: forma, riempimento, lancetta, punti, quadratino.','Controlla il passo tra ogni coppia di figure, non solo tra la prima e l\'ultima.','Elimina le opzioni che violano anche una sola regola.','Un minuto a domanda: se dopo 60 secondi non vedi la regola, segna e passa oltre.']
   }[P.sec];
@@ -229,7 +229,7 @@ function renderIntro(){
 }
 
 function renderStim(it){
-  if(it.sec==='verbal') return `<article class="panel passage-panel"><div class="eyebrow">Text</div><p class="passage">${esc(it.text)}</p>${it.source?`<p class="src">Source: ${esc(it.source.act)}, recital ${it.source.recital}. © European Union, EUR-Lex.</p>`:''}</article>`;
+  if(it.sec==='verbal') return `<article class="panel passage-panel"><div class="eyebrow">Text</div>${it.title?`<h3 class="ptitle">${esc(it.title)}</h3>`:''}<p class="passage">${esc(it.text)}</p>${it.source?`<p class="src">Source: ${esc(it.source.act)}, recital ${it.source.recital}. © European Union, EUR-Lex.</p>`:''}</article>`;
   if(it.sec==='numerical') return `<article class="panel stim">${it.stim}</article>`;
   return `<article class="panel stim"><div class="eyebrow">Which figure comes next in the series?</div><div class="series">${it.series.map((f,i)=>frameSVG(f,'figura '+(i+1))).join('')}<div class="qmark">?</div></div></article>`;
 }
@@ -458,7 +458,7 @@ function renderSheet(){
 
 function footer(){ return `<footer class="foot">
   <p>Formato e soglie dal bando EPSO/AD/427/26: verbale 20 domande in 35 minuti (soglia 10/20); numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Numerico e astratto sono generati al momento con dati fittizi. Il punteggio qui non predice il risultato reale.</p>
-  <p>Verbale: 30 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO.</p>
+  <p>Verbale: 42 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO.</p>
 </footer>`; }
 
 document.addEventListener('keydown',e=>{
