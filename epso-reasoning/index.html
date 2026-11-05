@@ -157,6 +157,12 @@ table.sheet td,table.sheet th{padding:5px 8px;border-bottom:1px solid var(--line
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:6px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:20;max-width:90vw}
 #toast.show{opacity:1}
 .ptitle{font-family:var(--f-read);font-size:1.1rem;margin-top:6px}
+.chip{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:6px 14px;text-decoration:none;background:var(--panel)}
+.mblock{border-top:1px solid var(--line);padding-top:12px}
+.dl{display:grid;grid-template-columns:minmax(9rem,max-content) minmax(0,1fr);gap:8px 16px;margin:0}
+.dl dt{font-weight:600}
+.dl dd{margin:0}
+@media (max-width:560px){.dl{grid-template-columns:1fr}.dl dd{margin-bottom:6px}}
 .checks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .chk{flex-direction:row;align-items:flex-start;gap:10px;color:var(--fg);font-size:.95rem}
 .chk input{margin-top:4px;width:18px;height:18px;flex:none}
@@ -516,11 +522,11 @@ const fmtPct=(x,dp=1)=>(x>0?'+':'')+nf(x,dp)+'%';
 // Build 5 numeric options: key + listed slips + plausible fillers. Sorted ascending like a real paper.
 function numOptions(v,slips,fmt,valFilter){
   const seen=new Set(), list=[];
-  const add=(x,why)=>{ if(!isFinite(x)) return false; if(valFilter&&!valFilter(x)) return false; const s=fmt(x); if(seen.has(s)) return false; seen.add(s); list.push({v:x,label:s,why}); return true; };
+  const add=(x,why)=>{ if(!isFinite(x)) return false; if(valFilter&&!valFilter(x)) return false; if(why!==null&&list.some(o=>Math.abs(o.v-x)<Math.max(Math.abs(o.v),Math.abs(x))*0.02)) return false; const s=fmt(x); if(seen.has(s)) return false; seen.add(s); list.push({v:x,label:s,why}); return true; };
   if(!add(v,null)) return null;
   slips.forEach(([x,why])=>{ if(list.length<5) add(x,why); });
   let guard=0;
-  while(list.length<5&&guard++<200){ const k=(0.06+Math.random()*0.28)*(R.chance(.5)?1:-1); add(v*(1+k),'valore vicino'); }
+  while(list.length<5&&guard++<200){ const k=(0.10+Math.random()*0.28)*(R.chance(.5)?1:-1); add(v*(1+k),'valore vicino'); }
   list.sort((a,b)=>a.v-b.v);
   return {options:list.map(o=>({label:o.label,why:o.why})),key:list.findIndex(o=>o.why===null)};
 }
@@ -569,7 +575,7 @@ const NUM_T={
 pct:{label:'Variazione percentuale',make(){
   const m=R.pick(METRICS), rows=R.sample(COUNTRIES,5), y0=R.int(2019,2022), Y=[y0,y0+1,y0+2];
   const data=rows.map(()=>series3(m.lo,m.hi)); const r=R.int(0,4), A=data[r][0], B=data[r][2], M=data[r][1];
-  const v=(B-A)/A*100; if(Math.abs(v)<1) return NUM_T.pct.make();
+  const v=(B-A)/A*100; if(Math.abs(v)<3) return NUM_T.pct.make();
   const o=numOptions(v,[[(B-A)/B*100,'base sbagliata (diviso per il valore finale)'],[(M-A)/A*100,'anno sbagliato'],[-v,'segno invertito']],x=>fmtPct(x));
   return {stim:tableHTML(`${m.n} (${m.u})`,['Country',...Y.map(String)],rows.map((c,i)=>[c,...data[i].map(x=>nf(x))]),FICT),
     question:`By approximately what percentage did ${m.n.toLowerCase()} in ${rows[r]} change between ${Y[0]} and ${Y[2]}?`,...o,
@@ -597,7 +603,7 @@ maxratio:{label:'Rapporto massimo (gruppo)',make(){
   for(let t=0;t<80;t++){
     const rows=R.sample(COUNTRIES,5), staff=rows.map(()=>R.int(120,980)), cases=staff.map(s=>Math.round(s*R.int(30,95)/10));
     const ratio=cases.map((c,i)=>c/staff[i]); const k=ratio.indexOf(Math.max(...ratio)), ka=cases.indexOf(Math.max(...cases)), ks=staff.indexOf(Math.min(...staff));
-    if(k===ka) continue;
+    if(k===ka) continue; const rs=ratio.slice().sort((x,y)=>y-x); if(rs[0]<rs[1]*1.04) continue;
     const tm={}; tm[rows[ka]]='valore assoluto più alto, non per addetto'; if(ks!==k&&ks!==ka) tm[rows[ks]]='meno personale, non più casi per addetto';
     return {stim:tableHTML('Customs offices: staff and cases handled, 2024',['Country','Staff','Cases handled'],rows.map((c,i)=>[c,nf(staff[i]),nf(cases[i])]),FICT),
       question:'Which country handled the highest number of cases per member of staff?',...nameOptions(rows,rows[k],tm),
@@ -608,7 +614,7 @@ maxgrowth:{label:'Crescita relativa massima (gruppo)',make(){
   for(let t=0;t<80;t++){
     const m=R.pick(METRICS), rows=R.sample(COUNTRIES,5), a=rows.map(()=>R.int(m.lo,m.hi)), b=a.map(x=>Math.round(x*(1+R.int(-40,260)/1000)));
     const rel=b.map((x,i)=>(x-a[i])/a[i]), abs=b.map((x,i)=>x-a[i]); const k=rel.indexOf(Math.max(...rel)), ka=abs.indexOf(Math.max(...abs));
-    if(k===ka) continue;
+    if(k===ka) continue; const rr=rel.slice().sort((x,y)=>y-x); if(rr[0]-rr[1]<0.02) continue;
     const tm={}; tm[rows[ka]]='aumento assoluto più alto, non percentuale';
     return {stim:tableHTML(`${m.n} (${m.u})`,['Country','2023','2024'],rows.map((c,i)=>[c,nf(a[i]),nf(b[i])]),FICT),
       question:`Which country recorded the largest percentage increase in ${m.n.toLowerCase()} between 2023 and 2024?`,...nameOptions(rows,rows[k],tm),
@@ -758,6 +764,76 @@ function frameSVG(f,label){
   if(f.cnt){const n=f.cnt, w=(n-1)*9; for(let i=0;i<n;i++) s+=`<circle cx="${(50-w/2+i*9).toFixed(1)}" cy="78" r="3.2" fill="#111"/>`;}
   if(f.pos!==null&&f.pos!==undefined){const [x,y]=MARK[f.pos]; s+=`<rect x="${x}" y="${y}" width="7" height="7" fill="#111"/>`;}
   return `<svg class="fig" viewBox="0 0 100 100" role="img" aria-label="${esc(label||'figura')}"><rect x="0.5" y="0.5" width="99" height="99" fill="#fff" stroke="#8a929c"/>${s}</svg>`;
+}
+
+// ---------- method guide (original text) ----------
+const METHOD=[
+{sec:'verbal',title:'Ragionamento verbale',spec:'20 domande · 35 minuti · circa 1:45 a domanda · soglia 10/20',blocks:[
+ {h:'Com\'è fatta una domanda',p:['Un brano di 100-200 parole su qualsiasi argomento: politiche UE, economia, scienza, storia, cultura.','Una domanda, di solito "Which of the following statements is correct?". A volte è "incorrect", oppure una domanda mirata da completare ("According to the passage, …").','Quattro opzioni, una sola giusta. Nessuna penalità per le risposte sbagliate: rispondi sempre.']},
+ {h:'I tre tipi di affermazione',list:[
+   ['Vera','il testo la dice o la implica in modo diretto, anche combinando due frasi diverse.'],
+   ['Falsa','il testo la smentisce, anche solo in una parte. Una frase vera per tre quarti e sbagliata in un dettaglio è falsa.'],
+   ['Non deducibile','il testo non basta né per confermarla né per smentirla. È la trappola principale: spesso suona logica o è vera nella realtà, ma qui non conta.']],
+  p:['Nelle domande "correct" la risposta è l\'unica Vera; le altre sono False o Non deducibili.','Nelle domande "incorrect" la risposta è l\'unica Falsa: una Non deducibile non è falsa, quindi non va scelta.']},
+ {h:'Metodo in cinque passi',ol:['Leggi la domanda: cerchi la correct o la incorrect?','Leggi le quattro opzioni e fissa le parole chiave: numeri, nomi, quantificatori, verbi.','Leggi il brano cercando solo quei punti.','Elimina le opzioni una per una, dicendoti perché ciascuna è falsa o non deducibile.','Se trovi la risposta con certezza prima di finire, scegli e passa oltre: il tempo risparmiato serve dopo.']},
+ {h:'Le trappole, con esempi',list:[
+   ['Conoscenza esterna','Testo: "the agency\'s budget increased in 2024". Opzione: "the agency is funded by the EU budget". Forse è vero, ma il testo non lo dice: non deducibile.'],
+   ['Assunzione','Testo: "some fertilisers raise the yield of certain cereals". Opzione: "nitrogen fertiliser raises wheat yields". Né l\'azoto né il grano sono citati: servono due assunzioni.'],
+   ['Quasi uguale non è uguale','"Rarely changed" non è "never changed"; "largely" non è "entirely".'],
+   ['Omissione','Un\'opzione che dice meno del testo non è sbagliata. Testo: "the new tram line cut journey times and attracted 30% more passengers". Opzione: "the new line attracted more passengers": vera.'],
+   ['Generalizzazione','Testo: "several Nordic cities have closed their centres to cars". Opzione: "Nordic cities close their centres to cars": va oltre il testo.'],
+   ['Sovra-specificazione','Testo: "enrolment fell in rural schools". Opzione: "enrolment fell in rural schools because families moved to cities": la causa è aggiunta.'],
+   ['Quantificatori','some ≠ many ≠ most ≠ all; "only" e "the only" restringono. "A majority of those who voted" non è "most residents".'],
+   ['Frequenza e tempo','often ≠ always; until, since, before, after cambiano il senso. "The port handled most of the region\'s freight until the new terminal opened" non dice che lo faccia oggi.'],
+   ['Verbi modali','may, could, might indicano possibilità; should una raccomandazione; will una previsione. "Could reduce" non è "reduces".'],
+   ['Causa o successione','"After the reform, exports rose" non dice che la riforma abbia causato l\'aumento. Cerca connettivi come because, led to, as a result.'],
+   ['Dettagli scambiati','Cifre, soggetti o periodi presi dal testo ma rimescolati. Testo: "sales rose 12% in France and 4% in Spain". Opzione: "sales rose 12% in Spain". Ricontrolla ogni numero e a chi si riferisce.']]},
+ {h:'Gestione del tempo',p:['Budget medio 1:45 a domanda. Se dopo 2:30 sei ancora indeciso, scegli la migliore, segna la domanda e passa oltre.','Alla fine torna sulle domande segnate. Non lasciare risposte vuote.']}
+]},
+{sec:'numerical',title:'Ragionamento numerico',spec:'10 domande · 20 minuti · circa 2:00 a domanda · soglia 10/20 insieme all\'astratto',blocks:[
+ {h:'Com\'è fatta una domanda',p:['Una tabella o un grafico (a barre, a torta, a linee) con dati su paesi, anni, settori.','Una domanda che chiede un valore ("approximately how much…") o un elemento ("which country…").','Cinque opzioni. Di solito c\'è una calcolatrice a schermo: verifica nelle istruzioni TAO.']},
+ {h:'Metodo',ol:['Leggi la domanda prima dei dati: quale riga, quale colonna, quale anno, quale unità.','Scrivi l\'operazione prima di fare i conti.','Stima l\'ordine di grandezza: spesso basta per scartare due o tre opzioni.','Calcola con la calcolatrice solo ciò che serve.','Controlla le unità della risposta: €, %, punti percentuali, migliaia, milioni.']},
+ {h:'Formule che servono quasi sempre',list:[
+   ['Variazione %','(nuovo − vecchio) ÷ vecchio × 100. La base è sempre il valore di partenza.'],
+   ['Punti percentuali','Da 6,0% a 7,5% sono +1,5 punti percentuali, cioè +25%. Leggi bene cosa chiede la domanda.'],
+   ['Percentuale inversa','Valore finale ÷ (1 + p). Con 1.150 dopo un +15%: 1.150 ÷ 1,15 = 1.000, non 1.150 − 15%.'],
+   ['Crescita composta','Valore × (1 + g)ⁿ. Due anni al 10% sono +21%, non +20%.'],
+   ['Quota sul totale','Parte ÷ totale × 100. Controlla che il totale sia quello dello stesso anno.'],
+   ['Media ponderata','Somma di (dimensione × tasso) ÷ dimensione totale. La media semplice è sbagliata se i gruppi sono diversi.'],
+   ['Pro capite','Miliardi ÷ milioni = migliaia. €45 miliardi ÷ 1,5 milioni di abitanti = €30.000.'],
+   ['Valute','Con il tasso "unità per €1": prezzo locale ÷ tasso = prezzo in €. Converti prima, poi confronta.'],
+   ['"Superiore del x%"','Si calcola sul valore più piccolo: 120 è superiore a 80 del 50%, mentre 80 è inferiore a 120 del 33%.']]},
+ {h:'Trappole tipiche',p:['Base sbagliata nella percentuale, anno o riga sbagliati, unità ignorate, aumento assoluto scambiato per aumento percentuale, media semplice al posto di quella ponderata.']}
+]},
+{sec:'abstract',title:'Ragionamento astratto',spec:'10 domande · 10 minuti · circa 1:00 a domanda · soglia 10/20 insieme al numerico',blocks:[
+ {h:'Com\'è fatta una domanda',p:['Una serie di cinque figure da sinistra a destra. Scegli tra cinque opzioni quella che viene dopo.','Ogni figura combina più elementi; di solito due o tre cambiano secondo una regola, gli altri restano fissi.']},
+ {h:'Cosa controllare, un elemento alla volta',list:[
+   ['Forma','cambia secondo un ciclo (cerchio → quadrato → triangolo…)?'],
+   ['Riempimento','bianco, nero, grigio, tratteggiato: alterna o segue un ciclo?'],
+   ['Rotazione','di quanti gradi gira ogni volta, e in che verso?'],
+   ['Numero','punti, lati o linee aumentano o diminuiscono? Di quanto? Con schemi tipo +2, −1?'],
+   ['Posizione','un elemento si sposta lungo il bordo o in una griglia? Di quante caselle, in che verso?'],
+   ['Dimensione e colore','cresce, si riduce, alterna?']]},
+ {h:'Metodo',ol:['Scegli un elemento e confronta ogni coppia di figure vicine, non solo la prima con l\'ultima.','Trovata la regola, scarta subito le opzioni che la violano.','Passa all\'elemento successivo con le opzioni rimaste.','Di solito restano una o due opzioni dopo due regole. Se dopo un minuto non vedi la regola, scegli la più probabile, segna e passa oltre.']}
+]}
+];
+function renderMethod(focus){
+  app().innerHTML=header('Metodo','Come sono fatte le tre prove, come affrontarle e le trappole più frequenti.')+`
+  <main class="wrap stack narrow">
+    <nav class="row wrap-gap">${METHOD.map(m=>`<a class="chip" href="#m-${m.sec}">${m.title}</a>`).join('')}</nav>
+    ${METHOD.map(m=>`<section class="panel stack" id="m-${m.sec}"><div class="eyebrow">${esc(m.spec)}</div><h2>${esc(m.title)}</h2>
+      ${m.blocks.map(b=>`<div class="stack mblock"><h3>${esc(b.h)}</h3>
+        ${b.list?`<dl class="dl">${b.list.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`:''}
+        ${b.p?b.p.map(x=>`<p>${esc(x)}</p>`).join(''):''}
+        ${b.ol?`<ol class="plan">${b.ol.map(x=>`<li>${esc(x)}</li>`).join('')}</ol>`:''}</div>`).join('')}
+      <div class="row"><button class="primary" data-msingle="${m.sec}">Prova a tempo</button><button data-mpractice="${m.sec}">Pratica</button></div>
+    </section>`).join('')}
+    ${footer()}
+  </main>`;
+  bindNav();
+  document.querySelectorAll('[data-msingle]').forEach(b=>b.onclick=()=>startSession('single',{sec:b.dataset.msingle}));
+  document.querySelectorAll('[data-mpractice]').forEach(b=>b.onclick=()=>startSession('practice',{sec:b.dataset.mpractice,n:10}));
+  if(focus){const el=document.getElementById('m-'+focus); if(el) el.scrollIntoView();}
 }
 
 // ---------- configuration from the notice EPSO/AD/427/26 ----------
@@ -919,8 +995,8 @@ function bindPlan(){
 }
 
 // ---------- rendering ----------
-function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button></nav></div></header>`; }
-function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; ({home:renderHome,stats:renderStats,sheet:renderSheetSetup})[b.dataset.nav](); }); }
+function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="method">Metodo</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button></nav></div></header>`; }
+function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; ({home:renderHome,stats:renderStats,sheet:renderSheetSetup,method:renderMethod})[b.dataset.nav](); }); }
 let leaveArmed=false;
 function confirmLeave(){ if(leaveArmed){leaveArmed=false;return true} leaveArmed=true; toast('Prova in corso: premi di nuovo per uscire senza salvare.'); setTimeout(()=>leaveArmed=false,4000); return false; }
 function toast(t){ let el=$('#toast'); if(!el){el=document.createElement('div');el.id='toast';document.body.appendChild(el)} el.textContent=t; el.className='show'; clearTimeout(el._t); el._t=setTimeout(()=>el.className='',3500); }
@@ -949,6 +1025,7 @@ function renderHome(msg){
     <section class="row wrap-gap">
       <button id="go-review" ${vw?'':'disabled'}>Ripassa errori verbali (${vw})</button>
       <button id="go-drill">Pratica breve: 5 per prova</button>
+      <button id="go-method">Leggi il metodo (prima volta: 15 minuti)</button>
     </section>
     <section class="panel stack"><h2>Ultima simulazione completa</h2>${last?resultLines(last):'<p class="muted">Ancora nessuna. La prova generale del piano è mercoledì 11 alle 11:00.</p>'}</section>
     ${footer()}
@@ -959,6 +1036,7 @@ function renderHome(msg){
   document.querySelectorAll('[data-practice]').forEach(b=>b.onclick=()=>startSession('practice',{sec:b.dataset.practice,n:b.dataset.practice==='verbal'?10:10}));
   const rv=$('#go-review'); if(rv) rv.onclick=()=>startSession('review',{sec:'verbal',n:20});
   $('#go-drill').onclick=()=>{ S=null; startDrill(); };
+  $('#go-method').onclick=()=>renderMethod();
   bindPlan();
 }
 function startDrill(){
@@ -984,10 +1062,10 @@ function renderIntro(){
       <div class="row spread"><h2>${c.name}</h2><span class="mono big2">${P.items.length} dom.${P.timed?' · '+fmtT(P.seconds):''}</span></div>
       <ul class="tips">${tips.map(t=>`<li>${t}</li>`).join('')}</ul>
       ${P.timed?'<p class="muted small">Puoi muoverti avanti e indietro e segnare le domande. Allo scadere la prova si chiude da sola. Nessuna penalità per le risposte sbagliate: rispondi sempre.</p>':'<p class="muted small">Dopo ogni risposta vedi subito la soluzione.</p>'}
-      <div class="row"><button class="primary" id="begin">Inizia</button></div>
+      <div class="row"><button class="primary" id="begin">Inizia</button><button class="ghost" id="howto">Rileggi il metodo</button></div>
     </div>
   </main>`;
-  bindNav(); $('#begin').onclick=beginPart;
+  bindNav(); $('#begin').onclick=beginPart; $('#howto').onclick=()=>{ const sec=P.sec; S=null; renderMethod(sec); };
 }
 
 function renderStim(it){

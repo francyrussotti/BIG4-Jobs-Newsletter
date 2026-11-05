@@ -23,6 +23,7 @@ Lo storico (punteggi, tempi, errori) resta nel browser in cui fai i test. Per sp
 - **Numerico:** 12 tipi di domanda generati al momento con dati fittizi (variazioni %, quote, pro capite, valute, percentuale inversa, crescita composta, punti percentuali, grafici a barre e a torta, medie ponderate), 5 opzioni, calcolatrice a schermo.
 - **Astratto:** serie di 5 figure generate al momento con 2-3 regole (rotazione, conteggio, posizione, riempimento, forma), 5 opzioni.
 - **Analisi:** tempo per domanda rispetto al budget, trappole verbali, tipi di calcolo sbagliati, regole astratte mancate, causa dell'errore indicata da te, export CSV.
+- **Metodo:** guida alle tre prove (tipi di affermazione, trappole verbali con esempi, formule del numerico, checklist dell'astratto, gestione del tempo).
 - **Piano di preparazione** 4-13 novembre con le attività del giorno.
 - **Foglio risposte** cronometrato per esercitarsi sul manuale (il programma non contiene domande del manuale).
 

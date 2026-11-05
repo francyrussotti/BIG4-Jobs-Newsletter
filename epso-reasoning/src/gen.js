@@ -78,11 +78,11 @@ const fmtPct=(x,dp=1)=>(x>0?'+':'')+nf(x,dp)+'%';
 // Build 5 numeric options: key + listed slips + plausible fillers. Sorted ascending like a real paper.
 function numOptions(v,slips,fmt,valFilter){
   const seen=new Set(), list=[];
-  const add=(x,why)=>{ if(!isFinite(x)) return false; if(valFilter&&!valFilter(x)) return false; const s=fmt(x); if(seen.has(s)) return false; seen.add(s); list.push({v:x,label:s,why}); return true; };
+  const add=(x,why)=>{ if(!isFinite(x)) return false; if(valFilter&&!valFilter(x)) return false; if(why!==null&&list.some(o=>Math.abs(o.v-x)<Math.max(Math.abs(o.v),Math.abs(x))*0.02)) return false; const s=fmt(x); if(seen.has(s)) return false; seen.add(s); list.push({v:x,label:s,why}); return true; };
   if(!add(v,null)) return null;
   slips.forEach(([x,why])=>{ if(list.length<5) add(x,why); });
   let guard=0;
-  while(list.length<5&&guard++<200){ const k=(0.06+Math.random()*0.28)*(R.chance(.5)?1:-1); add(v*(1+k),'valore vicino'); }
+  while(list.length<5&&guard++<200){ const k=(0.10+Math.random()*0.28)*(R.chance(.5)?1:-1); add(v*(1+k),'valore vicino'); }
   list.sort((a,b)=>a.v-b.v);
   return {options:list.map(o=>({label:o.label,why:o.why})),key:list.findIndex(o=>o.why===null)};
 }
@@ -131,7 +131,7 @@ const NUM_T={
 pct:{label:'Variazione percentuale',make(){
   const m=R.pick(METRICS), rows=R.sample(COUNTRIES,5), y0=R.int(2019,2022), Y=[y0,y0+1,y0+2];
   const data=rows.map(()=>series3(m.lo,m.hi)); const r=R.int(0,4), A=data[r][0], B=data[r][2], M=data[r][1];
-  const v=(B-A)/A*100; if(Math.abs(v)<1) return NUM_T.pct.make();
+  const v=(B-A)/A*100; if(Math.abs(v)<3) return NUM_T.pct.make();
   const o=numOptions(v,[[(B-A)/B*100,'base sbagliata (diviso per il valore finale)'],[(M-A)/A*100,'anno sbagliato'],[-v,'segno invertito']],x=>fmtPct(x));
   return {stim:tableHTML(`${m.n} (${m.u})`,['Country',...Y.map(String)],rows.map((c,i)=>[c,...data[i].map(x=>nf(x))]),FICT),
     question:`By approximately what percentage did ${m.n.toLowerCase()} in ${rows[r]} change between ${Y[0]} and ${Y[2]}?`,...o,
@@ -159,7 +159,7 @@ maxratio:{label:'Rapporto massimo (gruppo)',make(){
   for(let t=0;t<80;t++){
     const rows=R.sample(COUNTRIES,5), staff=rows.map(()=>R.int(120,980)), cases=staff.map(s=>Math.round(s*R.int(30,95)/10));
     const ratio=cases.map((c,i)=>c/staff[i]); const k=ratio.indexOf(Math.max(...ratio)), ka=cases.indexOf(Math.max(...cases)), ks=staff.indexOf(Math.min(...staff));
-    if(k===ka) continue;
+    if(k===ka) continue; const rs=ratio.slice().sort((x,y)=>y-x); if(rs[0]<rs[1]*1.04) continue;
     const tm={}; tm[rows[ka]]='valore assoluto più alto, non per addetto'; if(ks!==k&&ks!==ka) tm[rows[ks]]='meno personale, non più casi per addetto';
     return {stim:tableHTML('Customs offices: staff and cases handled, 2024',['Country','Staff','Cases handled'],rows.map((c,i)=>[c,nf(staff[i]),nf(cases[i])]),FICT),
       question:'Which country handled the highest number of cases per member of staff?',...nameOptions(rows,rows[k],tm),
@@ -170,7 +170,7 @@ maxgrowth:{label:'Crescita relativa massima (gruppo)',make(){
   for(let t=0;t<80;t++){
     const m=R.pick(METRICS), rows=R.sample(COUNTRIES,5), a=rows.map(()=>R.int(m.lo,m.hi)), b=a.map(x=>Math.round(x*(1+R.int(-40,260)/1000)));
     const rel=b.map((x,i)=>(x-a[i])/a[i]), abs=b.map((x,i)=>x-a[i]); const k=rel.indexOf(Math.max(...rel)), ka=abs.indexOf(Math.max(...abs));
-    if(k===ka) continue;
+    if(k===ka) continue; const rr=rel.slice().sort((x,y)=>y-x); if(rr[0]-rr[1]<0.02) continue;
     const tm={}; tm[rows[ka]]='aumento assoluto più alto, non percentuale';
     return {stim:tableHTML(`${m.n} (${m.u})`,['Country','2023','2024'],rows.map((c,i)=>[c,nf(a[i]),nf(b[i])]),FICT),
       question:`Which country recorded the largest percentage increase in ${m.n.toLowerCase()} between 2023 and 2024?`,...nameOptions(rows,rows[k],tm),

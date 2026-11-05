@@ -157,8 +157,8 @@ function bindPlan(){
 }
 
 // ---------- rendering ----------
-function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button></nav></div></header>`; }
-function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; ({home:renderHome,stats:renderStats,sheet:renderSheetSetup})[b.dataset.nav](); }); }
+function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="method">Metodo</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button></nav></div></header>`; }
+function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; ({home:renderHome,stats:renderStats,sheet:renderSheetSetup,method:renderMethod})[b.dataset.nav](); }); }
 let leaveArmed=false;
 function confirmLeave(){ if(leaveArmed){leaveArmed=false;return true} leaveArmed=true; toast('Prova in corso: premi di nuovo per uscire senza salvare.'); setTimeout(()=>leaveArmed=false,4000); return false; }
 function toast(t){ let el=$('#toast'); if(!el){el=document.createElement('div');el.id='toast';document.body.appendChild(el)} el.textContent=t; el.className='show'; clearTimeout(el._t); el._t=setTimeout(()=>el.className='',3500); }
@@ -187,6 +187,7 @@ function renderHome(msg){
     <section class="row wrap-gap">
       <button id="go-review" ${vw?'':'disabled'}>Ripassa errori verbali (${vw})</button>
       <button id="go-drill">Pratica breve: 5 per prova</button>
+      <button id="go-method">Leggi il metodo (prima volta: 15 minuti)</button>
     </section>
     <section class="panel stack"><h2>Ultima simulazione completa</h2>${last?resultLines(last):'<p class="muted">Ancora nessuna. La prova generale del piano è mercoledì 11 alle 11:00.</p>'}</section>
     ${footer()}
@@ -197,6 +198,7 @@ function renderHome(msg){
   document.querySelectorAll('[data-practice]').forEach(b=>b.onclick=()=>startSession('practice',{sec:b.dataset.practice,n:b.dataset.practice==='verbal'?10:10}));
   const rv=$('#go-review'); if(rv) rv.onclick=()=>startSession('review',{sec:'verbal',n:20});
   $('#go-drill').onclick=()=>{ S=null; startDrill(); };
+  $('#go-method').onclick=()=>renderMethod();
   bindPlan();
 }
 function startDrill(){
@@ -222,10 +224,10 @@ function renderIntro(){
       <div class="row spread"><h2>${c.name}</h2><span class="mono big2">${P.items.length} dom.${P.timed?' · '+fmtT(P.seconds):''}</span></div>
       <ul class="tips">${tips.map(t=>`<li>${t}</li>`).join('')}</ul>
       ${P.timed?'<p class="muted small">Puoi muoverti avanti e indietro e segnare le domande. Allo scadere la prova si chiude da sola. Nessuna penalità per le risposte sbagliate: rispondi sempre.</p>':'<p class="muted small">Dopo ogni risposta vedi subito la soluzione.</p>'}
-      <div class="row"><button class="primary" id="begin">Inizia</button></div>
+      <div class="row"><button class="primary" id="begin">Inizia</button><button class="ghost" id="howto">Rileggi il metodo</button></div>
     </div>
   </main>`;
-  bindNav(); $('#begin').onclick=beginPart;
+  bindNav(); $('#begin').onclick=beginPart; $('#howto').onclick=()=>{ const sec=P.sec; S=null; renderMethod(sec); };
 }
 
 function renderStim(it){
