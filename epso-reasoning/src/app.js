@@ -87,6 +87,7 @@ function finishSession(){
     const att=P.items.map((it,i)=>{
       const a=P.ans[i], ok=a===it.key;
       const r={sec:it.sec,id:it.id,ok,ans:a===undefined?null:a,key:it.key,ms:Math.round(P.ms[i]||0),ch:P.changes[i]||0,fl:!!P.flag[i]};
+      r.snap=it.sec==='verbal'?{q:it.question,o:it.options.map(o=>o.text),k:it.options.map(o=>o.kind)}:it.sec==='numerical'?{q:it.question,stim:it.stim,o:it.options.map(o=>o.label),ex:it.explain}:{s:it.series,o:it.options.map(o=>o.frame),ex:it.explain};
       if(it.sec==='verbal'){ r.q=it.q; r.trap=ok||a===undefined?null:verbalTrap(it,a); r.kind=a===undefined?null:it.options[a].kind;
         DB.seen[it.id]=(DB.seen[it.id]||0)+1; if(ok) delete DB.vwrong[it.id]; else DB.vwrong[it.id]=1; }
       if(it.sec==='numerical'){ r.tpl=it.tpl; r.slip=ok||a===undefined?null:(it.options[a].why||''); }
@@ -94,7 +95,9 @@ function finishSession(){
       return r;});
     rec.parts.push({sec:P.sec,n:P.items.length,score:scorePart(P),secs:Math.round((P.ended-P.started)/1000),limit:P.timed?P.seconds:null,auto:!!P.auto,att});
   });
-  DB.sessions.unshift(rec); DB.sessions=DB.sessions.slice(0,300); saveDB();
+  DB.sessions.unshift(rec); DB.sessions=DB.sessions.slice(0,300);
+  DB.sessions.forEach((s,i)=>{ if(i>=40) s.parts.forEach(p=>(p.att||[]).forEach(x=>{ delete x.snap; })); });
+  saveDB();
   S.rec=rec; renderResults(); window.scrollTo(0,0);
 }
 
@@ -171,6 +174,7 @@ function renderHome(msg){
   <main class="wrap stack">
     ${msg?`<p class="alert">${esc(msg)}</p>`:''}
     ${planPanel()}
+    ${weakPanel(true)}
     <section class="hero">
       <button class="card primary-card" id="go-full">
         <span class="eyebrow">Simulazione completa</span>
@@ -199,7 +203,7 @@ function renderHome(msg){
   const rv=$('#go-review'); if(rv) rv.onclick=()=>startSession('review',{sec:'verbal',n:20});
   $('#go-drill').onclick=()=>{ S=null; startDrill(); };
   $('#go-method').onclick=()=>renderMethod();
-  bindPlan();
+  bindPlan(); bindFocus();
 }
 function startDrill(){
   const parts=['verbal','numerical','abstract'].map(sec=>({sec,items:buildSection(sec,5),ans:{},flag:{},ms:{},changes:{},cur:0,timed:false,seconds:0}));
@@ -218,7 +222,7 @@ function renderIntro(){
     numerical:['Leggi la domanda prima della tabella: individua righe, colonne e unità.','Stima prima di calcolare: spesso le opzioni sono abbastanza distanti.','Usa la calcolatrice a schermo (pulsante in alto), come all\'esame.','Percentuali: la base è il valore di partenza. Punti percentuali ≠ %.'],
     abstract:['Isola un elemento alla volta: forma, riempimento, lancetta, punti, quadratino, settori, caselle, lati.','Se una regola non torna tra figure vicine, prova a coppie: 1 + 2 = 3 e 4 + 5 = 6 (sovrapposizione).','Controlla il passo tra ogni coppia di figure, non solo tra la prima e l\'ultima.','Elimina le opzioni che violano anche una sola regola.','Un minuto a domanda: se dopo 60 secondi non vedi la regola, segna e passa oltre.']
   }[P.sec];
-  app().innerHTML=header(c.it,S.kind==='full'?`Prova ${S.pi+1} di 3`:(P.timed?'Prova a tempo':'Pratica con correzione immediata'))+`
+  app().innerHTML=header(c.it,S.kind==='full'?`Prova ${S.pi+1} di 3`:S.kind==='focus'?`Allenamento mirato · parte ${S.pi+1} di 3 · domande scelte sui tuoi errori`:(P.timed?'Prova a tempo':'Pratica con correzione immediata'))+`
   <main class="wrap stack narrow">
     <div class="panel stack">
       <div class="row spread"><h2>${c.name}</h2><span class="mono big2">${P.items.length} dom.${P.timed?' · '+fmtT(P.seconds):''}</span></div>
@@ -246,14 +250,14 @@ function optionHTML(it,i,P,reveal){
 function feedbackHTML(it,a){
   const ok=a===it.key;
   if(it.sec==='verbal'){
-    return `<div class="fb ${ok?'ok':'bad'}"><b>${ok?'Corretto.':'Sbagliato: la risposta è '+LETTERS[it.key]+'.'}</b>${it.options.map((o,i)=>`<p><span class="mono">${LETTERS[i]}</span> <span class="kind k-${o.kind}">${{true:'Vera',false:'Falsa',cannot:'Non deducibile'}[o.kind]}</span> ${esc(o.why)}</p>`).join('')}${!ok&&a!==undefined?`<p class="small muted">Trappola: ${esc(TRAPS[verbalTrap(it,a)]||'')}</p>`:''}</div>`;
+    return `<div class="fb ${ok?'ok':'bad'}"><b>${ok?'Corretto.':'Sbagliato: la risposta è '+LETTERS[it.key]+'.'}</b>${it.options.map((o,i)=>`<p><span class="mono">${LETTERS[i]}</span> <span class="kind k-${o.kind}">${{true:'Vera',false:'Falsa',cannot:'Non deducibile'}[o.kind]}</span> ${esc(o.why)}</p>`).join('')}${!ok&&a!==undefined?`<p class="small muted">Trappola: ${esc(TRAPS[verbalTrap(it,a)]||'')}</p>`:''}${coachTip(it,a)}</div>`;
   }
   if(it.sec==='numerical'){
     const w=a!==undefined&&!ok?it.options[a].why:null;
-    return `<div class="fb ${ok?'ok':'bad'}"><b>${ok?'Corretto.':'Sbagliato: la risposta è '+LETTERS[it.key]+'.'}</b><p>${esc(it.explain)}</p>${w?`<p class="small muted">La tua opzione corrisponde a: ${esc(w)}.</p>`:''}</div>`;
+    return `<div class="fb ${ok?'ok':'bad'}"><b>${ok?'Corretto.':'Sbagliato: la risposta è '+LETTERS[it.key]+'.'}</b><p>${esc(it.explain)}</p>${w?`<p class="small muted">La tua opzione corrisponde a: ${esc(w)}.</p>`:''}${coachTip(it,a)}</div>`;
   }
   const br=a!==undefined&&!ok?it.options[a].broken:[];
-  return `<div class="fb ${ok?'ok':'bad'}"><b>${ok?'Corretto.':'Sbagliato: la risposta è '+LETTERS[it.key]+'.'}</b><p>${esc(it.explain)}</p>${br.length?`<p class="small muted">La tua opzione viola: ${br.map(r=>AB_RULES[r].label.toLowerCase()).join(', ')}.</p>`:''}</div>`;
+  return `<div class="fb ${ok?'ok':'bad'}"><b>${ok?'Corretto.':'Sbagliato: la risposta è '+LETTERS[it.key]+'.'}</b><p>${esc(it.explain)}</p>${br.length?`<p class="small muted">La tua opzione viola: ${br.map(r=>AB_RULES[r].label.toLowerCase()).join(', ')}.</p>`:''}${coachTip(it,a)}</div>`;
 }
 
 function renderTest(){
@@ -313,18 +317,19 @@ function calcEval(e){
 // ---------- results ----------
 function renderResults(){
   const rec=S.rec, v=verdict(rec);
-  app().innerHTML=header('Risultati',fmtD(rec.date)+' · '+({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori'}[rec.kind]))+`
+  app().innerHTML=header('Risultati',fmtD(rec.date)+' · '+({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato'}[rec.kind]))+`
   <main class="wrap stack">
     ${v.length?`<section class="verdicts big">${v.map(x=>`<div class="vd ${x.pass?'ok':'bad'}"><span>${x.label}</span><b class="mono">${x.score}</b><span class="pill ${x.pass?'ok':'bad'}">${x.pass?'Superata':'Non superata'}</span><span class="muted small">${x.rule}</span></div>`).join('')}</section>`:''}
     ${rec.parts.map((p,pi)=>partResult(p,S.parts[pi],pi)).join('')}
+    ${weakPanel(false)}
     <section class="panel stack"><h2>Esporta questa sessione</h2>${exportBlock(sessionCSV([rec]),'sessione')}</section>
     <div class="row"><button class="primary" data-nav="home">Torna all'inizio</button><button data-nav="stats">Statistiche</button></div>
     ${footer()}
   </main>`;
-  bindNav(); bindExport();
+  bindNav(); bindExport(); bindFocus();
   document.querySelectorAll('[data-cause]').forEach(b=>b.onclick=()=>{const [pi,i,k]=b.dataset.cause.split(':');const a=S.rec.parts[+pi].att[+i];a.cause=a.cause===k?null:k;saveDB();b.parentNode.querySelectorAll('button').forEach(x=>x.classList.toggle('csel',x===b&&a.cause===k));});
 }
-const CAUSES={letto:'Testo letto male',tempo:'Tempo',form:'Formulazione',calcolo:'Calcolo'};
+const CAUSES={letto:'Testo letto male',tempo:'Tempo',form:'Formulazione',calcolo:'Calcolo',regola:'Regola non vista'};
 function partResult(p,P,pi){
   const c=SEC[p.sec], budget=SEC[p.sec].sec/SEC[p.sec].n;
   let analysis='';
@@ -359,7 +364,7 @@ function reviewItem(it,a,i,pi,att){
   if(it.sec==='verbal') body=`<details class="inner"><summary>Brano</summary><p class="passage small2">${esc(it.text)}</p></details><p class="small muted">${esc(it.question)}</p>${it.options.map((o,j)=>`<p class="${j===it.key?'okc':(j===a?'badc':'')}"><span class="mono">${LETTERS[j]}</span> ${esc(o.text)}<br><span class="small muted">${{true:'Vera',false:'Falsa',cannot:'Non deducibile'}[o.kind]}: ${esc(o.why)}</span></p>`).join('')}`;
   else if(it.sec==='numerical') body=`<details class="inner"><summary>Dati</summary>${it.stim}</details><p>${esc(it.question)}</p><p class="small">${it.options.map((o,j)=>`<span class="${j===it.key?'okc':(j===a?'badc':'')}">${LETTERS[j]}. ${esc(o.label)}</span>`).join(' · ')}</p><p class="small muted">${esc(it.explain)}</p>`;
   else body=`<div class="series sm">${it.series.map(f=>frameSVG(f)).join('')}<div class="qmark">?</div></div><div class="series sm">${it.options.map((o,j)=>`<div class="optmini ${j===it.key?'k':''} ${j===a&&!ok?'w':''}"><span class="mono">${LETTERS[j]}</span>${frameSVG(o.frame)}</div>`).join('')}</div><p class="small muted">${esc(it.explain)}</p>`;
-  return `<div class="ritem ${ok?'ok':'bad'}"><div class="row"><span class="mono">${String(i+1).padStart(2,'0')}</span><span>${a===undefined?'Senza risposta':ok?'Corretta':'Tua: '+LETTERS[a]+' · giusta: '+LETTERS[it.key]}</span></div>${body}${causeBtns}</div>`;
+  return `<div class="ritem ${ok?'ok':'bad'}"><div class="row"><span class="mono">${String(i+1).padStart(2,'0')}</span><span>${a===undefined?'Senza risposta':ok?'Corretta':'Tua: '+LETTERS[a]+' · giusta: '+LETTERS[it.key]}</span></div>${body}${coachTip(it,a)}${causeBtns}</div>`;
 }
 
 // ---------- statistics ----------
@@ -377,6 +382,7 @@ function renderStats(){
   const sheets=ss.filter(s=>s.kind==='sheet');
   app().innerHTML=header('Statistiche','Tutto resta in questo browser. Esporta un backup se cambi computer.')+`
   <main class="wrap stack">
+    ${weakPanel(false)}
     <section class="cards3">${['verbal','numerical','abstract'].map(s=>`<div class="card"><span class="eyebrow">${SEC[s].it}</span><b class="mono big2">${acc(by(s))}</b><span class="muted small">${by(s).length} risposte · tempo medio ${avg(by(s))} (budget ${fmtT(SEC[s].sec/SEC[s].n)})</span></div>`).join('')}</section>
     <section class="panel stack"><h2>Simulazioni complete</h2>${full.length?`<div class="tblwrap"><table class="times"><thead><tr><th>Data</th><th>Verbale</th><th>Num.</th><th>Astr.</th><th>Num + astr.</th><th>Esito</th></tr></thead><tbody>${full.map(s=>{const g=k=>s.parts.find(p=>p.sec===k)||{score:0};const v=verdict(s);return `<tr><td>${fmtD(s.date)}</td><td class="mono">${g('verbal').score}/20</td><td class="mono">${g('numerical').score}/10</td><td class="mono">${g('abstract').score}/10</td><td class="mono">${g('numerical').score+g('abstract').score}/20</td><td>${v.every(x=>x.pass)?'<span class="pill ok">Superata</span>':'<span class="pill bad">Non superata</span>'}</td></tr>`}).join('')}</tbody></table></div>`:'<p class="muted">Nessuna simulazione completa salvata.</p>'}</section>
     <section class="grid2">
@@ -393,7 +399,7 @@ function renderStats(){
     </section>
     ${footer()}
   </main>`;
-  bindNav(); bindExport();
+  bindNav(); bindExport(); bindFocus();
   $('#bk').onclick=()=>download('epso-reasoning-backup.json',JSON.stringify(DB),'application/json');
   $('#imp').onchange=e=>{const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{try{const d=JSON.parse(r.result); if(!d.sessions) throw 0; DB=d; saveDB(); toast('Backup importato.'); renderStats();}catch(x){toast('File non valido: serve un backup esportato da questo programma.')}}; r.readAsText(f);};
   let armed=false; $('#reset').onclick=()=>{ if(!armed){armed=true;$('#reset').textContent='Conferma: cancella tutto';return} DB={sessions:[],seen:{},vwrong:{},plan:{}}; saveDB(); renderStats(); toast('Storico cancellato.'); };

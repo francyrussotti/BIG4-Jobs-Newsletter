@@ -22,7 +22,7 @@ function verbalSources(){
   return out;
 }
 
-function buildVerbalItem(src){
+function buildVerbalItem(src,forceQ){
   if(src.origin==='orig'){
     const p=src.p;
     const opts=p.o.map((o,i)=>({kind:o[0],trap:o[1],text:o[2],why:o[3],key:i===0}));
@@ -31,7 +31,8 @@ function buildVerbalItem(src){
   // EUR-Lex passage: build a 4-option item from its true / false / cannot-say statements
   const p=src.p, T=p.st.filter(s=>s.k==='true'), F=p.st.filter(s=>s.k==='false'), C=p.st.filter(s=>s.k==='cannot');
   const canC=T.length>=1&&F.length+C.length>=3, canI=F.length>=1&&T.length+C.length>=3;
-  const q=(canC&&canI)?(R.chance(0.8)?'c':'i'):(canC?'c':'i');
+  let q=(canC&&canI)?(R.chance(0.8)?'c':'i'):(canC?'c':'i');
+  if(forceQ==='i'&&canI) q='i'; if(forceQ==='c'&&canC) q='c';
   let key,others;
   if(q==='c'){key=R.pick(T);others=R.sample(F.concat(C),3)}
   else{key=R.pick(F);others=R.sample(T.concat(C),3)}
@@ -280,9 +281,10 @@ const AB_RULES={
 };
 const ATTR={rot:'rot',cnt:'cnt',pos:'pos',fill:'fill',shape:'shape'};
 
-function buildRulesItem(hard){
+function buildRulesItem(hard,force){
   const n=hard?3:2;
   let names=R.sample(['rot','cnt','pos','fill','shape'],n);
+  if(force&&!names.includes(force)) names=[force].concat(names.slice(0,n-1));
   const P={}; names.forEach(r=>P[r]=AB_RULES[r].init());
   // constant attributes for the rest
   const base={shape:R.pick(SHAPES),fill:R.pick(FILLS),rot:null,cnt:null,pos:null};
@@ -372,8 +374,8 @@ function buildMovingItem(kind){
 }
 const STROKES={t:[20,20,80,20],r:[80,20,80,80],b:[20,80,80,80],l:[20,20,20,80],d1:[20,20,80,80],d2:[80,20,20,80],v:[50,20,50,80],h:[20,50,80,50],c:'circle'};
 const SK=Object.keys(STROKES);
-function buildOverlayItem(){
-  const mode=R.pick(['union','xor']);
+function buildOverlayItem(forceMode){
+  const mode=forceMode||R.pick(['union','xor']);
   const pair=()=>{ for(let t=0;t<100;t++){ const a=R.sample(SK,R.int(2,3)), b=R.sample(SK,R.int(2,3)); const common=a.filter(x=>b.includes(x)); if(common.length>=1&&common.length<Math.min(a.length,b.length)) return [a,b]; } return null; };
   const comb=(a,b,md)=>md==='union'?SK.filter(x=>a.includes(x)||b.includes(x)):SK.filter(x=>a.includes(x)!==b.includes(x));
   const p1=pair(), p2=pair(); if(!p1||!p2) return null;
@@ -392,7 +394,9 @@ function buildSidesItem(){
   const ok=(o,i)=>rule==='same'?i===o:i===o-1;
   const pairOK=()=>{ const o=rule==='same'?R.int(3,6):R.int(4,7); return [o,rule==='same'?o:o-1]; };
   const F=(o,i)=>({kind:'sides',o,i,ro:R.int(0,11)*30,ri:R.int(0,11)*30,inv:R.chance(.5)});
-  const series=[]; let prev=null; for(let j=0;j<5;j++){ let pr; do{pr=pairOK()}while(prev&&pr[0]===prev); prev=pr[0]; series.push(F(pr[0],pr[1])); }
+  let series;
+  for(let t=0;t<50;t++){ series=[]; let prev=null; for(let j=0;j<5;j++){ let pr; do{pr=pairOK()}while(prev&&pr[0]===prev); prev=pr[0]; series.push(F(pr[0],pr[1])); }
+    const os=series.map(f=>f.o), d=os.slice(1).map((x,i)=>x-os[i]); if(!(d.every(x=>x>0)||d.every(x=>x<0)||d.every(x=>x===d[0]))) break; }
   const a=pairOK(), ans=F(a[0],a[1]);
   const wrongs=[];
   const used=new Set([a[0]+':'+a[1]]);
@@ -512,3 +516,13 @@ split:{label:'Ripartizione di una quota',make(){
     explain:`€${nf(profit)} × ${sh[k]}% = €${nf(profit*sh[k]/100)}; diviso per ${n} = €${nf(Math.round(v))}.`};
 }}
 });
+
+function buildAbstractFamily(fam){
+  for(let t=0;t<20;t++){ let it=null;
+    if(['rot','cnt','pos','fill','shape'].includes(fam)) it=buildRulesItem(R.chance(.5),fam);
+    else if(fam==='sides') it=buildSidesItem();
+    else if(fam==='wheel'||fam==='grid') it=buildMovingItem(fam);
+    else if(fam==='union'||fam==='xor') it=buildOverlayItem(fam);
+    if(it&&it.options.length===5&&it.key>=0) return it; }
+  return buildAbstractItem(true);
+}
