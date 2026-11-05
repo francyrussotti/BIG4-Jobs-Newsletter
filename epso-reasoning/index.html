@@ -484,7 +484,7 @@ function buildVerbalItem(src){
   return finishVerbal(p.id,p.topic,p.text,q,opts,{url:p.url,recital:p.recital,act:p.topic});
 }
 
-const Q_CORRECT_ALT=['Which of the following statements is correct?','Which of the following statements can be deduced from the text?','Which of the following statements is supported by the passage?'];
+const Q_CORRECT_ALT=['Which of the following statements is correct?','Which of the following statements is correct?','Which of the following statements can be deduced from the text?','Which of the following statements is supported by the passage?','Only ONE of the following statements can be correctly deduced from the passage. Which one?'];
 function finishVerbal(id,topic,text,q,opts,source,stem,title){
   const sh=R.shuffle(opts);
   const key=sh.findIndex(o=>o.key);
@@ -630,7 +630,7 @@ fx:{label:'Conversione valutaria',make(){
   const o=numOptions(v,[[(price[a]-price[b])/rate[a],'differenza in valuta locale convertita con un solo tasso'],[inE[a],'solo il prezzo più alto'],[(price[a]-price[b])/rate[b],'differenza in valuta locale convertita con un solo tasso']],x=>'€'+nf(x,2),x=>x>0);
   return {stim:tableHTML('Price of the same monthly public transport pass, 2024',['Country','Currency','Price (local currency)','Exchange rate (units per €1)'],cur.map((c,i)=>[c[0],c[1],nf(price[i],price[i]%1?1:0),nf(rate[i],rate[i]>100?0:2)]),FICT),
     question:`Approximately how much more, in euro, did the pass cost in ${cur[a][0]} than in ${cur[b][0]}?`,...o,
-    explain:`${cur[a][0]}: ${nf(price[a],1)} ÷ ${rate[a]} = €${nf(inE[a],2)}. ${cur[b][0]}: ${nf(price[b],1)} ÷ ${rate[b]} = €${nf(inE[b],2)}. Differenza = €${nf(v,2)}. Converti prima, poi sottrai.`};
+    explain:`${cur[a][0]}: ${nf(price[a],price[a]%1?1:0)} ÷ ${rate[a]} = €${nf(inE[a],2)}. ${cur[b][0]}: ${nf(price[b],price[b]%1?1:0)} ÷ ${rate[b]} = €${nf(inE[b],2)}. Differenza = €${nf(v,2)}. Converti prima, poi sottrai.`};
 }},
 reverse:{label:'Percentuale inversa',make(){
   const rows=R.sample(COUNTRIES,5), now=rows.map(()=>R.int(1200,9800)), ch=rows.map(()=>R.int(-12,28)); const r=ch.findIndex(c=>c!==0)>=0?R.pick(rows.map((_,i)=>i).filter(i=>ch[i]!==0)):0;
@@ -879,6 +879,84 @@ function frameSVG(f,label){
   return `<svg class="fig" viewBox="0 0 100 100" role="img" aria-label="${esc(label||'figura')}"><rect x="0.5" y="0.5" width="99" height="99" fill="#fff" stroke="#8a929c"/>${s}</svg>`;
 }
 
+// ---------- more numerical templates (table-heavy, modelled on the manual's question types; data are random) ----------
+const REGIONS=['North-West','North-East','Centre','South','Islands','Alpine','Coastal','Lowlands','Highlands','Capital region'];
+Object.assign(NUM_T,{
+cumul:{label:'Totale cumulato',make(){
+  const lines=R.sample(['Software licences','Consulting','Training','Maintenance','Hardware'],3), yrs=[2021,2022,2023,2024];
+  const data=lines.map(()=>yrs.map(()=>R.int(120,980)));
+  const c=R.int(0,2), upto=R.int(2,3), v=data[c].slice(0,upto+1).reduce((a,b)=>a+b,0);
+  const o=numOptions(v,[[data[c][upto],'solo il valore dell\'ultimo anno, non il totale'],[data[c].reduce((a,b)=>a+b,0),'sommati tutti gli anni'],[data[c].slice(1,upto+1).reduce((a,b)=>a+b,0),'escluso il primo anno']],x=>'€'+nf(Math.round(x))+'k');
+  return {stim:tableHTML('Revenue of a company by business line (€ thousand)',['Business line',...yrs.map(String)],lines.map((l,i)=>[l,...data[i].map(x=>nf(x))]),FICT),
+    question:`What was the total revenue from ${lines[c].toLowerCase()} from ${yrs[0]} up to and including ${yrs[upto]}?`,...o,
+    explain:`Totale cumulato = ${data[c].slice(0,upto+1).map(x=>nf(x)).join(' + ')} = €${nf(v)}k. "Up to and including ${yrs[upto]}" significa la somma degli anni fino al ${yrs[upto]}, non il solo ${yrs[upto]}.`};
+}},
+netbal:{label:'Saldo (entrate − uscite)',make(){
+  const rows=R.sample(REGIONS,4), reg=rows.map(()=>R.int(800,4800)), can=reg.map(x=>Math.max(300,Math.round(x*(R.int(70,135)/100))));
+  const nets=reg.map((x,i)=>x-can[i]), v=nets.reduce((a,b)=>a+b,0); if(Math.abs(v)<150) return NUM_T.netbal.make();
+  const om=R.int(0,3);
+  const o=numOptions(v,[[-v,'cancellazioni meno iscrizioni'],[v-nets[om],'una regione dimenticata'],[nets.reduce((a,b)=>a+Math.abs(b),0)*(v<0?-1:1),'saldi presi tutti con lo stesso segno']],x=>(x>0?'+':'')+nf(Math.round(x)));
+  return {stim:tableHTML('Registrations and cancellations in municipal population registers, 2024',['Region','Registrations','Cancellations'],rows.map((r,i)=>[r,nf(reg[i]),nf(can[i])]),FICT),
+    question:'What was the combined net balance (registrations minus cancellations) of the four regions in 2024?',...o,
+    explain:`Saldi: ${rows.map((r,i)=>`${r} ${nets[i]>0?'+':''}${nf(nets[i])}`).join(' · ')}. Somma = ${v>0?'+':''}${nf(v)}. In alternativa: totale iscrizioni ${nf(reg.reduce((a,b)=>a+b,0))} − totale cancellazioni ${nf(can.reduce((a,b)=>a+b,0))}.`};
+}},
+yearboth:{label:'Anno che supera entrambi (gruppo)',make(){
+  for(let t=0;t<200;t++){
+    const types=['Whole milk','Semi-skimmed milk','Skimmed milk'], yrs=[2019,2020,2021,2022,2023,2024];
+    const d=types.map(()=>yrs.map(()=>R.int(40,95)*1000));
+    const x=R.int(0,2), y=(x+1)%3, z=(x+2)%3;
+    const both=yrs.map((_,i)=>d[x][i]>d[y][i]&&d[x][i]>d[z][i]); if(both.filter(Boolean).length!==1) continue;
+    const k=both.indexOf(true); const one=yrs.map((_,i)=>!both[i]&&(d[x][i]>d[y][i]||d[x][i]>d[z][i]));
+    const pool=yrs.map((yy,i)=>i).filter(i=>i!==k); const pickd=R.sample(pool,4).concat([k]).sort((a,b)=>a-b);
+    const tm={}; pickd.forEach(i=>{ if(one[i]) tm[String(yrs[i])]='supera solo uno dei due'; });
+    const names=pickd.map(i=>String(yrs[i]));
+    return {stim:tableHTML('Milk consumption by type (thousand litres)',['Type',...yrs.map(String)],types.map((ty,i)=>[ty,...d[i].map(v=>nf(v/1000))]),FICT+' Valori in migliaia di litri.'),
+      question:`In which year was consumption of ${types[x].toLowerCase()} higher than that of both ${types[y].toLowerCase()} and ${types[z].toLowerCase()}?`,
+      options:names.map(n=>({label:n,why:n===String(yrs[k])?null:(tm[n]||'non supera nessuno dei due')})),key:names.indexOf(String(yrs[k])),
+      explain:`Solo nel ${yrs[k]} il valore di ${types[x].toLowerCase()} (${nf(d[x][k]/1000)}) è più alto di entrambi gli altri (${nf(d[y][k]/1000)} e ${nf(d[z][k]/1000)}). Controlla anno per anno entrambe le condizioni.`};
+  }
+}},
+inverse:{label:'Ricerca inversa (gruppo)',make(){
+  for(let t=0;t<200;t++){
+    const rows=R.sample(REGIONS,5), area=rows.map(()=>R.int(40,420)), out=area.map(a=>Math.round(a*R.int(18,95)/10));
+    const per=out.map((o,i)=>o/area[i]*1000); const k=R.int(0,4); const V=Math.round(per[k]/10)*10;
+    const okGap=per.every((p,i)=>i===k||Math.abs(p-V)/V>0.08); if(!okGap) continue;
+    const tm={}; const ka=out.indexOf(Math.max(...out)); if(ka!==k) tm[rows[ka]]='produzione totale più alta, non per ettaro';
+    return {stim:tableHTML('Agricultural output and farmed area, 2024',['Region','Output (€ million)','Farmed area (thousand ha)'],rows.map((r,i)=>[r,nf(out[i]),nf(area[i])]),FICT),
+      question:`In which region was agricultural output per hectare closest to €${nf(V)}?`,...nameOptions(rows,rows[k],tm),
+      explain:rows.map((r,i)=>`${r}: €${nf(Math.round(per[i]))}`).join(' · ')+`. € milioni ÷ migliaia di ettari × 1.000 = € per ettaro. Il più vicino a €${nf(V)} è ${rows[k]}.`};
+  }
+}},
+twocol:{label:'Valore medio da due colonne',make(){
+  const models=R.sample(['Model A','Model B','Model C','Model D','Model E'],4), units=models.map(()=>R.int(12,95)*100), price=models.map(()=>R.int(18,62)*1000);
+  const value=units.map((u,i)=>Math.round(u*price[i]/1e5)/10); // € million, 1 decimal
+  const r=R.int(0,3), v=value[r]*1e6/units[r], o2=(r+1)%4;
+  const o=numOptions(v,[[value[o2]*1e6/units[o2],'riga sbagliata'],[v*10,'errore di unità (×10)'],[v/10,'errore di unità (÷10)']],x=>'€'+nf(Math.round(x/10)*10));
+  return {stim:tableHTML('Sales of electric cars by model, 2024',['Model','Cars sold','Sales value (€ million)'],models.map((m,i)=>[m,nf(units[i]),nf(value[i],1)]),FICT),
+    question:`What was the average sales value per car of ${models[r]}?`,...o,
+    explain:`€${nf(value[r],1)} milioni ÷ ${nf(units[r])} auto = €${nf(Math.round(v/10)*10)}. Non confondere la colonna del valore con quella delle unità vendute.`};
+}},
+rowpct:{label:'Quota % di un totale di riga',make(){
+  const yrs=[2021,2022,2023,2024], types=['Rail','Road','Inland waterways'];
+  const tot=yrs.map(()=>R.int(120,480)*1000);
+  const pct=yrs.map(()=>{const a=R.int(15,40), b=R.int(35,65); const c=100-a-b; return c<5?[30,60,10]:[a,b,c];});
+  const yi=R.int(0,3), ti=R.int(0,2), v=tot[yi]*pct[yi][ti]/100;
+  const oy=(yi+1)%4;
+  const o=numOptions(v,[[tot[oy]*pct[yi][ti]/100,'totale dell\'anno sbagliato'],[tot[yi]*pct[yi][(ti+1)%3]/100,'modalità sbagliata'],[tot[yi]*(100-pct[yi][ti])/100,'complemento invece della quota']],x=>nf(Math.round(x))+' t');
+  return {stim:tableHTML('Freight transported: total and share by mode',['Year','Total (tonnes)',...types.map(t=>t+' (%)')],yrs.map((y,i)=>[String(y),nf(tot[i]),...pct[i].map(p=>p+'%')]),FICT),
+    question:`Approximately how many tonnes of freight were transported by ${types[ti].toLowerCase()} in ${yrs[yi]}?`,...o,
+    explain:`${nf(tot[yi])} × ${pct[yi][ti]}% = ${nf(Math.round(v))} tonnellate. Usa il totale della stessa riga (${yrs[yi]}).`};
+}},
+split:{label:'Ripartizione di una quota',make(){
+  const names=R.sample(['Anna','Bruno','Carla','Davide','Elena'],4); let sh=[R.int(15,35),R.int(15,35),R.int(10,25)]; sh.push(100-sh.reduce((a,b)=>a+b,0)); if(sh[3]<5) return NUM_T.split.make();
+  const profit=R.int(12,90)*1000, k=R.int(0,3), n=R.int(2,4), v=profit*sh[k]/100/n;
+  const o=numOptions(v,[[profit/n,'diviso tutto l\'utile invece della quota'],[profit*sh[k]/100,'quota non divisa'],[profit*sh[k]/100/(n+1),'diviso per una persona in più']],x=>'€'+nf(Math.round(x)));
+  return {stim:tableHTML('Shares in a family business',['Partner','Share of profit'],names.map((p,i)=>[p,sh[i]+'%']),FICT)+`<p class="lead">Profit distributed in 2024: <b>€${nf(profit)}</b>.</p>`,
+    question:`If ${names[k]}'s share is divided equally among ${['','','two','three','four'][n]} children, how much does each child receive?`,...o,
+    explain:`€${nf(profit)} × ${sh[k]}% = €${nf(profit*sh[k]/100)}; diviso per ${n} = €${nf(Math.round(v))}.`};
+}}
+});
+
 // ---------- method guide (original text) ----------
 const METHOD=[
 {sec:'verbal',title:'Ragionamento verbale',spec:'20 domande · 35 minuti · circa 1:45 a domanda · soglia 10/20',blocks:[
@@ -916,7 +994,14 @@ const METHOD=[
    ['Pro capite','Miliardi ÷ milioni = migliaia. €45 miliardi ÷ 1,5 milioni di abitanti = €30.000.'],
    ['Valute','Con il tasso "unità per €1": prezzo locale ÷ tasso = prezzo in €. Converti prima, poi confronta.'],
    ['"Superiore del x%"','Si calcola sul valore più piccolo: 120 è superiore a 80 del 50%, mentre 80 è inferiore a 120 del 33%.']]},
- {h:'Trappole tipiche',p:['Base sbagliata nella percentuale, anno o riga sbagliati, unità ignorate, aumento assoluto scambiato per aumento percentuale, media semplice al posto di quella ponderata.']}
+ {h:'Trappole tipiche',list:[
+   ['Base sbagliata','la percentuale si calcola sul valore di partenza, o sul totale della stessa riga.'],
+   ['Totale cumulato','"total up to and including 2023" è la somma degli anni fino al 2023, non il valore del solo 2023.'],
+   ['Colonne scambiate','una tabella può riportare sia il valore in € sia il numero di pezzi: leggi le intestazioni prima di calcolare.'],
+   ['Assoluto o relativo','l\'aumento più grande in valore non è per forza il più grande in percentuale.'],
+   ['Condizioni doppie','"higher than both A and B": controlla entrambe le condizioni per ogni anno.'],
+   ['Saldi','entrate meno uscite, riga per riga, con il segno; poi somma. Il risultato può essere negativo.'],
+   ['Unità','migliaia, milioni, miliardi, € per ettaro: converti prima di confrontare.']]}
 ]},
 {sec:'abstract',title:'Ragionamento astratto',spec:'10 domande · 10 minuti · circa 1:00 a domanda · soglia 10/20 insieme al numerico',blocks:[
  {h:'Com\'è fatta una domanda',p:['Una serie di cinque figure da sinistra a destra. Scegli tra cinque opzioni quella che viene dopo.','Ogni figura combina più elementi; di solito due o tre cambiano secondo una regola, gli altri restano fissi.']},

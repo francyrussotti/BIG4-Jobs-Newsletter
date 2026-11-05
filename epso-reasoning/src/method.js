@@ -35,7 +35,14 @@ const METHOD=[
    ['Pro capite','Miliardi ÷ milioni = migliaia. €45 miliardi ÷ 1,5 milioni di abitanti = €30.000.'],
    ['Valute','Con il tasso "unità per €1": prezzo locale ÷ tasso = prezzo in €. Converti prima, poi confronta.'],
    ['"Superiore del x%"','Si calcola sul valore più piccolo: 120 è superiore a 80 del 50%, mentre 80 è inferiore a 120 del 33%.']]},
- {h:'Trappole tipiche',p:['Base sbagliata nella percentuale, anno o riga sbagliati, unità ignorate, aumento assoluto scambiato per aumento percentuale, media semplice al posto di quella ponderata.']}
+ {h:'Trappole tipiche',list:[
+   ['Base sbagliata','la percentuale si calcola sul valore di partenza, o sul totale della stessa riga.'],
+   ['Totale cumulato','"total up to and including 2023" è la somma degli anni fino al 2023, non il valore del solo 2023.'],
+   ['Colonne scambiate','una tabella può riportare sia il valore in € sia il numero di pezzi: leggi le intestazioni prima di calcolare.'],
+   ['Assoluto o relativo','l\'aumento più grande in valore non è per forza il più grande in percentuale.'],
+   ['Condizioni doppie','"higher than both A and B": controlla entrambe le condizioni per ogni anno.'],
+   ['Saldi','entrate meno uscite, riga per riga, con il segno; poi somma. Il risultato può essere negativo.'],
+   ['Unità','migliaia, milioni, miliardi, € per ettaro: converti prima di confrontare.']]}
 ]},
 {sec:'abstract',title:'Ragionamento astratto',spec:'10 domande · 10 minuti · circa 1:00 a domanda · soglia 10/20 insieme al numerico',blocks:[
  {h:'Com\'è fatta una domanda',p:['Una serie di cinque figure da sinistra a destra. Scegli tra cinque opzioni quella che viene dopo.','Ogni figura combina più elementi; di solito due o tre cambiano secondo una regola, gli altri restano fissi.']},
