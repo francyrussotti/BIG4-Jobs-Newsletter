@@ -1,0 +1,1163 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>EPSO Reasoning Trainer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+/* Layout: exam console. Top bar with section clock; stimulus pane left, question pane right; stacks on narrow screens. */
+:root{
+  --bg:#eef1f5; --panel:#ffffff; --fg:#172030; --muted:#5a6578; --line:#d3dae4;
+  --accent:#20438f; --accent-fg:#ffffff; --accent-soft:#e2e8f6;
+  --ok:#16774a; --ok-soft:#dff2e8; --bad:#b3262c; --bad-soft:#fbe4e4; --warn:#9a6100; --warn-soft:#fbefd6;
+  --f-ui:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-read:"Source Serif 4",Georgia,"Times New Roman",serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f141c; --panel:#171e29; --fg:#e3e8f0; --muted:#97a2b5; --line:#2a3443;
+  --accent:#8fb0ff; --accent-fg:#0f141c; --accent-soft:#1e2a43;
+  --ok:#5fd19a; --ok-soft:#173326; --bad:#ff8a8f; --bad-soft:#3a1c1f; --warn:#f2c060; --warn-soft:#3a2d12; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f141c; --panel:#171e29; --fg:#e3e8f0; --muted:#97a2b5; --line:#2a3443;
+  --accent:#8fb0ff; --accent-fg:#0f141c; --accent-soft:#1e2a43;
+  --ok:#5fd19a; --ok-soft:#173326; --bad:#ff8a8f; --bad-soft:#3a1c1f; --warn:#f2c060; --warn-soft:#3a2d12; color-scheme:dark}
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-ui);font-size:15px;line-height:1.5}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--panel)}
+[hidden]{display:none!important}
+h1,h2,h3{margin:0;text-wrap:balance;font-weight:600}
+h1{font-size:1.45rem;letter-spacing:-.01em} h2{font-size:1.08rem} h3{font-size:.95rem}
+p{margin:0} a{color:var(--accent)}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)} .small{font-size:.85rem} .big2{font-size:1.35rem}
+.eyebrow{font-size:.74rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:500}
+.wrap{max-width:1200px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px}
+.narrow{max-width:760px}
+.stack{display:flex;flex-direction:column;gap:14px} .stack>*,.grid2>*,.split>*,.cards3>*,.hero>*{min-width:0}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center} .spread{justify-content:space-between} .wrap-gap{gap:10px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px}
+button,select,input{font:inherit;color:var(--fg)}
+button{cursor:pointer;border-radius:5px;border:1px solid var(--line);background:var(--panel);padding:9px 14px;min-height:40px}
+button:hover:not([disabled]){border-color:var(--accent)}
+button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600}
+button.ghost{background:transparent} button.small{min-height:32px;padding:4px 10px}
+button[disabled]{opacity:.45;cursor:default}
+select,input[type=number],input[type=text]{background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:8px 10px;min-height:40px;width:100%}
+label{display:flex;flex-direction:column;gap:6px;font-size:.9rem;color:var(--muted)}
+.alert{background:var(--warn-soft);color:var(--fg);border-radius:5px;padding:10px 14px}
+
+header.top{background:var(--panel);border-bottom:1px solid var(--line)}
+header.top .in{max-width:1200px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px;display:flex;flex-wrap:wrap;gap:12px 24px;align-items:flex-end;justify-content:space-between}
+
+.hero{display:grid;gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:8px;text-align:left}
+.primary-card{border-color:var(--accent);border-width:2px}
+.primary-card b{font-size:1.1rem}
+.spec{color:var(--accent);font-size:.86rem}
+.cards3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+@media (max-width:860px){.cards3,.grid2{grid-template-columns:1fr}}
+.plan{margin:0;padding-left:1.2rem;display:grid;gap:6px}
+.tips{margin:0;padding-left:1.2rem;display:grid;gap:6px}
+
+.verdicts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.vd{border:1px solid var(--line);border-radius:6px;padding:12px 14px;display:grid;gap:4px;background:var(--panel)}
+.vd.ok{border-left:4px solid var(--ok)} .vd.bad{border-left:4px solid var(--bad)}
+.verdicts.big .vd b{font-size:1.8rem}
+.pill{display:inline-block;justify-self:start;padding:2px 10px;border-radius:999px;font-size:.8rem;font-weight:600}
+.pill.ok{background:var(--ok-soft);color:var(--ok)} .pill.bad{background:var(--bad-soft);color:var(--bad)}
+
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--panel);border-bottom:1px solid var(--line)}
+.bar .in{max-width:1200px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:10px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;justify-content:space-between}
+.secname{font-weight:600}
+.clock{font-size:1.35rem;font-weight:500;padding:2px 10px;border-radius:4px}
+.clock.low{background:var(--bad-soft);color:var(--bad)}
+.qgrid{display:flex;flex-wrap:wrap;gap:5px}
+.cell{min-width:34px;min-height:34px;padding:0;font-family:var(--f-mono);font-size:.82rem;position:relative}
+.cell.ans{background:var(--accent-soft);border-color:var(--accent-soft)}
+.cell.cur{outline:2px solid var(--accent);outline-offset:1px}
+.cell.flag::after{content:"";position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:var(--warn)}
+.cell.r-ok{background:var(--ok-soft);color:var(--ok);border-color:transparent} .cell.r-bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.split{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px;align-items:start;margin-top:16px}
+.split.abstract{grid-template-columns:1fr}
+@media (max-width:900px){.split{grid-template-columns:1fr}}
+.passage{font-family:var(--f-read);font-size:1.05rem;line-height:1.7;max-width:70ch;margin-top:8px}
+.small2{font-size:.95rem}
+.src{font-size:.78rem;color:var(--muted);margin-top:8px}
+.qpanel{position:sticky;top:calc(env(safe-area-inset-top,0px) + 70px)}
+.split.abstract .qpanel{position:static}
+@media (max-width:900px){.qpanel{position:static}}
+.qtext{font-weight:600;font-size:1.02rem}
+.opts{display:grid;gap:8px}
+.opt{text-align:left;display:flex;gap:12px;align-items:flex-start;padding:11px 13px;line-height:1.45}
+.opt .ltr{font-family:var(--f-mono);font-size:.8rem;min-width:1.6rem;height:1.6rem;display:grid;place-items:center;border:1px solid var(--line);border-radius:3px;flex:none}
+.opt .otext{font-family:var(--f-read);font-size:1rem}
+.opt.sel{border-color:var(--accent);background:var(--accent-soft)} .opt.sel .ltr{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.opt.right{border-color:var(--ok);background:var(--ok-soft)} .opt.wrong{border-color:var(--bad);background:var(--bad-soft)}
+.opts.figs{grid-template-columns:repeat(5,minmax(0,1fr))}
+@media (max-width:620px){.opts.figs{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.figopt{flex-direction:column;align-items:center;padding:8px}
+.fig{width:100%;max-width:120px;height:auto;display:block}
+.series{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-top:10px;max-width:780px}
+.series.sm{max-width:520px;gap:6px}
+@media (max-width:620px){.series{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.qmark{border:2px dashed var(--line);border-radius:4px;display:grid;place-items:center;font-size:2rem;color:var(--muted);aspect-ratio:1;max-width:120px}
+.optmini{display:grid;gap:2px;justify-items:center;border-radius:4px;padding:2px}
+.optmini.k{outline:2px solid var(--ok)} .optmini.w{outline:2px solid var(--bad)}
+.fb{border-radius:5px;padding:12px 14px;font-size:.92rem;display:grid;gap:6px}
+.fb.ok{background:var(--ok-soft)} .fb.bad{background:var(--bad-soft)}
+.kind{font-size:.74rem;font-weight:600;padding:1px 7px;border-radius:3px}
+.k-true{background:var(--ok-soft);color:var(--ok)} .k-false{background:var(--bad-soft);color:var(--bad)} .k-cannot{background:var(--warn-soft);color:var(--warn)}
+
+.tblwrap{overflow-x:auto;max-width:100%}
+table{border-collapse:collapse}
+table.data{font-variant-numeric:tabular-nums;min-width:320px}
+table.data caption{text-align:left;font-weight:600;padding-bottom:8px}
+table.data th,table.data td{border:1px solid var(--line);padding:7px 12px;text-align:right}
+table.data th[scope=row],table.data thead th:first-child{text-align:left}
+table.data thead th{background:var(--accent-soft);font-weight:600}
+.lead{margin-bottom:10px}
+.chart figcaption{font-weight:600;margin-bottom:6px}
+.chart svg{width:100%;max-width:560px;height:auto;display:block}
+.chart .grid{stroke:var(--line);stroke-width:1}
+.chart .ax{fill:var(--muted);font-size:12px;font-family:var(--f-ui)}
+.chart .val{fill:var(--fg);font-size:12px;font-family:var(--f-mono)}
+.chart .bar{fill:var(--accent)}
+.chart .pl{fill:#fff;font-size:13px;font-weight:600;font-family:var(--f-mono)}
+.p1{fill:#20438f}.p2{fill:#3f7d6e}.p3{fill:#b0602c}.p4{fill:#7a4d9a}.p5{fill:#5b6b7f}.p6{fill:#a33a4c}
+.calc{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));width:260px;z-index:8;box-shadow:0 8px 28px rgba(0,0,0,.18);display:grid;gap:8px}
+.cdisp{background:var(--bg);border-radius:4px;padding:8px 10px;text-align:right}
+.cexpr{font-size:.85rem;color:var(--muted);min-height:1.2em;word-break:break-all} .cout{font-size:1.3rem}
+.ckeys{display:grid;grid-template-columns:repeat(4,1fr);gap:6px} .ckeys button{padding:6px;min-height:38px;font-family:var(--f-mono)}
+.ckeys button:last-child{grid-column:span 1}
+ul.bars{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+ul.bars li{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding-bottom:5px}
+table.times{width:100%;font-size:.88rem}
+table.times th,table.times td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line)}
+td.tb{width:40%} td.tb i{display:block;height:7px;border-radius:4px;background:var(--accent)} td.tb i.over{background:var(--warn)}
+.okc{color:var(--ok)} .badc{color:var(--bad)}
+details summary{cursor:pointer;color:var(--accent)}
+.review{display:grid;gap:12px;margin-top:12px}
+.ritem{border-left:3px solid var(--line);padding:4px 0 4px 14px;display:grid;gap:6px}
+.ritem.ok{border-color:var(--ok)} .ritem.bad{border-color:var(--bad)}
+textarea{width:100%;min-height:120px;font-family:var(--f-mono);font-size:.76rem;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:5px;padding:8px}
+.filebtn{flex-direction:row;align-items:center;border:1px solid var(--line);border-radius:5px;padding:9px 14px;color:var(--fg);cursor:pointer;min-height:40px}
+.filebtn input{display:none}
+table.sheet td,table.sheet th{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left}
+.seg{display:flex;gap:4px} .seg button{min-width:36px;min-height:34px;padding:0;font-family:var(--f-mono)}
+.seg button.sel{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)} .seg button.selk{background:var(--ok);color:#fff;border-color:var(--ok)}
+.foot{margin-top:28px;font-size:.8rem;color:var(--muted);display:grid;gap:6px;max-width:90ch}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:6px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:20;max-width:90vw}
+#toast.show{opacity:1}
+.checks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.chk{flex-direction:row;align-items:flex-start;gap:10px;color:var(--fg);font-size:.95rem}
+.chk input{margin-top:4px;width:18px;height:18px;flex:none}
+tr.today td{background:var(--accent-soft)}
+.causes{gap:6px} .causes button.csel{background:var(--warn-soft);border-color:var(--warn);color:var(--fg);font-weight:600}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#fff"/><line x1="0" y1="0" x2="0" y2="6" stroke="#111" stroke-width="2.4"/></pattern></defs></svg>
+<div id="app"></div>
+<script>
+// Original verbal reasoning items written for this trainer. Passages and statements are original text.
+// Format per item: q = 'c' (which statement is correct) or 'i' (which is incorrect).
+// o = options; the FIRST option is the key. Each option: [kind, trap, statement, explanation(it)].
+// kind: 'true' | 'false' | 'cannot'. trap codes: see TRAPS in app.js.
+const VERBAL_ORIGINAL = [
+{id:'o01',topic:'Urban climate',q:'c',text:"Cities are often several degrees warmer than the surrounding countryside, a phenomenon known as the urban heat island effect. Dark surfaces such as asphalt and roofing tar absorb solar radiation during the day and release it slowly at night, which keeps night-time temperatures high. A three-year study in four mid-sized European cities found that districts where at least a quarter of roof area had been converted into vegetated 'green roofs' recorded average summer night temperatures 0.8°C lower than comparable districts without them. The researchers cautioned that the effect depended heavily on irrigation: in the driest of the four cities, unwatered green roofs dried out by mid-July and their cooling effect largely disappeared. They also noted that green roofs are more expensive to install than reflective white coatings, which lower daytime roof temperatures but have little influence on air temperature at street level.",
+o:[['true','',"In at least one of the cities studied, the cooling provided by green roofs was reduced when they were not watered.","Il testo dice che nella città più secca i tetti verdi non irrigati si seccavano e l'effetto spariva in gran parte."],
+['false','con',"Reflective white coatings were found to lower night-time air temperatures more effectively than green roofs.","Il testo dice il contrario: i rivestimenti bianchi hanno poca influenza sulla temperatura dell'aria a livello della strada."],
+['cannot','ass',"Green roofs reduce night temperatures mainly because plants absorb less solar radiation than asphalt.","Il meccanismo per cui i tetti verdi raffreddano non è spiegato: è un'assunzione."],
+['false','gen',"Converting a quarter of roof area into green roofs lowers summer night temperatures by 0.8°C in every European city.","0,8°C è una media di quattro città, e in una l'effetto spariva senza irrigazione: la generalizzazione è smentita."]]},
+
+{id:'o02',topic:'History of printing',q:'c',text:"Before the arrival of the printing press in Europe in the mid-fifteenth century, books were copied by hand, mostly in monasteries and, from the thirteenth century onwards, increasingly in workshops attached to universities. A single copy of a long text could take a scribe many months. Printing did not immediately make handwritten books disappear: wealthy collectors continued to commission illuminated manuscripts for several decades, partly because they regarded printed volumes as inferior objects. Within fifty years of the first printed books, however, an estimated several million copies had been produced, and the price of an ordinary book had fallen sharply. Historians disagree about how quickly literacy rose as a result; some argue that cheaper books mainly benefited people who could already read, while others point to the rapid growth of printed pamphlets aimed at a wider public.",
+o:[['true','',"Some buyers continued to prefer handwritten books after printed books became available.","I collezionisti ricchi continuarono a commissionare manoscritti per decenni, considerando i libri stampati inferiori."],
+['false','con',"Printing caused handwritten book production to stop within a few years.","Il testo parla di 'several decades' di manoscritti dopo l'arrivo della stampa."],
+['cannot','cau',"The spread of printing was the main reason literacy increased in Europe.","Gli storici non sono d'accordo sull'effetto della stampa sull'alfabetizzazione: il testo non stabilisce la causa principale."],
+['cannot','qnt',"Before the thirteenth century, no books were copied outside monasteries.","'Mostly in monasteries' non significa 'only': il testo non dice se esistessero altri luoghi prima del XIII secolo."]]},
+
+{id:'o03',topic:'Public procurement',q:'c',text:"Public authorities across the European Union spend a significant share of their budgets on buying goods, works and services from private companies. To make these purchases more transparent, procurement procedures above certain financial thresholds must be advertised so that companies from any Member State can submit a bid. A recent review of national practices found that the share of procedures receiving only a single bid had increased over the previous decade in a majority of the countries examined. The authors of the review identified several possible explanations, including short deadlines, complex documentation and the tendency of some authorities to define technical requirements in ways that favour a known supplier. They stressed, however, that a single bid does not in itself prove that a procedure was unfair, since in some specialised markets only one qualified supplier may exist.",
+o:[['true','',"A procedure that attracts only one bid may still have been conducted fairly.","Gli autori dicono che un'offerta unica non prova di per sé che la procedura sia stata scorretta."],
+['false','con',"Over the previous decade, single-bid procedures became less common in most of the countries examined.","Il testo dice che la quota di procedure con offerta unica è aumentata nella maggioranza dei paesi."],
+['cannot','cau',"Short deadlines were the main cause of the increase in single-bid procedures.","Le scadenze brevi sono una delle possibili spiegazioni, senza alcuna gerarchia tra le cause."],
+['cannot','gen',"All purchases by public authorities must be advertised across the EU.","Il testo parla solo delle procedure sopra certe soglie; sugli acquisti sotto soglia non dice nulla."]]},
+
+{id:'o04',topic:'Pollinators',q:'c',text:"Wild bees pollinate a large share of flowering crops, yet their populations have declined in many parts of Europe. In a field experiment, researchers placed colonies of bumblebees next to oilseed rape fields treated with one of two common insecticides and next to untreated fields. Colonies near treated fields produced on average 40 percent fewer new queens by the end of the season, although the number of worker bees was similar across all sites. Because new queens are the only members of a colony that survive the winter and found new colonies the following spring, the researchers argued that the impact on future populations could be greater than counts of workers alone would suggest. The study did not examine honeybees, which are managed by beekeepers and may respond differently.",
+o:[['true','',"Measuring only the number of worker bees could underestimate the effect of the insecticides on future bumblebee populations.","Le operaie erano simili ovunque, mentre le nuove regine (le sole che fondano colonie) erano il 40% in meno."],
+['false','mix',"Bumblebee colonies near treated fields had about 40 percent fewer workers than those near untreated fields.","Il 40% riguarda le nuove regine; il numero di operaie era simile in tutti i siti."],
+['cannot','ext',"Honeybees are less affected by these insecticides than bumblebees.","Le api da miele non sono state studiate: il testo dice solo che 'may respond differently'."],
+['cannot','cau',"The decline of wild bees in Europe is mainly caused by insecticides used on oilseed rape.","Il testo non individua la causa principale del declino delle api selvatiche."]]},
+
+{id:'o05',topic:'Remote work',q:'c',text:"When large numbers of office employees began working from home, many managers feared that productivity would fall. Data collected by a consultancy from several hundred firms in three countries suggest a more mixed picture. Employees who worked remotely two or three days a week reported slightly higher output than before, measured by the number of tasks completed, while those working remotely every day reported no significant change. At the same time, newly hired staff who worked fully remotely were promoted less often during their first two years than colleagues hired at the same time who spent more days in the office. The consultancy cautioned that its data were based partly on self-reported output and that firms which chose to offer hybrid arrangements may differ in other ways from those that did not.",
+o:[['true','',"Part of the evidence used in the study depended on employees' own assessments of their work.","I dati si basano 'partly on self-reported output'."],
+['false','con',"Employees who worked remotely every day reported a significant fall in output.","Chi lavorava sempre da remoto non ha riportato cambiamenti significativi."],
+['cannot','cau',"Fully remote new hires were promoted less often because their managers saw less of their work.","Il testo riporta il fatto (meno promozioni), non la causa."],
+['cannot','gen',"The study found that hybrid working increases productivity in all firms.","I dati sono parziali e auto-dichiarati, e le aziende ibride potrebbero differire in altro: 'in all firms' non è supportato."]]},
+
+{id:'o06',topic:'Bilingual children',q:'i',text:"Children who grow up speaking two languages sometimes start producing their first words slightly later than children exposed to only one language. This delay, when it occurs, is usually small and temporary. Studies that count the total number of words a bilingual child knows across both languages generally find that it is similar to, or higher than, the vocabulary of monolingual children of the same age, even though the vocabulary in each separate language may be smaller. Researchers have also reported that bilingual children tend to perform better on certain tasks that require switching attention between rules, although recent large studies have found this advantage to be weaker than earlier, smaller studies suggested.",
+o:[['false','',"Bilingual children always begin speaking later than monolingual children.","Domanda sull'affermazione ERRATA: il testo dice 'sometimes', non 'always'."],
+['true','',"When vocabulary in both languages is counted together, bilingual children often know as many words as monolingual children.","Vera: il vocabolario totale è 'similar to, or higher than' quello dei monolingui."],
+['cannot','ext',"Bilingual children perform better at school overall than monolingual children.","Non deducibile, ma non è smentita dal testo, quindi non è la risposta a una domanda sull'affermazione errata."],
+['true','',"Larger studies have found a smaller attention-switching advantage than earlier research.","Vera: i grandi studi recenti hanno trovato un vantaggio più debole."]]},
+
+{id:'o07',topic:'Shipping',q:'c',text:"Maritime transport carries most of the world's traded goods by volume and is relatively efficient per tonne transported. Its total greenhouse gas emissions are nevertheless substantial because of the enormous quantities involved. One widely discussed way to cut fuel use is 'slow steaming', in which ships sail below their design speed. Because the fuel a ship burns rises much faster than its speed, a modest reduction in speed can produce a disproportionately large saving in fuel per voyage. Slow steaming has drawbacks: voyages take longer, so more ships may be needed to carry the same volume of goods within the same period, and customers with time-sensitive cargo may object. Several shipping lines adopted the practice during periods of low freight rates, when there were more ships available than cargo to fill them.",
+o:[['true','',"Reducing a ship's speed by a small amount can lower its fuel use per voyage by a larger proportion.","Il testo: una riduzione modesta della velocità produce un risparmio 'disproportionately large'."],
+['false','con',"Slow steaming reduces the number of ships needed to transport a given volume of goods.","Il contrario: potrebbero servire più navi."],
+['cannot','cau',"Shipping lines adopted slow steaming during periods of low freight rates mainly to reduce emissions.","Il testo dà solo una coincidenza temporale (noli bassi, navi in eccesso), non il motivo."],
+['cannot','ext',"Maritime transport emits more greenhouse gases than air transport.","Il trasporto aereo non è menzionato: serve conoscenza esterna."]]},
+
+{id:'o08',topic:'Museums',q:'c',text:"In the year after a regional government abolished entrance fees at its public museums, visitor numbers rose by more than half. A later evaluation, however, found that the social profile of visitors had changed little: the share of visitors with a university degree remained well above their share of the regional population. Most of the additional visits were made by people who had already visited museums before the change and now came more often. The evaluation's authors concluded that removing fees was effective at increasing attendance but, on its own, was not sufficient to attract groups who rarely visit museums. They recommended combining free entry with outreach programmes run with schools and community organisations, although they did not estimate the cost of such programmes.",
+o:[['true','',"After fees were abolished, many of the extra visits came from people who were already museum visitors.","'Most of the additional visits were made by people who had already visited museums'."],
+['false','con',"Abolishing entrance fees significantly increased the share of visitors without a university degree.","Il profilo sociale 'had changed little'."],
+['cannot','ext',"Outreach programmes with schools would cost less than the revenue lost from entrance fees.","I costi dei programmi non sono stati stimati."],
+['cannot','qnt',"Visitor numbers rose only because entrance fees were abolished.","Il testo non esclude altri fattori: 'only' va oltre ciò che è affermato."]]},
+
+{id:'o09',topic:'Antibiotics',q:'c',text:"Antibiotics are used not only to treat people but also in livestock farming. In some countries they have been given to healthy animals in low doses to promote faster growth, a practice now banned in the European Union. Bacteria exposed repeatedly to antibiotics can develop resistance, and resistant strains can pass from animals to humans through direct contact, through the environment or through food. Measuring how much of the resistance found in human infections originates in farming is difficult, because the same resistance genes can arise independently in hospitals. A review of surveillance data concluded that reducing antibiotic use in animals is associated with lower resistance in animals and, to a lesser and less certain extent, in humans.",
+o:[['true','',"The evidence linking lower antibiotic use in animals to lower resistance is stronger for animals than for humans.","Per gli umani l'associazione è 'to a lesser and less certain extent'."],
+['false','mod',"Giving antibiotics to healthy animals to promote growth is still permitted in the European Union.","La pratica 'is now banned in the European Union'."],
+['cannot','qnt',"Most resistant infections in humans originate in livestock farming.","Il testo dice che è difficile misurare quanta resistenza venga dagli allevamenti."],
+['false','qnt',"Resistance genes always arise first in animals and later in hospitals.","Gli stessi geni 'can arise independently in hospitals': 'always first in animals' è smentito."]]},
+
+{id:'o10',topic:'Sleep and memory',q:'c',text:"Sleep appears to play an important role in consolidating memories. In a laboratory study, volunteers learned a list of word pairs in the evening and were tested the next morning; one group slept normally while the other was kept awake all night. The group that had slept recalled around a fifth more word pairs. A second experiment found that a short afternoon nap of about an hour produced a smaller but still measurable improvement compared with staying awake. The researchers noted that the benefit was largest for word pairs that volunteers had found difficult to learn, and smallest for those they had already mastered before the break.",
+o:[['true','',"In the study, sleep seemed to help most with the material that had been hardest to learn.","Il beneficio era massimo per le coppie difficili da imparare."],
+['false','con',"An afternoon nap improved recall as much as a full night's sleep.","Il pisolino dava un miglioramento 'smaller'."],
+['cannot','gen',"Students who sleep more than eight hours obtain better exam results.","Esami e ore di sonno non sono trattati: generalizzazione."],
+['cannot','mix',"Volunteers kept awake all night forgot about a fifth of the word pairs they had learned.","'Un quinto' è la differenza tra i due gruppi, non la quota dimenticata da chi era rimasto sveglio."]]},
+
+{id:'o11',topic:'Urban mobility',q:'c',text:"Shared electric scooters appeared in many European cities within a short period, often before local rules had been adapted to them. Some cities responded by limiting the number of operators through tenders, others by setting maximum speeds or banning scooters from pavements. One capital city held a referendum in which a large majority of those who voted supported a ban on rental scooters, although turnout was below ten percent. Operators argue that scooters replace car journeys; independent surveys in several cities, however, found that most scooter trips replaced walking or public transport rather than car use. Supporters of scooters reply that they may still be useful for the first or last part of longer journeys made by train or metro.",
+o:[['true','',"According to independent surveys, most scooter trips in several cities did not replace car journeys.","La maggior parte dei viaggi sostituiva camminate o trasporto pubblico."],
+['false','qnt',"Most residents of the capital city voted in favour of banning rental scooters.","Ha votato meno del 10%: la maggioranza dei votanti non è la maggioranza dei residenti."],
+['cannot','cau',"Cities that banned scooters from pavements saw fewer accidents.","Gli incidenti non sono menzionati."],
+['cannot','mod',"Electric scooters are mainly used for the first or last part of train journeys.","I sostenitori dicono solo che 'may still be useful' per quel tratto: non è un dato d'uso."]]},
+
+{id:'o12',topic:'Food waste',q:'c',text:"A significant share of food produced for human consumption is never eaten. In richer countries, most of this waste occurs at the end of the supply chain, in shops and especially in households, whereas in poorer countries more food is lost after harvest because of inadequate storage and transport. Date labels are one factor behind household waste: many consumers do not distinguish between a 'use by' date, which concerns safety, and a 'best before' date, which concerns quality. Surveys in one Member State found that clearer labelling, combined with an information campaign, coincided with a reduction in household food waste of around ten percent over five years, though the authors noted that rising food prices over the same period may also have played a role.",
+o:[['true','',"The fall in household food waste reported in the surveys may not have been due only to clearer labelling.","Gli autori citano anche la campagna informativa e l'aumento dei prezzi."],
+['false','mix',"In richer countries, most food waste occurs after harvest because of poor storage.","Lo spreco post-raccolto riguarda i paesi più poveri; in quelli ricchi avviene in negozi e famiglie."],
+['cannot','ext',"Food past its 'best before' date is safe to eat.","Il testo dice che il 'best before' riguarda la qualità, ma non afferma che il cibo scaduto sia sicuro."],
+['cannot','cmp',"Consumers in poorer countries waste more food at home than consumers in richer countries.","Il testo non confronta lo spreco domestico tra paesi."]]},
+
+{id:'o13',topic:'Wind energy',q:'c',text:"Wind turbines are sometimes criticised for killing birds. Estimates of the number of birds killed per turbine vary widely, mainly because carcasses are often removed by scavengers before surveys find them. Studies agree, however, that the location of a turbine matters far more than its number of blades or the colour of its tower: turbines placed on migration routes or near the nesting sites of large birds of prey cause disproportionately many deaths. In a recent trial at one wind farm, painting one of the three blades black reduced bird deaths by around 70 percent compared with neighbouring unpainted turbines. The researchers stressed that the trial involved only a small number of turbines and needed to be repeated at other sites before firm conclusions could be drawn.",
+o:[['true','',"The researchers considered the results of the blade-painting trial to be preliminary.","Hanno detto che va ripetuto in altri siti prima di conclusioni definitive."],
+['false','mix',"Studies agree that the colour of a turbine's tower is the most important factor in bird deaths.","Gli studi concordano che conta molto di più la posizione; il colore della torre conta meno."],
+['cannot','gen',"Painting one blade black would reduce bird deaths by about 70 percent at all wind farms.","Una sola prova su poche turbine: l'estensione a tutti gli impianti non è supportata."],
+['cannot','ext',"Wind turbines kill fewer birds than buildings and traffic.","Edifici e traffico non sono menzionati."]]},
+
+{id:'o14',topic:'Commodity prices',q:'c',text:"The price of coffee beans on international markets can change sharply from one year to the next. Coffee trees take several years to reach full production, so farmers cannot quickly expand supply when prices are high, and they are reluctant to remove trees when prices are low. Weather is another source of volatility: a frost or drought in a major producing region can reduce global supply substantially. Higher prices on commodity markets are not always passed on in full to consumers, because the cost of raw beans accounts for only part of the retail price of a cup of coffee in a café, alongside rent, wages and other costs.",
+o:[['true','',"A rise in the price of coffee beans may increase the retail price of café coffee by a smaller percentage.","Le materie prime sono solo una parte del prezzo al dettaglio: lo stesso aumento pesa meno in percentuale."],
+['false','con',"Coffee farmers can increase production within a single season when prices rise.","Le piante impiegano anni a entrare in piena produzione."],
+['cannot','qnt',"Frost is the most common cause of coffee price increases.","Il gelo è una delle cause di volatilità; non si dice che sia la più frequente."],
+['cannot','qnt',"Café owners usually absorb the full increase in bean prices.","'Not always passed on in full' non significa che i bar assorbano di solito tutto l'aumento."]]},
+
+{id:'o15',topic:'Canals',q:'c',text:"During the late eighteenth century, a wave of canal construction transformed inland transport in parts of north-western Europe. A horse pulling a barge on a canal could move a load many times heavier than it could pull in a cart on the rough roads of the period. Canal companies raised capital by selling shares, and several early canals paid generous dividends, encouraging further investment. Not all projects succeeded: some canals built during a speculative boom in the 1790s never carried enough traffic to repay their costs. From the 1830s, railways began to compete for freight, and although many canals continued to operate for decades, their share of goods traffic declined steadily.",
+o:[['true','',"Not every canal built in the 1790s proved profitable.","Alcuni canali degli anni Novanta del Settecento non hanno mai ripagato i costi."],
+['false','con',"Canals stopped operating soon after railways appeared.","Molti canali continuarono a operare per decenni."],
+['cannot','ext',"Railways were cheaper to build than canals.","I costi di costruzione delle ferrovie non sono indicati."],
+['cannot','cau',"The success of early canals was the main reason railways were invented.","Il testo non parla dell'origine delle ferrovie."]]},
+
+{id:'o16',topic:'Microplastics',q:'c',text:"Microplastics, fragments smaller than five millimetres, have been found in oceans, rivers, soil and the air. Some are manufactured at that size, for example as beads in cosmetics, but most result from the breakdown of larger items such as bottles, packaging and synthetic textiles. Washing clothes made of synthetic fibres releases large numbers of tiny fibres, a share of which pass through wastewater treatment plants. The effects of microplastics on human health are not yet well understood. Laboratory studies have shown harmful effects in some animals at high concentrations, but researchers caution that these concentrations are often far above those measured in the environment.",
+o:[['true','',"Not all microplastics are produced by the breakdown of larger plastic items.","Alcune sono prodotte già di quella dimensione, per esempio le microsfere dei cosmetici."],
+['false','con',"Wastewater treatment plants remove all the fibres released by washing synthetic clothes.","Una parte delle fibre attraversa gli impianti di depurazione."],
+['cannot','ext',"Microplastics in drinking water are harmful to human health.","Gli effetti sulla salute umana 'are not yet well understood'."],
+['false','mix',"Most microplastics are manufactured as beads for cosmetics.","La maggior parte deriva dalla frammentazione di oggetti più grandi."]]},
+
+{id:'o17',topic:'Working time',q:'c',text:"Several companies have experimented with a four-day working week in which employees work fewer hours for the same pay. In one trial involving around sixty firms, most participating companies decided to continue with the arrangement after six months. Employees reported lower levels of stress and fatigue, and the number of sick days fell. Company revenue over the trial period was broadly stable compared with the same period in previous years. Critics point out that the firms volunteered to take part and were therefore likely to be those most suited to shorter hours, and that the trial did not include manufacturing companies with continuous production lines.",
+o:[['true','',"The firms in the trial may not be representative of all companies.","Le aziende si sono offerte volontarie e mancavano le manifatturiere a ciclo continuo."],
+['false','con',"Most firms abandoned the four-day week once the trial ended.","La maggior parte ha deciso di continuare."],
+['false','mix',"Revenue increased substantially in firms that adopted the four-day week.","Il fatturato è rimasto 'broadly stable'."],
+['cannot','ass',"Manufacturing companies would be unable to adopt a four-day week.","Non erano incluse nella prova: questo non dice nulla sulla loro capacità di adottarla."]]},
+
+{id:'o18',topic:'Volcanoes and climate',q:'c',text:"Large volcanic eruptions can cool the Earth's climate temporarily. When an eruption is powerful enough to inject sulphur gases into the stratosphere, these gases form tiny droplets that reflect part of the incoming sunlight. Because the stratosphere has no rain to wash them out, the droplets can remain there for one to two years. A major eruption in the early 1990s was followed by a drop in average global temperature of about half a degree Celsius over the following year. Eruptions that release ash and gas only into the lower atmosphere have much smaller climatic effects, because the particles are removed by precipitation within weeks.",
+o:[['true','',"How long an eruption affects the climate depends partly on how high its gases reach in the atmosphere.","Stratosfera: da uno a due anni; bassa atmosfera: rimosse in poche settimane."],
+['false','mix',"Sulphur droplets in the stratosphere are removed by rain within a few weeks.","Nella stratosfera non piove; la rimozione in settimane riguarda la bassa atmosfera."],
+['cannot','ext',"The eruption in the early 1990s was the largest of the twentieth century.","Il confronto con altre eruzioni non è nel testo."],
+['cannot','cau',"The temperature drop after the early-1990s eruption was caused entirely by sulphur droplets.","Il testo dice che il calo 'was followed by' l'eruzione: 'entirely' non è supportato."]]},
+
+{id:'o19',topic:'Minimum wages',q:'c',text:"Most Member States of the European Union have a statutory minimum wage set by law, while in a few countries minimum pay is determined mainly through collective agreements between employers and trade unions. Where collective bargaining covers a large majority of workers, governments have argued that a statutory minimum is unnecessary. Economists disagree about the employment effects of raising minimum wages. Some studies find that moderate increases have little effect on the number of jobs, while others find that they reduce employment among young and low-skilled workers. Researchers broadly agree that the effects depend on the level of the minimum wage relative to typical wages in the country concerned.",
+o:[['true','',"Not every EU Member State sets its minimum wage by law.","In alcuni paesi il minimo è fissato soprattutto con la contrattazione collettiva."],
+['false','qnt',"Economists agree that raising the minimum wage always reduces employment.","Gli economisti non sono d'accordo, e alcuni studi trovano effetti minimi."],
+['cannot','cmp',"Countries without a statutory minimum wage have lower unemployment.","La disoccupazione tra i due gruppi di paesi non è confrontata."],
+['cannot','qnt',"Collective agreements cover a large majority of workers in every Member State.","Il testo parla di copertura ampia solo dove la contrattazione è diffusa."]]},
+
+{id:'o20',topic:'Roman aqueducts',q:'c',text:"The aqueducts of ancient Rome carried water from springs and rivers, sometimes over distances of more than ninety kilometres. Contrary to a common image, most of their length ran underground or at ground level; the famous arches were used mainly where a channel had to cross a valley. The aqueducts relied entirely on gravity, so engineers had to maintain a gentle and continuous downward slope along the whole route. Water was distributed through a system that gave priority to public fountains and baths, with private households able to obtain a connection only by paying for it. Lead pipes were used in parts of the distribution network, but the high mineral content of the water often formed deposits inside the pipes.",
+o:[['true','',"Arches made up a relatively small part of the total length of the aqueducts.","La maggior parte del percorso era sotterranea o a livello del suolo."],
+['false','con',"Pumps were used to raise water over hills along the aqueduct routes.","Gli acquedotti 'relied entirely on gravity'."],
+['cannot','ass',"Mineral deposits in the pipes protected Romans from lead poisoning.","Il testo menziona i depositi ma non i loro effetti sulla salute."],
+['false','mix',"Private households were given priority over public baths in the distribution of water.","La priorità andava a fontane pubbliche e terme."]]},
+
+{id:'o21',topic:'Online reviews',q:'c',text:"Online customer reviews strongly influence purchasing decisions, particularly for restaurants, hotels and consumer electronics. Studies of review platforms have found that a small increase in a business's average rating can lead to a noticeable rise in bookings or sales. This has created incentives to manipulate ratings, for example by paying for positive reviews or posting negative ones about competitors. Platforms use automated systems to detect suspicious patterns, such as many reviews posted from the same location within a short time. Consumer organisations, however, report that a significant number of fake reviews still escape detection.",
+o:[['true','',"Some fake reviews are not identified by platforms' automated systems.","Le associazioni dei consumatori riportano che molte recensioni false sfuggono ai controlli."],
+['false','con',"Changes in a business's average rating have no measurable effect on its sales.","Anche un piccolo aumento del voto medio porta a un aumento visibile."],
+['cannot','qnt',"Most negative reviews on review platforms are posted by competitors.","Le recensioni negative dei concorrenti sono un esempio di manipolazione, non una quota."],
+['cannot','mod',"Automated detection systems will soon eliminate fake reviews entirely.","Nulla sul futuro dei sistemi di rilevamento."]]},
+
+{id:'o22',topic:'Alpine glaciers',q:'c',text:"Mountain glaciers in the Alps have lost a substantial part of their volume since the middle of the nineteenth century, and the rate of loss has accelerated in recent decades. Glaciers act as natural reservoirs: they store water as ice in winter and release meltwater during hot, dry summers, when rainfall is low and demand for water is high. In the short term, faster melting can actually increase summer river flows. Once a glacier has shrunk beyond a certain point, however, the amount of meltwater it can supply begins to decline. Hydrologists expect that many smaller Alpine glaciers have already passed this point, while the largest ones may continue to supply increasing summer flows for some decades.",
+o:[['true','',"For some Alpine glaciers, the summer meltwater supply is expected to decline.","Molti ghiacciai piccoli hanno già superato la soglia oltre la quale l'acqua di fusione diminuisce."],
+['false','qnt',"Faster melting always reduces summer river flows.","Nel breve periodo può aumentarli."],
+['cannot','mod',"Alpine glaciers will disappear completely by the end of the century.","Nessuna previsione sulla scomparsa dei ghiacciai."],
+['false','mix',"Glaciers release most of their meltwater in winter.","L'acqua di fusione viene rilasciata in estate."]]},
+
+{id:'o23',topic:'Smartphones',q:'i',text:"In one experiment, university students completed tests of working memory while their smartphones were either on the desk, in a bag, or in another room. All phones were switched to silent so that no notifications could be heard or seen. Students whose phones were in another room performed significantly better than those whose phones were on the desk, with the 'in a bag' group falling in between. The researchers suggested that the mere presence of a phone may draw on limited attentional resources, as part of the mind is occupied in not checking it. Later attempts by other teams to replicate the experiment produced mixed results, with several finding smaller or no differences.",
+o:[['false','',"Students in the experiment received visible notifications on their phones during the tests.","Domanda sull'affermazione ERRATA: i telefoni erano silenziati, nessuna notifica era visibile."],
+['true','',"Students whose phones were in a bag performed better than those whose phones were on the desk.","Vera: il gruppo 'in a bag' si collocava tra gli altri due."],
+['true','',"Not all later studies confirmed the original findings.","Vera: le repliche hanno dato risultati contrastanti."],
+['cannot','gen',"Students who leave their phones in another room obtain higher exam grades.","Non deducibile ma non smentita: per una domanda 'incorrect' non è la risposta."]]},
+
+{id:'o24',topic:'Monetary policy',q:'c',text:"Central banks in many advanced economies aim to keep inflation at around two percent over the medium term. When inflation rises well above that level, a central bank can raise its policy interest rate, making borrowing more expensive for banks, businesses and households. The effect on prices is not immediate: economists estimate that changes in interest rates take between one and two years to have their full impact on inflation. This delay means that central banks must base decisions on forecasts, which can be wrong, particularly when inflation is driven by sudden changes in energy or food prices that interest rates cannot directly influence.",
+o:[['true','',"An interest rate decision taken today may not have its full effect on inflation until more than a year later.","L'effetto pieno arriva in uno-due anni."],
+['false','con',"Raising interest rates lowers inflation immediately.","'The effect on prices is not immediate'."],
+['cannot','mod',"Central banks' inflation forecasts are usually inaccurate.","'Can be wrong' non significa 'usually inaccurate'."],
+['false','con',"Interest rates allow central banks to directly control energy and food prices.","I tassi 'cannot directly influence' quei prezzi."]]},
+
+{id:'o25',topic:'Machine translation',q:'c',text:"Machine translation has improved considerably in recent years thanks to systems trained on very large collections of texts that already exist in two or more languages. The quality of the output varies with the language pair: translations between widely used languages with abundant training data are generally more accurate than those involving languages with fewer available texts. Professional translators increasingly use such systems to produce a first draft, which they then correct, a practice known as post-editing. Some translators report that post-editing is faster for routine documents but can be slower than translating from scratch for creative or highly technical texts, where errors may be subtle and difficult to spot.",
+o:[['true','',"For certain kinds of text, correcting a machine translation can take longer than translating without it.","Per testi creativi o molto tecnici la post-editing 'can be slower'."],
+['false','con',"Machine translation is equally accurate for all language pairs.","La qualità varia con la coppia di lingue."],
+['cannot','mod',"Professional translators will no longer be needed in the future.","Nessuna previsione del genere nel testo."],
+['cannot','qnt',"Most professional translators now use post-editing for all their work.","'Increasingly use' non dice 'most', né 'for all their work'."]]},
+
+{id:'o26',topic:'Forest fires',q:'c',text:"The area burned by forest fires in southern Europe varies greatly from year to year, depending largely on summer weather. Long-term records show no simple upward trend in the total area burned in several Mediterranean countries, partly because firefighting capacity has improved. However, the number of very large fires, which are the hardest to control, has increased in some regions. Experts point to the abandonment of farmland in rural areas as one contributing factor: fields that are no longer cultivated or grazed become covered with shrubs and young trees that provide continuous fuel. Hotter and drier summers, which climate models project to become more frequent, are expected to increase fire risk further.",
+o:[['true','',"In some regions very large fires have become more frequent even though the total burned area in several countries shows no simple upward trend.","Le due informazioni sono entrambe nel testo e compatibili."],
+['false','con',"Records show that the total area burned in Mediterranean countries has risen steadily.","'No simple upward trend'."],
+['cannot','cau',"Farmland abandonment is the main cause of very large fires.","È 'one contributing factor', non la causa principale."],
+['false','con',"Grazing animals increase the amount of fuel available for fires.","I campi non più pascolati si coprono di arbusti: il pascolo riduce il combustibile."]]},
+
+{id:'o27',topic:'Open data',q:'c',text:"Public bodies collect large amounts of data in the course of their work, from weather measurements to company registers and public transport timetables. Making such data available for reuse can allow businesses to develop new services, such as route-planning applications that combine timetables from several operators. To encourage this, EU rules require that certain high-value datasets held by public bodies be made available free of charge and in machine-readable formats. Some public bodies had previously earned revenue by selling access to their data and expressed concern about losing this income. Studies estimating the economic value of open data produce very different figures, depending on the methods and assumptions used.",
+o:[['true','',"Estimates of the economic benefits of open data differ considerably.","Gli studi producono cifre 'very different'."],
+['cannot','qnt',"All data held by public bodies must be provided free of charge under EU rules.","L'obbligo riguarda 'certain high-value datasets'; per gli altri il testo non dice nulla."],
+['false','con',"No public body had charged for access to its data before these rules were introduced.","Alcuni enti guadagnavano vendendo l'accesso."],
+['cannot','qnt',"Route-planning applications are the most profitable use of open data.","Sono solo un esempio."]]},
+
+{id:'o28',topic:'History of medicine',q:'c',text:"The discovery that a mould could kill bacteria was made in a London laboratory in 1928, when a researcher noticed that bacteria failed to grow around a mould that had accidentally contaminated one of his culture plates. He published his observations, but producing the active substance in usable quantities proved extremely difficult, and for about a decade little progress was made. At the end of the 1930s, a team at another university developed methods to purify the substance and tested it successfully on infected mice and then on a small number of patients. Large-scale production began during the Second World War, largely in the United States, where companies developed techniques for growing the mould in large fermentation tanks.",
+o:[['true','',"Several years passed between the original observation and the development of methods to purify the substance.","1928 → fine anni Trenta: circa un decennio."],
+['false','con',"Large-scale production of the substance began shortly after the 1928 observation.","La produzione su larga scala iniziò durante la Seconda guerra mondiale."],
+['cannot','ass',"The researcher who made the original observation led the team that purified the substance.","Il testo parla di 'a team at another university' senza nominarne i membri."],
+['cannot','ext',"Most of the substance produced during the war was used by the armed forces.","L'uso della produzione bellica non è indicato."]]},
+
+{id:'o29',topic:'Noise',q:'c',text:"Environmental noise, mainly from road traffic, is one of the most widespread environmental pressures in Europe's cities. Long-term exposure to high noise levels at night is associated with sleep disturbance and an increased risk of cardiovascular disease. Noise can be reduced at its source through quieter road surfaces, lower speed limits and quieter tyres. Noise barriers along roads are effective for nearby buildings but provide little benefit to upper floors of tall buildings or to areas further away. A city that introduced a 30 km/h speed limit on most residential streets reported a reduction in average noise levels of around two to three decibels, a change that residents typically perceive as noticeable but modest.",
+o:[['true','',"Noise barriers are of limited use for the upper floors of tall buildings.","Le barriere danno 'little benefit to upper floors'."],
+['false','con',"Residents generally perceived the noise reduction after the speed limit change as very large.","Percepita come 'noticeable but modest'."],
+['cannot','cau',"Night-time noise exposure causes cardiovascular disease in most people exposed to it.","Il testo parla di associazione con un rischio maggiore, non di causa né di 'most people'."],
+['cannot','cmp',"Quieter road surfaces are cheaper than noise barriers.","I costi non sono indicati."]]},
+
+{id:'o30',topic:'Coral reefs',q:'c',text:"Coral reefs cover a tiny fraction of the ocean floor but host a large share of known marine species. Reef-building corals live in partnership with microscopic algae that supply them with energy through photosynthesis. When sea temperatures stay unusually high for several weeks, corals expel these algae and turn white, a process known as bleaching. Bleached corals are not dead and can recover if temperatures return to normal quickly enough, but prolonged or repeated bleaching often leads to widespread mortality. Scientists have observed that some coral colonies survive heatwaves that kill neighbouring colonies of the same species, and they are investigating whether this tolerance can be passed on to offspring.",
+o:[['true','',"A coral that has bleached may still survive.","'Bleached corals are not dead and can recover'."],
+['false','mix',"Bleaching occurs when algae expel corals during periods of unusually low temperature.","Sono i coralli a espellere le alghe, e con temperature alte."],
+['cannot','mod',"Heat tolerance in corals is passed on to their offspring.","È ancora oggetto di studio."],
+['cannot','qnt',"Coral reefs host most of the world's marine species.","'A large share of known' non è 'most of the world's'."]]}
+];
+
+// Verbal passages and statements adapted from EPSO AI Field Trainer (github.com/Chartres/epso-kviz, commit fdce428), CC BY-NC-SA 4.0.
+// Passages: (c) European Union, EUR-Lex, reuse authorised under Commission Decision 2011/833/EU.
+const VERBAL_KVIZ = [{"id": "k01", "src": "32024R1689-r44", "topic": "Regulation (EU) 2024/1689 (Artificial Intelligence Act)", "url": "https://eur-lex.europa.eu/eli/reg/2024/1689/oj", "recital": 44, "text": "There are serious concerns about the scientific basis of AI systems aiming to identify or infer emotions, particularly as expression of emotions vary considerably across cultures and situations, and even within a single individual. Among the key shortcomings of such systems are the limited reliability, the lack of specificity and the limited generalisability. Therefore, AI systems identifying or inferring emotions or intentions of natural persons on the basis of their biometric data may lead to discriminatory outcomes and can be intrusive to the rights and freedoms of the concerned persons. Considering the imbalance of power in the context of work or education, combined with the intrusive nature of these systems, such systems could lead to detrimental or unfavourable treatment of certain natural persons or whole groups thereof. Therefore, the placing on the market, the putting into service, or the use of AI systems intended to be used to detect the emotional state of individuals in situations related to the workplace and education should be prohibited. That prohibition should not cover AI systems placed on the market strictly for medical or safety reasons, such as systems intended for therapeutical use.", "st": [{"k": "true", "s": "One reason given for doubting these systems is that the same person may express emotions differently.", "w": "The passage says expression of emotions varies \"even within a single individual\"."}, {"k": "false", "s": "The passage proposes banning emotion recognition systems in all settings.", "w": "The ban covers the workplace and education only, and excludes systems for medical or safety reasons."}, {"k": "cannot", "s": "Emotion recognition systems are more accurate for some cultures than for others.", "w": "The passage says expression varies across cultures but says nothing about accuracy by culture."}, {"k": "false", "s": "A system marketed solely for therapeutic use in a school would fall under the prohibition.", "w": "The prohibition should not cover systems placed on the market strictly for medical reasons, \"such as systems intended for therapeutical use\"."}, {"k": "true", "s": "The passage links the risk of unfavourable treatment at work and in education partly to the imbalance of power between the parties.", "w": "\"Considering the imbalance of power in the context of work or education…\" such systems could lead to unfavourable treatment."}]}, {"id": "k02", "src": "32024R1689-r31", "topic": "Regulation (EU) 2024/1689 (Artificial Intelligence Act)", "url": "https://eur-lex.europa.eu/eli/reg/2024/1689/oj", "recital": 31, "text": "AI systems providing social scoring of natural persons by public or private actors may lead to discriminatory outcomes and the exclusion of certain groups. They may violate the right to dignity and non-discrimination and the values of equality and justice. Such AI systems evaluate or classify natural persons or groups thereof on the basis of multiple data points related to their social behaviour in multiple contexts or known, inferred or predicted personal or personality characteristics over certain periods of time. The social score obtained from such AI systems may lead to the detrimental or unfavourable treatment of natural persons or whole groups thereof in social contexts, which are unrelated to the context in which the data was originally generated or collected or to a detrimental treatment that is disproportionate or unjustified to the gravity of their social behaviour. AI systems entailing such unacceptable scoring practices and leading to such detrimental or unfavourable outcomes should therefore be prohibited. That prohibition should not affect lawful evaluation practices of natural persons that are carried out for a specific purpose in accordance with Union and national law.", "st": [{"k": "false", "s": "The concern about social scoring applies only to systems operated by public authorities.", "w": "The passage covers scoring \"by public or private actors\"."}, {"k": "true", "s": "Treatment out of proportion to the gravity of a person's social behaviour is one of the outcomes the passage objects to.", "w": "The passage names treatment \"disproportionate or unjustified to the gravity of their social behaviour\"."}, {"k": "cannot", "s": "Social scoring systems are already in use in at least one Member State.", "w": "The passage says nothing about current use in any Member State."}, {"k": "false", "s": "The prohibition would also rule out lawful evaluations of people carried out for a specific purpose under national law.", "w": "\"That prohibition should not affect lawful evaluation practices of natural persons that are carried out for a specific purpose…\""}, {"k": "true", "s": "According to the passage, harm can arise when a score is used in a context unrelated to the one in which the data were collected.", "w": "The passage names unfavourable treatment \"in social contexts, which are unrelated to the context in which the data was originally generated or collected\"."}]}, {"id": "k03", "src": "32024R1689-r63", "topic": "Regulation (EU) 2024/1689 (Artificial Intelligence Act)", "url": "https://eur-lex.europa.eu/eli/reg/2024/1689/oj", "recital": 63, "text": "The fact that an AI system is classified as a high-risk AI system under this Regulation should not be interpreted as indicating that the use of the system is lawful under other acts of Union law or under national law compatible with Union law, such as on the protection of personal data, on the use of polygraphs and similar tools or other systems to detect the emotional state of natural persons. Any such use should continue to occur solely in accordance with the applicable requirements resulting from the Charter and from the applicable acts of secondary Union law and national law. This Regulation should not be understood as providing for the legal ground for processing of personal data, including special categories of personal data, where relevant, unless it is specifically otherwise provided for in this Regulation.", "st": [{"k": "false", "s": "Classifying a system as high-risk confirms that its use is lawful under data protection law.", "w": "Classification \"should not be interpreted as indicating that the use of the system is lawful\" under other law, such as data protection."}, {"k": "true", "s": "The Regulation is not meant to serve as a legal ground for processing personal data, unless it specifically provides otherwise.", "w": "This is the last sentence of the passage."}, {"k": "cannot", "s": "The use of polygraphs is banned under national law in most Member States.", "w": "Polygraphs are named only as an example of an area of law; the passage says nothing about bans."}, {"k": "true", "s": "Such use of AI systems should continue to comply with the requirements resulting from the Charter.", "w": "\"Any such use should continue to occur solely in accordance with the applicable requirements resulting from the Charter…\""}, {"k": "cannot", "s": "Most high-risk AI systems process special categories of personal data.", "w": "The passage mentions special categories but not how many systems process them."}]}, {"id": "k04", "src": "32024R1689-r102", "topic": "Regulation (EU) 2024/1689 (Artificial Intelligence Act)", "url": "https://eur-lex.europa.eu/eli/reg/2024/1689/oj", "recital": 102, "text": "Software and data, including models, released under a free and open-source licence that allows them to be openly shared and where users can freely access, use, modify and redistribute them or modified versions thereof, can contribute to research and innovation in the market and can provide significant growth opportunities for the Union economy. General-purpose AI models released under free and open-source licences should be considered to ensure high levels of transparency and openness if their parameters, including the weights, the information on the model architecture, and the information on model usage are made publicly available. The licence should be considered to be free and open-source also when it allows users to run, copy, distribute, study, change and improve software and data, including models under the condition that the original provider of the model is credited, the identical or comparable terms of distribution are respected.", "st": [{"k": "true", "s": "An open-source general-purpose AI model whose parameters including the weights, architecture information and usage information are public should be considered to ensure high levels of transparency.", "w": "The second sentence sets out exactly this condition."}, {"k": "false", "s": "A licence that requires users to credit the original provider cannot count as free and open-source.", "w": "A licence counts as free and open-source \"also when\" it requires crediting the original provider."}, {"k": "cannot", "s": "Most general-purpose AI models on the Union market are released under open-source licences.", "w": "The passage gives no figure or share for the market."}, {"k": "true", "s": "The passage counts the freedom to modify and redistribute software among the features of a free and open-source licence.", "w": "First sentence: users can freely \"access, use, modify and redistribute them\"."}, {"k": "cannot", "s": "Open-source models carry less risk of misuse than proprietary ones.", "w": "The passage does not discuss risk of misuse."}]}, {"id": "k05", "src": "32016R0679-r43", "topic": "Regulation (EU) 2016/679 (General Data Protection Regulation)", "url": "https://eur-lex.europa.eu/eli/reg/2016/679/oj", "recital": 43, "text": "In order to ensure that consent is freely given, consent should not provide a valid legal ground for the processing of personal data in a specific case where there is a clear imbalance between the data subject and the controller, in particular where the controller is a public authority and it is therefore unlikely that consent was freely given in all the circumstances of that specific situation. Consent is presumed not to be freely given if it does not allow separate consent to be given to different personal data processing operations despite it being appropriate in the individual case, or if the performance of a contract, including the provision of a service, is dependent on the consent despite such consent not being necessary for such performance.", "st": [{"k": "true", "s": "Consent is presumed not to be freely given if a service is made dependent on consent that the service does not need.", "w": "The second sentence names exactly this case."}, {"k": "cannot", "s": "Public authorities rely on consent less often than private companies do.", "w": "The passage says nothing about how often consent is used."}, {"k": "false", "s": "Bundling several processing operations under one consent is acceptable even where separate consent would be appropriate.", "w": "In that case consent is presumed not to be freely given."}, {"k": "true", "s": "The aim of the rules described is to ensure that consent is freely given.", "w": "The passage opens with \"In order to ensure that consent is freely given…\""}]}, {"id": "k06", "src": "32016R0679-r85", "topic": "Regulation (EU) 2016/679 (General Data Protection Regulation)", "url": "https://eur-lex.europa.eu/eli/reg/2016/679/oj", "recital": 85, "text": "A personal data breach may, if not addressed in an appropriate and timely manner, result in physical, material or non-material damage to natural persons such as loss of control over their personal data or limitation of their rights, discrimination, identity theft or fraud, financial loss, unauthorised reversal of pseudonymisation, damage to reputation, loss of confidentiality of personal data protected by professional secrecy or any other significant economic or social disadvantage to the natural person concerned. Therefore, as soon as the controller becomes aware that a personal data breach has occurred, the controller should notify the personal data breach to the supervisory authority without undue delay and, where feasible, not later than 72 hours after having become aware of it, unless the controller is able to demonstrate, in accordance with the accountability principle, that the personal data breach is unlikely to result in a risk to the rights and freedoms of natural persons. Where such notification cannot be achieved within 72 hours, the reasons for the delay should accompany the notification and information may be provided in phases without undue further delay.", "st": [{"k": "false", "s": "The controller must always notify the supervisory authority within 72 hours.", "w": "The deadline applies \"where feasible\", late notice is allowed with reasons, and no notice is needed if a risk is unlikely."}, {"k": "true", "s": "If notification takes longer than 72 hours, the controller should give the reasons for the delay.", "w": "Last sentence: \"the reasons for the delay should accompany the notification\"."}, {"k": "true", "s": "Notification is not needed if the controller can demonstrate that the breach is unlikely to result in a risk to the rights and freedoms of natural persons.", "w": "The passage gives this exception with \"unless\"."}, {"k": "cannot", "s": "Identity theft is the most common harm caused by personal data breaches.", "w": "Identity theft is one listed harm; the passage says nothing about frequency."}, {"k": "false", "s": "All information about the breach has to be supplied in a single notification.", "w": "\"information may be provided in phases\"."}]}, {"id": "k07", "src": "32016R0679-r151", "topic": "Regulation (EU) 2016/679 (General Data Protection Regulation)", "url": "https://eur-lex.europa.eu/eli/reg/2016/679/oj", "recital": 151, "text": "The legal systems of Denmark and Estonia do not allow for administrative fines as set out in this Regulation. The rules on administrative fines may be applied in such a manner that in Denmark the fine is imposed by competent national courts as a criminal penalty and in Estonia the fine is imposed by the supervisory authority in the framework of a misdemeanour procedure, provided that such an application of the rules in those Member States has an equivalent effect to administrative fines imposed by supervisory authorities. Therefore the competent national courts should take into account the recommendation by the supervisory authority initiating the fine. In any event, the fines imposed should be effective, proportionate and dissuasive.", "st": [{"k": "true", "s": "In Denmark, a fine under the Regulation may be imposed by a court as a criminal penalty.", "w": "\"in Denmark the fine is imposed by competent national courts as a criminal penalty\"."}, {"k": "false", "s": "In Estonia, fines are imposed by the national courts in criminal proceedings.", "w": "In Estonia the supervisory authority imposes the fine in a misdemeanour procedure."}, {"k": "cannot", "s": "Danish courts usually impose lower fines than supervisory authorities in other Member States.", "w": "The passage says nothing about the size of fines."}, {"k": "true", "s": "The special arrangements for Denmark and Estonia are allowed only if they have an effect equivalent to administrative fines imposed by supervisory authorities.", "w": "The passage sets this condition: \"provided that such an application… has an equivalent effect\"."}, {"k": "cannot", "s": "Estonia's legal system allows criminal penalties for data protection infringements.", "w": "For Estonia the passage describes only a misdemeanour procedure; it does not say whether criminal penalties exist."}]}, {"id": "k08", "src": "32023R2854-r88", "topic": "Regulation (EU) 2023/2854 (Data Act)", "url": "https://eur-lex.europa.eu/eli/reg/2023/2854/oj", "recital": 88, "text": "Switching charges are charges imposed by providers of data processing services on the customers for the switching process. Typically, those charges are intended to pass on costs which the source provider of data processing services may incur because of the switching process to the customer who wishes to switch. Common examples of switching charges are costs related to the transit of data from one provider of data processing services to another or to an on-premises ICT infrastructure (data egress charges) or the costs incurred for specific support actions during the switching process. Unnecessarily high data egress charges and other unjustified charges unrelated to actual switching costs inhibit customers from switching, restrict the free flow of data, have the potential to limit competition and cause lock-in effects for the customers by reducing incentives to choose a different or additional service provider. Switching charges should therefore be abolished after three years from the date of entry into force of this Regulation. Providers of data processing services should be able to impose reduced switching charges up to that date.", "st": [{"k": "true", "s": "Data egress charges are one example of switching charges.", "w": "The passage gives them among the \"common examples of switching charges\"."}, {"k": "false", "s": "Until switching charges are abolished, providers may keep imposing them at their full level.", "w": "Up to that date they should be able to impose only \"reduced\" switching charges."}, {"k": "cannot", "s": "Switching charges are currently the main reason customers stay with their cloud provider.", "w": "The passage says charges inhibit switching, not that they are the main reason customers stay."}, {"k": "false", "s": "According to the passage, switching charges are typically meant to earn the source provider extra profit.", "w": "They are typically intended to pass on the source provider's costs to the customer."}, {"k": "true", "s": "The passage argues that unjustified charges can reduce customers' incentive to choose an additional service provider.", "w": "\"reducing incentives to choose a different or additional service provider\"."}]}, {"id": "k09", "src": "32023R2854-r19", "topic": "Regulation (EU) 2023/2854 (Data Act)", "url": "https://eur-lex.europa.eu/eli/reg/2023/2854/oj", "recital": 19, "text": "Data literacy refers to the skills, knowledge and understanding that allows users, consumers and businesses, in particular SMEs falling within the scope of this Regulation, to gain awareness of the potential value of the data they generate, produce and share and that they are motivated to offer and provide access to in accordance with relevant legal rules. Data literacy should go beyond learning about tools and technologies and aim to equip and empower citizens and businesses with the ability to benefit from an inclusive and fair data market. The spread of data literacy measures and the introduction of appropriate follow-up actions could contribute to improving working conditions and ultimately sustain the consolidation, and innovation path of, the data economy in the Union. Competent authorities should promote tools and adopt measures to advance data literacy among users and entities falling within the scope of this Regulation and an awareness of their rights and obligations thereunder.", "st": [{"k": "true", "s": "According to the passage, data literacy should involve more than learning about tools and technologies.", "w": "\"should go beyond learning about tools and technologies\"."}, {"k": "cannot", "s": "Most SMEs in the Union currently lack data literacy.", "w": "The passage says nothing about current levels of data literacy."}, {"k": "true", "s": "Competent authorities are expected to promote data literacy.", "w": "\"Competent authorities should promote tools and adopt measures to advance data literacy…\""}, {"k": "false", "s": "The passage claims that data literacy measures will certainly improve working conditions.", "w": "The passage says only that they \"could contribute\"."}, {"k": "cannot", "s": "Data literacy training should be compulsory for consumers.", "w": "The passage says nothing about compulsory training."}]}, {"id": "k10", "src": "32022R2065-r69", "topic": "Regulation (EU) 2022/2065 (Digital Services Act)", "url": "https://eur-lex.europa.eu/eli/reg/2022/2065/oj", "recital": 69, "text": "When recipients of the service are presented with advertisements based on targeting techniques optimised to match their interests and potentially appeal to their vulnerabilities, this can have particularly serious negative effects. In certain cases, manipulative techniques can negatively impact entire groups and amplify societal harms, for example by contributing to disinformation campaigns or by discriminating against certain groups. Online platforms are particularly sensitive environments for such practices and they present a higher societal risk. Consequently, providers of online platforms should not present advertisements based on profiling as defined in Article 4, point (4), of Regulation (EU) 2016/679, using special categories of personal data referred to in Article 9(1) of that Regulation, including by using profiling categories based on those special categories. This prohibition is without prejudice to the obligations applicable to providers of online platforms or any other service provider or advertiser involved in the dissemination of the advertisements under Union law on protection of personal data.", "st": [{"k": "true", "s": "Providers of online platforms should not present advertisements based on profiling that uses special categories of personal data.", "w": "This is the prohibition in the fourth sentence."}, {"k": "false", "s": "The passage treats online platforms as a lower-risk environment for targeted advertising.", "w": "Online platforms \"present a higher societal risk\"."}, {"k": "cannot", "s": "Targeted advertising is the main source of revenue for online platforms.", "w": "The passage says nothing about platform revenue."}, {"k": "false", "s": "The prohibition described releases advertisers from their obligations under Union data protection law.", "w": "\"This prohibition is without prejudice to the obligations applicable to… any… advertiser… under Union law on protection of personal data.\""}, {"k": "true", "s": "According to the passage, manipulative techniques can contribute to disinformation campaigns.", "w": "The second sentence gives this example."}]}, {"id": "k11", "src": "32022L2555-r52", "topic": "Directive (EU) 2022/2555 (NIS 2 Directive)", "url": "https://eur-lex.europa.eu/eli/dir/2022/2555/oj", "recital": 52, "text": "Open-source cybersecurity tools and applications can contribute to a higher degree of openness and can have a positive impact on the efficiency of industrial innovation. Open standards facilitate interoperability between security tools, benefitting the security of industrial stakeholders. Open-source cybersecurity tools and applications can leverage the wider developer community, enabling diversification of suppliers. Open source can lead to a more transparent verification process of cybersecurity related tools and a community-driven process of discovering vulnerabilities. Member States should therefore be able to promote the use of open-source software and open standards by pursuing policies relating to the use of open data and open-source as part of security through transparency. Policies promoting the introduction and sustainable use of open-source cybersecurity tools are of particular importance for small and medium-sized enterprises facing significant costs for implementation, which could be minimised by reducing the need for specific applications or tools.", "st": [{"k": "true", "s": "The passage suggests that open source can support community-driven discovery of vulnerabilities.", "w": "Open source can lead to \"a community-driven process of discovering vulnerabilities\"."}, {"k": "false", "s": "The passage requires Member States to use only open-source cybersecurity tools.", "w": "Member States \"should… be able to promote\" their use; nothing is required."}, {"k": "cannot", "s": "Open-source cybersecurity tools are cheaper to maintain than proprietary tools.", "w": "The passage does not compare maintenance costs."}, {"k": "true", "s": "According to the passage, policies promoting open-source cybersecurity tools are of particular importance for small and medium-sized enterprises.", "w": "The last sentence says so."}, {"k": "cannot", "s": "Most cybersecurity incidents in the Union affect small and medium-sized enterprises.", "w": "The passage says nothing about incidents."}]}, {"id": "k12", "src": "32019L0882-r70", "topic": "Directive (EU) 2019/882 (European Accessibility Act)", "url": "https://eur-lex.europa.eu/eli/dir/2019/882/oj", "recital": 70, "text": "Microenterprises are distinguished from all other undertakings by their limited human resources, annual turnover or annual balance sheet. The burden of complying with the accessibility requirements for microenterprises therefore, in general, takes a greater share of their financial and human resources than for other undertakings and is more likely to represent a disproportionate share of the costs. A significant proportion of cost for microenterprises comes from completing or keeping paperwork and records to demonstrate compliance with the different requirements set out in Union law. While all economic operators covered by this Directive should be able to assess the proportionality of complying with the accessibility requirements of this Directive and should only comply with them to the extent they are not disproportionate, demanding such an assessment from microenterprises providing services would in itself constitute a disproportionate burden. The requirements and obligations of this Directive should therefore not apply to microenterprises providing services within the scope of this Directive.", "st": [{"k": "true", "s": "The Directive's requirements should not apply to microenterprises providing services within its scope.", "w": "This is the conclusion in the last sentence."}, {"k": "false", "s": "According to the passage, meeting the accessibility requirements costs microenterprises less, relative to their resources, than other undertakings.", "w": "It takes \"a greater share of their financial and human resources\"."}, {"k": "cannot", "s": "The exemption also covers microenterprises that manufacture products.", "w": "The passage speaks only of microenterprises providing services; it is silent on products."}, {"k": "true", "s": "Paperwork to demonstrate compliance accounts for a significant proportion of microenterprises' costs.", "w": "The third sentence says so."}, {"k": "false", "s": "According to the passage, all economic operators covered by the Directive must meet the accessibility requirements in full, whatever the burden.", "w": "They comply \"only… to the extent they are not disproportionate\"."}]}, {"id": "k13", "src": "32023R1781-r1", "topic": "Regulation (EU) 2023/1781 (Chips Act)", "url": "https://eur-lex.europa.eu/eli/reg/2023/1781/oj", "recital": 1, "text": "Semiconductors are at the core of any digital device and the Union’s digital transition: from smartphones and cars, through critical applications and infrastructures in health, energy, communications and automation to most other industry sectors. As semiconductors are central to the digital economy, they are powerful enablers for the sustainability and green transition, contributing thus to the objectives of the Commission communication of 11 December 2019 on ‘The European Green Deal’. While semiconductors are essential to the functioning of today’s economy and society as well as defence and security, the Union has witnessed unprecedented disruptions in their supply, the consequences of which are significant. The current disruptions have exposed long-lasting vulnerabilities in this respect, in particular a strong third-country dependency in manufacturing and design of chips. Member States are primarily responsible for maintaining a strong industrial, competitive, sustainable base in the Union promoting innovation across a full range of chips.", "st": [{"k": "true", "s": "The passage states that the Union depends strongly on third countries for the design of chips.", "w": "\"a strong third-country dependency in manufacturing and design of chips\"."}, {"k": "false", "s": "According to the passage, the Union is primarily responsible for maintaining a strong industrial base for chips.", "w": "\"Member States are primarily responsible\"."}, {"k": "cannot", "s": "The supply disruptions were caused mainly by the COVID-19 pandemic.", "w": "The passage does not give the cause of the disruptions."}, {"k": "true", "s": "Semiconductors are presented as contributing to the objectives of the European Green Deal.", "w": "The second sentence says so."}, {"k": "cannot", "s": "Chip production in the Union has fallen over the last decade.", "w": "The passage says nothing about production trends."}]}, {"id": "k14", "src": "32019L1024-r38", "topic": "Directive (EU) 2019/1024 (Open Data Directive)", "url": "https://eur-lex.europa.eu/eli/dir/2019/1024/oj", "recital": 38, "text": "Libraries, including university libraries, museums and archives should be able to charge above marginal costs in order not to hinder their normal running. In the case of such public sector bodies, the total income from supplying and allowing re-use of documents over the appropriate accounting period should not exceed the cost of collection, production, reproduction, dissemination, preservation and rights clearance, together with a reasonable return on investment. Where applicable, the costs of anonymisation of personal data or of commercially sensitive information should also be included in the eligible cost. For the purpose of libraries, including university libraries, museums and archives, and bearing in mind their particularities, the prices charged by the private sector for the re-use of identical or similar documents could be considered when calculating a reasonable return on investment.", "st": [{"k": "true", "s": "Museums should be able to charge above marginal costs for the re-use of documents.", "w": "The first sentence says so."}, {"k": "false", "s": "Libraries' total income from re-use may exceed their costs plus a reasonable return on investment if their normal running requires it.", "w": "Total income \"should not exceed\" costs plus a reasonable return; normal running justifies only going above marginal cost."}, {"k": "true", "s": "The costs of anonymising personal data can be included in the eligible costs.", "w": "Third sentence: \"Where applicable, the costs of anonymisation… should also be included\"."}, {"k": "cannot", "s": "Private-sector prices for re-using similar documents are usually higher than those of archives.", "w": "The passage does not compare price levels."}, {"k": "false", "s": "When calculating a reasonable return on investment, libraries are required to follow private-sector prices.", "w": "Private-sector prices \"could be considered\"; it is not a requirement."}]}];
+
+// ---------- shared helpers ----------
+const R = {
+  int:(a,b)=>a+Math.floor(Math.random()*(b-a+1)),
+  pick:a=>a[Math.floor(Math.random()*a.length)],
+  shuffle:a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a},
+  sample:(a,n)=>R.shuffle(a).slice(0,n),
+  chance:p=>Math.random()<p
+};
+const nf=(x,dp=0)=>Number(x).toLocaleString('en-GB',{minimumFractionDigits:dp,maximumFractionDigits:dp});
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const LETTERS='ABCDE';
+
+// ---------- VERBAL ----------
+const Q_CORRECT='Which of the following statements is correct?';
+const Q_INCORRECT='Which of the following statements is incorrect?';
+
+// All verbal passages as "sources". Each source can produce an item.
+function verbalSources(){
+  const out=[];
+  VERBAL_ORIGINAL.forEach(p=>out.push({pid:p.id,origin:'orig',p}));
+  VERBAL_KVIZ.forEach(p=>out.push({pid:p.id,origin:'kviz',p}));
+  return out;
+}
+
+function buildVerbalItem(src){
+  if(src.origin==='orig'){
+    const p=src.p;
+    const opts=p.o.map((o,i)=>({kind:o[0],trap:o[1],text:o[2],why:o[3],key:i===0}));
+    return finishVerbal(p.id,p.topic,p.text,p.q,opts,null);
+  }
+  // EUR-Lex passage: build a 4-option item from its true / false / cannot-say statements
+  const p=src.p, T=p.st.filter(s=>s.k==='true'), F=p.st.filter(s=>s.k==='false'), C=p.st.filter(s=>s.k==='cannot');
+  const canC=T.length>=1&&F.length+C.length>=3, canI=F.length>=1&&T.length+C.length>=3;
+  const q=(canC&&canI)?(R.chance(0.8)?'c':'i'):(canC?'c':'i');
+  let key,others;
+  if(q==='c'){key=R.pick(T);others=R.sample(F.concat(C),3)}
+  else{key=R.pick(F);others=R.sample(T.concat(C),3)}
+  const mk=(s,isKey)=>({kind:s.k,trap:s.k==='false'?'con':(s.k==='cannot'?'nd':''),text:s.s,why:s.w,key:isKey});
+  const opts=[mk(key,true)].concat(others.map(s=>mk(s,false)));
+  return finishVerbal(p.id,p.topic,p.text,q,opts,{url:p.url,recital:p.recital,act:p.topic});
+}
+
+function finishVerbal(id,topic,text,q,opts,source){
+  const sh=R.shuffle(opts);
+  const key=sh.findIndex(o=>o.key);
+  return {sec:'verbal',id,topic,text,q,options:sh,key,source,
+    question:q==='c'?Q_CORRECT:Q_INCORRECT};
+}
+
+// trap label for a wrong verbal choice
+function verbalTrap(item,choice){
+  const o=item.options[choice]; if(!o||o.key) return null;
+  if(item.q==='i'){ return o.kind==='true'?'dom':'ndf'; }
+  if(o.kind==='cannot') return o.trap&&o.trap!=='nd'?o.trap:'nd';
+  return o.trap||'con';
+}
+
+const TRAPS={
+  con:'Contraddizione con il testo non vista',
+  mix:'Dettagli scambiati (numeri, soggetti, periodi)',
+  qnt:'Quantificatori e portata (some / most / all / only)',
+  mod:'Verbi modali e tempi (may, will, ora / prima)',
+  cau:'Causa scambiata per semplice successione',
+  ass:'Assunzione non presente nel testo',
+  ext:'Conoscenza esterna al testo',
+  gen:'Generalizzazione oltre il testo',
+  cmp:'Confronto che il testo non fa',
+  nd:'Affermazione non deducibile presa per vera',
+  dom:"Domanda 'incorrect': scelta un'affermazione vera",
+  ndf:"Domanda 'incorrect': non deducibile presa per falsa"
+};
+
+// ---------- NUMERICAL ----------
+const COUNTRIES=['Austria','Belgium','Bulgaria','Croatia','Cyprus','Czechia','Denmark','Estonia','Finland','France','Germany','Greece','Hungary','Ireland','Italy','Latvia','Lithuania','Luxembourg','Malta','Netherlands','Poland','Portugal','Romania','Slovakia','Slovenia','Spain','Sweden'];
+const fmtPct=(x,dp=1)=>(x>0?'+':'')+nf(x,dp)+'%';
+
+// Build 5 numeric options: key + listed slips + plausible fillers. Sorted ascending like a real paper.
+function numOptions(v,slips,fmt,valFilter){
+  const seen=new Set(), list=[];
+  const add=(x,why)=>{ if(!isFinite(x)) return false; if(valFilter&&!valFilter(x)) return false; const s=fmt(x); if(seen.has(s)) return false; seen.add(s); list.push({v:x,label:s,why}); return true; };
+  if(!add(v,null)) return null;
+  slips.forEach(([x,why])=>{ if(list.length<5) add(x,why); });
+  let guard=0;
+  while(list.length<5&&guard++<200){ const k=(0.06+Math.random()*0.28)*(R.chance(.5)?1:-1); add(v*(1+k),'valore vicino'); }
+  list.sort((a,b)=>a.v-b.v);
+  return {options:list.map(o=>({label:o.label,why:o.why})),key:list.findIndex(o=>o.why===null)};
+}
+function nameOptions(rows,keyName,trapMap){
+  const names=rows.slice().sort();
+  return {options:names.map(n=>({label:n,why:n===keyName?null:(trapMap[n]||'altro paese')})),key:names.indexOf(keyName)};
+}
+
+function tableHTML(caption,head,rows,note){
+  return `<div class="tblwrap"><table class="data"><caption>${esc(caption)}</caption><thead><tr>${head.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map((c,i)=>i===0?`<th scope="row">${esc(c)}</th>`:`<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>${note?`<p class="src">${esc(note)}</p>`:''}</div>`;
+}
+const FICT='Dati fittizi a scopo di esercitazione.';
+
+function barChartSVG(title,labels,vals,unit){
+  const W=520,H=260,pl=48,pb=40,pt=28,pr=12, max=Math.max(...vals), top=Math.ceil(max/ (max>100?50:10))*(max>100?50:10);
+  const iw=W-pl-pr, ih=H-pt-pb, bw=iw/labels.length*0.56;
+  let g='';
+  for(let i=0;i<=5;i++){const y=pt+ih-ih*i/5, v=top*i/5; g+=`<line x1="${pl}" x2="${W-pr}" y1="${y}" y2="${y}" class="grid"/><text x="${pl-6}" y="${y+4}" text-anchor="end" class="ax">${nf(v,0)}</text>`;}
+  labels.forEach((l,i)=>{const x=pl+iw*(i+0.5)/labels.length, h=ih*vals[i]/top, y=pt+ih-h;
+    g+=`<rect x="${x-bw/2}" y="${y}" width="${bw}" height="${h}" class="bar"/><text x="${x}" y="${y-5}" text-anchor="middle" class="val">${nf(vals[i],0)}</text><text x="${x}" y="${H-pb+16}" text-anchor="middle" class="ax">${esc(l)}</text>`;});
+  return `<figure class="chart"><figcaption>${esc(title)}</figcaption><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}">${g}</svg><p class="src">${FICT}${unit?' Unità: '+esc(unit)+'.':''}</p></figure>`;
+}
+function pieChartSVG(title,labels,pcts){
+  const cx=130,cy=120,r=95; let a0=-Math.PI/2, g='';
+  const tones=['p1','p2','p3','p4','p5','p6'];
+  labels.forEach((l,i)=>{const a1=a0+2*Math.PI*pcts[i]/100, large=(a1-a0)>Math.PI?1:0;
+    const x0=cx+r*Math.cos(a0),y0=cy+r*Math.sin(a0),x1=cx+r*Math.cos(a1),y1=cy+r*Math.sin(a1);
+    g+=`<path d="M${cx},${cy} L${x0.toFixed(1)},${y0.toFixed(1)} A${r},${r} 0 ${large} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" class="${tones[i%6]}"/>`;
+    const am=(a0+a1)/2; g+=`<text x="${(cx+(r*0.66)*Math.cos(am)).toFixed(1)}" y="${(cy+(r*0.66)*Math.sin(am)+4).toFixed(1)}" text-anchor="middle" class="pl">${pcts[i]}%</text>`;
+    a0=a1;});
+  const leg=labels.map((l,i)=>`<rect x="260" y="${30+i*26}" width="14" height="14" class="${tones[i%6]}"/><text x="282" y="${42+i*26}" class="ax">${esc(l)}</text>`).join('');
+  return `<figure class="chart"><figcaption>${esc(title)}</figcaption><svg viewBox="0 0 480 240" role="img" aria-label="${esc(title)}">${g}${leg}</svg></figure>`;
+}
+
+const METRICS=[
+  {n:'Tourist arrivals',u:'thousands',lo:900,hi:9000},
+  {n:'New passenger cars registered',u:'thousands',lo:40,hi:900},
+  {n:'Exports of machinery',u:'€ million',lo:1200,hi:24000},
+  {n:'Renewable electricity generated',u:'GWh',lo:2000,hi:60000},
+  {n:'Rail freight transported',u:'million tonne-km',lo:800,hi:18000}
+];
+
+function series3(lo,hi){ const a=R.int(lo,hi); const g1=1+(R.int(-80,160)/1000), g2=1+(R.int(-80,160)/1000); const b=Math.round(a*g1), c=Math.round(b*g2); return [a,b,c]; }
+
+const NUM_T={
+pct:{label:'Variazione percentuale',make(){
+  const m=R.pick(METRICS), rows=R.sample(COUNTRIES,5), y0=R.int(2019,2022), Y=[y0,y0+1,y0+2];
+  const data=rows.map(()=>series3(m.lo,m.hi)); const r=R.int(0,4), A=data[r][0], B=data[r][2], M=data[r][1];
+  const v=(B-A)/A*100; if(Math.abs(v)<1) return NUM_T.pct.make();
+  const o=numOptions(v,[[(B-A)/B*100,'base sbagliata (diviso per il valore finale)'],[(M-A)/A*100,'anno sbagliato'],[-v,'segno invertito']],x=>fmtPct(x));
+  return {stim:tableHTML(`${m.n} (${m.u})`,['Country',...Y.map(String)],rows.map((c,i)=>[c,...data[i].map(x=>nf(x))]),FICT),
+    question:`By approximately what percentage did ${m.n.toLowerCase()} in ${rows[r]} change between ${Y[0]} and ${Y[2]}?`,...o,
+    explain:`(${nf(B)} − ${nf(A)}) ÷ ${nf(A)} × 100 = ${fmtPct(v)}. La base è sempre il valore iniziale (${Y[0]}).`};
+}},
+share:{label:'Quota sul totale',make(){
+  const m=R.pick(METRICS), rows=R.sample(COUNTRIES,5), y0=R.int(2019,2022), Y=[y0,y0+1,y0+2];
+  const data=rows.map(()=>series3(m.lo,m.hi)); const r=R.int(0,4), yi=R.int(1,2);
+  const col=data.map(d=>d[yi]), tot=col.reduce((a,b)=>a+b,0), X=col[r], v=X/tot*100;
+  const other=data.map(d=>d[yi===1?2:1]).reduce((a,b)=>a+b,0);
+  const o=numOptions(v,[[X/(tot-X)*100,'diviso per il totale degli altri paesi'],[X/other*100,'totale dell\'anno sbagliato'],[X/Math.max(...col.filter((_,i)=>i!==r))*100,'diviso per il valore massimo']],x=>nf(x,1)+'%');
+  return {stim:tableHTML(`${m.n} (${m.u})`,['Country',...Y.map(String)],rows.map((c,i)=>[c,...data[i].map(x=>nf(x))]),FICT),
+    question:`In ${Y[yi]}, approximately what share of the combined total of the five countries did ${rows[r]} account for?`,...o,
+    explain:`Totale ${Y[yi]} = ${nf(tot)}. Quota = ${nf(X)} ÷ ${nf(tot)} × 100 = ${nf(v,1)}%.`};
+}},
+percap:{label:'Valore pro capite',make(){
+  const rows=R.sample(COUNTRIES,5); const pop=rows.map(()=>R.int(15,400)/10), gdp=pop.map(p=>Math.round(p*R.int(14,60))/1);
+  const r=R.int(0,4), v=gdp[r]/pop[r]*1000, o2=(r+1)%5;
+  const o=numOptions(v,[[v*10,'errore di unità (×10)'],[v/10,'errore di unità (÷10)'],[gdp[o2]/pop[o2]*1000,'riga sbagliata']],x=>'€'+nf(Math.round(x/10)*10));
+  return {stim:tableHTML('Population and gross domestic product, 2024',['Country','Population (million)','GDP (€ billion)'],rows.map((c,i)=>[c,nf(pop[i],1),nf(gdp[i])]),FICT),
+    question:`Approximately what was GDP per inhabitant in ${rows[r]} in 2024?`,...o,
+    explain:`€${nf(gdp[r])} miliardi ÷ ${nf(pop[r],1)} milioni = ${nf(gdp[r]/pop[r],3)} migliaia di € ≈ €${nf(Math.round(v/10)*10)}. Miliardi ÷ milioni = migliaia.`};
+}},
+maxratio:{label:'Rapporto massimo (gruppo)',make(){
+  for(let t=0;t<80;t++){
+    const rows=R.sample(COUNTRIES,5), staff=rows.map(()=>R.int(120,980)), cases=staff.map(s=>Math.round(s*R.int(30,95)/10));
+    const ratio=cases.map((c,i)=>c/staff[i]); const k=ratio.indexOf(Math.max(...ratio)), ka=cases.indexOf(Math.max(...cases)), ks=staff.indexOf(Math.min(...staff));
+    if(k===ka) continue;
+    const tm={}; tm[rows[ka]]='valore assoluto più alto, non per addetto'; if(ks!==k&&ks!==ka) tm[rows[ks]]='meno personale, non più casi per addetto';
+    return {stim:tableHTML('Customs offices: staff and cases handled, 2024',['Country','Staff','Cases handled'],rows.map((c,i)=>[c,nf(staff[i]),nf(cases[i])]),FICT),
+      question:'Which country handled the highest number of cases per member of staff?',...nameOptions(rows,rows[k],tm),
+      explain:rows.map((c,i)=>`${c}: ${nf(ratio[i],2)}`).join(' · ')+`. Il massimo è ${rows[k]}; ${rows[ka]} ha più casi in assoluto ma non per addetto.`};
+  }
+}},
+maxgrowth:{label:'Crescita relativa massima (gruppo)',make(){
+  for(let t=0;t<80;t++){
+    const m=R.pick(METRICS), rows=R.sample(COUNTRIES,5), a=rows.map(()=>R.int(m.lo,m.hi)), b=a.map(x=>Math.round(x*(1+R.int(-40,260)/1000)));
+    const rel=b.map((x,i)=>(x-a[i])/a[i]), abs=b.map((x,i)=>x-a[i]); const k=rel.indexOf(Math.max(...rel)), ka=abs.indexOf(Math.max(...abs));
+    if(k===ka) continue;
+    const tm={}; tm[rows[ka]]='aumento assoluto più alto, non percentuale';
+    return {stim:tableHTML(`${m.n} (${m.u})`,['Country','2023','2024'],rows.map((c,i)=>[c,nf(a[i]),nf(b[i])]),FICT),
+      question:`Which country recorded the largest percentage increase in ${m.n.toLowerCase()} between 2023 and 2024?`,...nameOptions(rows,rows[k],tm),
+      explain:rows.map((c,i)=>`${c}: ${fmtPct(rel[i]*100)}`).join(' · ')+`. ${rows[ka]} ha l'aumento assoluto più alto (${nf(abs[ka])}), ma non il più alto in percentuale.`};
+  }
+}},
+fx:{label:'Conversione valutaria',make(){
+  const cur=R.sample([['Czechia','CZK',25],['Denmark','DKK',7.46],['Hungary','HUF',395],['Poland','PLN',4.3],['Romania','RON',4.98],['Sweden','SEK',11.3]],4);
+  const rate=cur.map(c=>+(c[2]*(1+R.int(-30,30)/1000)).toFixed(c[2]>100?0:2));
+  const eur=cur.map(()=>R.int(1800,5200)/100), price=eur.map((e,i)=>Math.round(e*rate[i]*(rate[i]>100?1:10))/(rate[i]>100?1:10));
+  const inE=price.map((p,i)=>p/rate[i]); let a=0,b=1; inE.forEach((x,i)=>{if(x>inE[a])a=i}); b=a===0?1:0; inE.forEach((x,i)=>{if(i!==a&&x<inE[b])b=i});
+  const v=inE[a]-inE[b];
+  const o=numOptions(v,[[(price[a]-price[b])/rate[a],'differenza in valuta locale convertita con un solo tasso'],[inE[a],'solo il prezzo più alto'],[(price[a]-price[b])/rate[b],'differenza in valuta locale convertita con un solo tasso']],x=>'€'+nf(x,2),x=>x>0);
+  return {stim:tableHTML('Price of the same monthly public transport pass, 2024',['Country','Currency','Price (local currency)','Exchange rate (units per €1)'],cur.map((c,i)=>[c[0],c[1],nf(price[i],price[i]%1?1:0),nf(rate[i],rate[i]>100?0:2)]),FICT),
+    question:`Approximately how much more, in euro, did the pass cost in ${cur[a][0]} than in ${cur[b][0]}?`,...o,
+    explain:`${cur[a][0]}: ${nf(price[a],1)} ÷ ${rate[a]} = €${nf(inE[a],2)}. ${cur[b][0]}: ${nf(price[b],1)} ÷ ${rate[b]} = €${nf(inE[b],2)}. Differenza = €${nf(v,2)}. Converti prima, poi sottrai.`};
+}},
+reverse:{label:'Percentuale inversa',make(){
+  const rows=R.sample(COUNTRIES,5), now=rows.map(()=>R.int(1200,9800)), ch=rows.map(()=>R.int(-12,28)); const r=ch.findIndex(c=>c!==0)>=0?R.pick(rows.map((_,i)=>i).filter(i=>ch[i]!==0)):0;
+  const V=now[r], p=ch[r]/100, v=V/(1+p);
+  const o=numOptions(v,[[V*(1-p),'tolta la percentuale dal valore finale'],[V/(1-p),'segno della variazione invertito'],[V*(1+p),'percentuale applicata in avanti']],x=>nf(Math.round(x)));
+  return {stim:tableHTML('Number of start-ups registered',['Country','2024','Change vs 2023'],rows.map((c,i)=>[c,nf(now[i]),fmtPct(ch[i],0)]),FICT),
+    question:`Approximately how many start-ups were registered in ${rows[r]} in 2023?`,...o,
+    explain:`2024 = 2023 × (1 ${p>=0?'+':'−'} ${nf(Math.abs(p),2)}). Quindi 2023 = ${nf(V)} ÷ ${nf(1+p,2)} = ${nf(Math.round(v))}. Non togliere la percentuale dal valore finale.`};
+}},
+compound:{label:'Proiezione a tasso costante',make(){
+  const m=R.pick(METRICS), rows=R.sample(COUNTRIES,4), a=rows.map(()=>R.int(m.lo,m.hi)), b=a.map(x=>Math.round(x*(1+R.int(40,180)/1000)));
+  const r=R.int(0,3), g=b[r]/a[r], v=b[r]*g*g;
+  const o=numOptions(v,[[b[r]+2*(b[r]-a[r]),'crescita lineare invece che composta'],[b[r]*(1+2*(g-1)),'tasso raddoppiato invece che composto'],[b[r]*g,'un solo anno di crescita']],x=>nf(Math.round(x)));
+  return {stim:tableHTML(`${m.n} (${m.u})`,['Country','2023','2024'],rows.map((c,i)=>[c,nf(a[i]),nf(b[i])]),FICT),
+    question:`If ${m.n.toLowerCase()} in ${rows[r]} continues to grow at the same annual percentage rate as between 2023 and 2024, approximately what will the value be in 2026?`,...o,
+    explain:`Tasso annuo = ${nf(b[r])} ÷ ${nf(a[r])} = ${nf(g,4)}. 2026 = ${nf(b[r])} × ${nf(g,4)}² ≈ ${nf(Math.round(v))}.`};
+}},
+pp:{label:'Punti percentuali vs %',make(){
+  const rows=R.sample(COUNTRIES,5); const y=[2022,2023,2024]; const d=rows.map(()=>{let a=R.int(30,140)/10; return [a,+(a+R.int(-20,25)/10).toFixed(1),+(a+R.int(-25,30)/10).toFixed(1)].map(x=>Math.max(1.5,x))});
+  let r=R.int(0,4); if(d[r][2]===d[r][0]) d[r][2]=+(d[r][0]+0.8).toFixed(1);
+  const A=d[r][0],B=d[r][2],pp=+(B-A).toFixed(1),rel=(B-A)/A*100;
+  const lab=x=>(x>0?'+':'')+nf(x,1)+' percentage points';
+  const cand=[[lab(pp),null],[fmtPct(rel),'variazione relativa, non in punti'],[fmtPct(pp),'confusi punti e percentuale'],[lab(-pp),'segno invertito'],[lab(+(d[r][1]-A).toFixed(1)),'anno sbagliato']];
+  const seen=new Set(), list=[]; cand.forEach(([l,w])=>{if(!seen.has(l)){seen.add(l);list.push({label:l,why:w})}});
+  while(list.length<5){const l=lab(+(pp+R.pick([-0.6,-0.3,0.4,0.7,1.1])).toFixed(1)); if(!seen.has(l)){seen.add(l);list.push({label:l,why:'valore vicino'})}}
+  const sh=R.shuffle(list);
+  return {stim:tableHTML('Unemployment rate (% of labour force)',['Country',...y.map(String)],rows.map((c,i)=>[c,...d[i].map(x=>nf(x,1))]),FICT),
+    question:`How did the unemployment rate in ${rows[r]} change between 2022 and 2024?`,options:sh,key:sh.findIndex(o=>o.why===null),
+    explain:`${nf(B,1)}% − ${nf(A,1)}% = ${lab(pp)}. La variazione relativa (${fmtPct(rel)}) è un'altra grandezza: tra due percentuali la differenza si esprime in punti percentuali.`};
+}},
+pie:{label:'Grafico a torta',make(){
+  const cats=R.sample(['Research','Infrastructure','Training','Administration','Digital services','Communication','Evaluation'],5);
+  let p=[R.int(14,34),R.int(10,28),R.int(8,22),R.int(6,18)]; const rest=100-p.reduce((a,b)=>a+b,0); if(rest<4) return NUM_T.pie.make(); p.push(rest);
+  const total=R.int(24,96)*10; const i=p.indexOf(Math.max(...p)); let j=R.pick([0,1,2,3,4].filter(x=>p[x]<p[i])); if(j===undefined) return NUM_T.pie.make();
+  const v=total*(p[i]-p[j])/100;
+  const o=numOptions(v,[[p[i]-p[j],'differenza in punti, non in €'],[total*p[i]/100,'solo la categoria maggiore'],[total*(p[i]+p[j])/100,'somma invece della differenza']],x=>'€'+nf(x,1)+' million',x=>x>0);
+  return {stim:`<p class="lead">Total programme budget for 2025: <b>€${nf(total)} million</b>.</p>`+pieChartSVG('Allocation of the 2025 programme budget (%)',cats,p),
+    question:`How much more, in € million, was allocated to ${cats[i]} than to ${cats[j]}?`,...o,
+    explain:`(${p[i]}% − ${p[j]}%) × €${nf(total)} milioni = ${p[i]-p[j]}% × ${nf(total)} = €${nf(v,1)} milioni.`};
+}},
+bar:{label:'Grafico a barre',make(){
+  const rows=R.sample(COUNTRIES,5), vals=rows.map(()=>R.int(18,96));
+  const hi=Math.max(...vals), lo=Math.min(...vals); if(hi===lo) return NUM_T.bar.make();
+  const v=(hi-lo)/lo*100;
+  const o=numOptions(v,[[(hi-lo)/hi*100,'base sbagliata (diviso per il più alto)'],[hi-lo,'differenza assoluta'],[hi/lo*100,'rapporto invece della differenza']],x=>nf(x,0)+'%');
+  return {stim:barChartSVG('Households with fibre broadband, per 100 households, 2024',rows,vals,'per 100 households'),
+    question:`By approximately what percentage did the highest value shown exceed the lowest?`,...o,
+    explain:`(${hi} − ${lo}) ÷ ${lo} × 100 = ${nf(v,0)}%. "Exceed" si calcola sulla base del valore più basso.`};
+}},
+weighted:{label:'Media ponderata',make(){
+  const g=R.pick([['Women','Men'],['Under 35','35 and over'],['Headquarters','Regional offices']]);
+  const n=[R.int(12,60)*100,R.int(12,60)*100], p=[R.int(5,45),R.int(5,45)]; if(n[0]===n[1]) n[1]+=700; if(p[0]===p[1]) p[1]+=6;
+  const v=(n[0]*p[0]+n[1]*p[1])/(n[0]+n[1]);
+  const o=numOptions(v,[[(p[0]+p[1])/2,'media semplice, non ponderata'],[n[0]*p[0]/(n[0]+n[1]),'solo il primo gruppo'],[p[0]+p[1],'somma delle percentuali']],x=>nf(x,1)+'%');
+  return {stim:tableHTML('Staff of a public agency, 2024',['Group','Number of staff','Working part-time (%)'],[[g[0],nf(n[0]),p[0]+'%'],[g[1],nf(n[1]),p[1]+'%']],FICT),
+    question:'Approximately what percentage of all staff work part-time?',...o,
+    explain:`(${nf(n[0])} × ${p[0]}% + ${nf(n[1])} × ${p[1]}%) ÷ ${nf(n[0]+n[1])} = ${nf(n[0]*p[0]/100)} + ${nf(n[1]*p[1]/100)} su ${nf(n[0]+n[1])} = ${nf(v,1)}%. I gruppi hanno dimensioni diverse: la media semplice è sbagliata.`};
+}}
+};
+
+function buildNumericalItem(tpl){
+  const t=tpl||R.pick(Object.keys(NUM_T));
+  let x=null; for(let g=0;g<20&&!(x&&x.options&&x.key>=0);g++) x=NUM_T[t].make();
+  return {sec:'numerical',id:'n-'+t+'-'+Math.random().toString(36).slice(2,8),tpl:t,stim:x.stim,question:x.question,options:x.options,key:x.key,explain:x.explain};
+}
+
+// ---------- ABSTRACT ----------
+const SHAPES=['circle','square','triangle','hexagon','diamond'];
+const SHAPE_IT={circle:'cerchio',square:'quadrato',triangle:'triangolo',hexagon:'esagono',diamond:'rombo'};
+const FILLS=['white','black','grey','hatch'];
+const FILL_IT={white:'bianco',black:'nero',grey:'grigio',hatch:'tratteggiato'};
+const mod=(a,n)=>((a%n)+n)%n;
+
+const AB_RULES={
+  rot:{label:'Rotazione della lancetta',init(){const step=R.pick([45,90,135,-45,-90,-135]);return {step,start:R.pick([0,45,90,135,180,225,270,315])}},
+    at(p,k){return mod(p.start+p.step*k,360)}, slip(p,k){const v=this.at(p,k);return R.pick([mod(v+p.step,360),mod(v-p.step,360),mod(-v,360),mod(v+180,360)]).toString()},
+    desc(p){return `La lancetta ruota di ${Math.abs(p.step)}° in senso ${p.step>0?'orario':'antiorario'} a ogni passaggio.`}},
+  cnt:{label:'Numero di punti',init(){const alt=R.chance(.35); if(alt) return {alt:true,start:R.int(1,3)}; const d=R.pick([1,-1]); return {alt:false,d,start:d>0?R.int(1,2):R.int(6,7)}},
+    at(p,k){ if(p.alt){ return p.start+Math.ceil(k/2)*2-Math.floor(k/2); } return p.start+p.d*k },
+    slip(p,k){const v=this.at(p,k); const c=[v+1,v-1,this.at(p,k-1)].filter(x=>x>=1&&x<=8&&x!==v); return R.pick(c)},
+    desc(p){return p.alt?'I punti seguono lo schema +2, −1, +2, −1…':`I punti ${p.d>0?'aumentano':'diminuiscono'} di uno a ogni passaggio.`}},
+  pos:{label:'Posizione del quadratino',init(){return {s:R.pick([1,2,3,-1,-2,-3]),start:R.int(0,7)}},
+    at(p,k){return mod(p.start+p.s*k,8)}, slip(p,k){const v=this.at(p,k);return R.pick([mod(v+1,8),mod(v-1,8),this.at(p,k-1),mod(v+p.s,8)].filter(x=>x!==v))},
+    desc(p){const a=Math.abs(p.s);return `Il quadratino si sposta di ${a} posizion${a>1?'i':'e'} in senso ${p.s>0?'orario':'antiorario'} lungo il bordo.`}},
+  fill:{label:'Riempimento',init(){const per=R.pick([2,3]);return {cyc:R.sample(FILLS,per)}},
+    at(p,k){return p.cyc[mod(k,p.cyc.length)]}, slip(p,k){const v=this.at(p,k);return R.pick(FILLS.filter(f=>f!==v))},
+    desc(p){return `Il riempimento della figura segue il ciclo ${p.cyc.map(f=>FILL_IT[f]).join(' → ')}.`}},
+  shape:{label:'Forma centrale',init(){const per=R.pick([2,3]);return {cyc:R.sample(SHAPES,per)}},
+    at(p,k){return p.cyc[mod(k,p.cyc.length)]}, slip(p,k){const v=this.at(p,k);return R.pick(SHAPES.filter(s=>s!==v))},
+    desc(p){return `La figura centrale segue il ciclo ${p.cyc.map(s=>SHAPE_IT[s]).join(' → ')}.`}}
+};
+const ATTR={rot:'rot',cnt:'cnt',pos:'pos',fill:'fill',shape:'shape'};
+
+function buildAbstractItem(hard){
+  const n=hard?3:2;
+  let names=R.sample(['rot','cnt','pos','fill','shape'],n);
+  const P={}; names.forEach(r=>P[r]=AB_RULES[r].init());
+  // constant attributes for the rest
+  const base={shape:R.pick(SHAPES),fill:R.pick(FILLS),rot:null,cnt:null,pos:null};
+  // elements not in rules: sometimes shown as constants (noise)
+  if(!P.rot&&R.chance(.4)) base.rot=R.pick([0,90,180,270]);
+  if(!P.cnt&&R.chance(.4)) base.cnt=R.int(1,5);
+  if(!P.pos&&R.chance(.3)) base.pos=R.int(0,7);
+  const frame=k=>{const f=Object.assign({},base); names.forEach(r=>{f[r]=AB_RULES[r].at(P[r],k)}); return f};
+  const series=[0,1,2,3,4].map(frame), ans=frame(5);
+  const sig=f=>JSON.stringify([f.shape,f.fill,f.rot,f.cnt,f.pos]);
+  const opts=[{f:ans,broken:[]}], seen=new Set([sig(ans)]);
+  let guard=0;
+  while(opts.length<5&&guard++<300){
+    const nb=guard>120?2:1; const br=R.sample(names,Math.min(nb,names.length)); const f=Object.assign({},ans);
+    br.forEach(r=>{let v=AB_RULES[r].slip(P[r],5); if(r==='rot'||r==='cnt'||r==='pos') v=Number(v); f[r]=v});
+    const s=sig(f); if(seen.has(s)) continue; seen.add(s); opts.push({f,broken:br});
+  }
+  const sh=R.shuffle(opts);
+  return {sec:'abstract',id:'a-'+Math.random().toString(36).slice(2,8),rules:names,hard:!!hard,series,options:sh.map(o=>({frame:o.f,broken:o.broken})),key:sh.findIndex(o=>o.broken.length===0),
+    explain:names.map(r=>AB_RULES[r].desc(P[r])).join(' ')};
+}
+
+const MARK=[[3,3],[46.5,3],[90,3],[90,46.5],[90,90],[46.5,90],[3,90],[3,46.5]];
+function frameSVG(f,label){
+  const cx=50,cy=44, fill=f.fill==='white'?'#ffffff':f.fill==='black'?'#111111':f.fill==='grey'?'#9aa0a6':'url(#hatch)';
+  let s='';
+  const st=`fill="${fill}" stroke="#111" stroke-width="2.2"`;
+  if(f.shape==='circle') s+=`<circle cx="${cx}" cy="${cy}" r="20" ${st}/>`;
+  if(f.shape==='square') s+=`<rect x="${cx-18}" y="${cy-18}" width="36" height="36" ${st}/>`;
+  if(f.shape==='triangle') s+=`<polygon points="${cx},${cy-22} ${cx+21},${cy+15} ${cx-21},${cy+15}" ${st}/>`;
+  if(f.shape==='diamond') s+=`<polygon points="${cx},${cy-22} ${cx+20},${cy} ${cx},${cy+22} ${cx-20},${cy}" ${st}/>`;
+  if(f.shape==='hexagon'){const pts=[0,1,2,3,4,5].map(i=>{const a=Math.PI/3*i;return (cx+20*Math.cos(a)).toFixed(1)+','+(cy+20*Math.sin(a)).toFixed(1)}).join(' ');s+=`<polygon points="${pts}" ${st}/>`;}
+  if(f.rot!==null&&f.rot!==undefined){const a=(f.rot-90)*Math.PI/180, x=cx+27*Math.cos(a), y=cy+27*Math.sin(a);
+    s+=`<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#fff" stroke-width="6" stroke-linecap="round"/><line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#111" stroke-width="2.6" stroke-linecap="round"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.6" fill="#111" stroke="#fff" stroke-width="1.2"/>`;}
+  if(f.cnt){const n=f.cnt, w=(n-1)*9; for(let i=0;i<n;i++) s+=`<circle cx="${(50-w/2+i*9).toFixed(1)}" cy="78" r="3.2" fill="#111"/>`;}
+  if(f.pos!==null&&f.pos!==undefined){const [x,y]=MARK[f.pos]; s+=`<rect x="${x}" y="${y}" width="7" height="7" fill="#111"/>`;}
+  return `<svg class="fig" viewBox="0 0 100 100" role="img" aria-label="${esc(label||'figura')}"><rect x="0.5" y="0.5" width="99" height="99" fill="#fff" stroke="#8a929c"/>${s}</svg>`;
+}
+
+// ---------- configuration from the notice EPSO/AD/427/26 ----------
+const SEC={
+  verbal:{name:'Verbal reasoning',it:'Ragionamento verbale',n:20,sec:35*60,letters:4},
+  numerical:{name:'Numerical reasoning',it:'Ragionamento numerico',n:10,sec:20*60,letters:5},
+  abstract:{name:'Abstract reasoning',it:'Ragionamento astratto',n:10,sec:10*60,letters:5}
+};
+const PASS={verbal:10,numabs:10};
+const KEY='epsoAD5reasoning:v1';
+
+// ---------- storage ----------
+function loadDB(){try{const v=JSON.parse(localStorage.getItem(KEY)||'null');if(v&&v.sessions)return v}catch(e){}return {sessions:[],seen:{},vwrong:{}}}
+function saveDB(){try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){}}
+let DB=loadDB();
+
+const $=s=>document.querySelector(s);
+const app=()=>document.getElementById('app');
+const fmtT=s=>{s=Math.max(0,Math.round(s));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')};
+const fmtD=d=>new Date(d).toLocaleString('it-IT',{dateStyle:'short',timeStyle:'short'});
+
+// ---------- session building ----------
+function pickVerbal(n,onlyWrong){
+  let srcs=verbalSources();
+  if(onlyWrong){ srcs=srcs.filter(s=>DB.vwrong[s.pid]); if(!srcs.length) return null; }
+  srcs=R.shuffle(srcs).sort((a,b)=>(DB.seen[a.pid]||0)-(DB.seen[b.pid]||0));
+  return srcs.slice(0,Math.min(n,srcs.length)).map(buildVerbalItem);
+}
+function pickNumerical(n){
+  const keys=R.shuffle(Object.keys(NUM_T)); const out=[];
+  for(let i=0;i<n;i++){ let it=null,g=0; while(!it&&g++<5){ try{ it=buildNumericalItem(keys[i%keys.length]); if(!it.options) it=null; }catch(e){ it=null } } out.push(it||buildNumericalItem('pct')); }
+  return R.shuffle(out);
+}
+function pickAbstract(n){ const out=[]; for(let i=0;i<n;i++) out.push(buildAbstractItem(i>=Math.round(n*0.4))); return out; }
+function buildSection(sec,n,onlyWrong){
+  if(sec==='verbal') return pickVerbal(n,onlyWrong);
+  if(sec==='numerical') return pickNumerical(n);
+  return pickAbstract(n);
+}
+
+let S=null, TIMER=null;
+
+function startSession(kind,opts){
+  // kind: 'full' | 'single' | 'practice' | 'review'
+  const secs = kind==='full' ? ['verbal','numerical','abstract'] : [opts.sec];
+  const parts=[];
+  for(const sec of secs){
+    const n = opts.n || SEC[sec].n;
+    const items=buildSection(sec,n,kind==='review');
+    if(!items||!items.length){ renderHome('Nessuna domanda verbale sbagliata da ripassare per ora.'); return; }
+    parts.push({sec,items,ans:{},flag:{},ms:{},changes:{},cur:0,timed:kind!=='practice'&&kind!=='review',seconds:Math.round(SEC[sec].sec*items.length/SEC[sec].n),started:null,ended:null,deadline:null});
+  }
+  S={kind,parts,pi:0,created:Date.now(),done:false};
+  renderIntro();
+}
+
+function beginPart(){
+  CALC.open=false;
+  const P=S.parts[S.pi]; P.started=Date.now(); P.last=Date.now(); if(P.timed) P.deadline=Date.now()+P.seconds*1000;
+  clearInterval(TIMER); TIMER=setInterval(tick,250); renderTest();
+}
+function account(){ const P=S&&S.parts[S.pi]; if(!P||!P.started||P.ended) return; const now=Date.now(), it=P.items[P.cur]; P.ms[P.cur]=(P.ms[P.cur]||0)+(now-P.last); P.last=now; }
+function tick(){
+  const P=S&&S.parts[S.pi]; if(!P||!P.started||P.ended) return; account();
+  const el=$('#clock'); if(!el) return;
+  if(P.timed){ const left=(P.deadline-Date.now())/1000; el.textContent=fmtT(left); el.classList.toggle('low',left<=Math.min(300,P.seconds*0.15));
+    const pc=$('#pace'); if(pc){ const per=P.seconds/P.items.length, ideal=Math.min(P.items.length,Math.floor((P.seconds-left)/per)); const done=Object.keys(P.ans).length; pc.textContent=`${done}/${P.items.length} risposte · ritmo ${done>=ideal?'in linea':'in ritardo'} · obiettivo ${fmtT(per)} a domanda`; }
+    if(left<=0) endPart(true);
+  } else el.textContent=fmtT((Date.now()-P.started)/1000);
+}
+function go(i){ const P=S.parts[S.pi]; if(i<0||i>=P.items.length) return; account(); P.cur=i; renderTest(); }
+function choose(c){ const P=S.parts[S.pi]; if(!P.timed&&P.ans[P.cur]!==undefined) return; const prev=P.ans[P.cur]; if(prev!==undefined&&prev!==c) P.changes[P.cur]=(P.changes[P.cur]||0)+1; P.ans[P.cur]=c; renderTest(); }
+function endPart(auto){
+  const P=S.parts[S.pi]; if(P.ended) return; account(); P.ended=Date.now(); P.auto=!!auto; clearInterval(TIMER);
+  if(S.pi<S.parts.length-1){ S.pi++; renderIntro(); } else finishSession();
+}
+
+function scorePart(P){ return P.items.reduce((s,it,i)=>s+(P.ans[i]===it.key?1:0),0); }
+function tagOf(P,i){
+  const it=P.items[i], a=P.ans[i];
+  if(it.sec==='verbal') return a===undefined?'blank':(a===it.key?'ok':verbalTrap(it,a));
+  if(it.sec==='numerical') return it.tpl;
+  return it.rules.join('+');
+}
+function finishSession(){
+  S.done=true; clearInterval(TIMER);
+  const rec={id:Date.now(),date:S.created,kind:S.kind,parts:[]};
+  S.parts.forEach(P=>{
+    const att=P.items.map((it,i)=>{
+      const a=P.ans[i], ok=a===it.key;
+      const r={sec:it.sec,id:it.id,ok,ans:a===undefined?null:a,key:it.key,ms:Math.round(P.ms[i]||0),ch:P.changes[i]||0,fl:!!P.flag[i]};
+      if(it.sec==='verbal'){ r.q=it.q; r.trap=ok||a===undefined?null:verbalTrap(it,a); r.kind=a===undefined?null:it.options[a].kind;
+        DB.seen[it.id]=(DB.seen[it.id]||0)+1; if(ok) delete DB.vwrong[it.id]; else DB.vwrong[it.id]=1; }
+      if(it.sec==='numerical'){ r.tpl=it.tpl; r.slip=ok||a===undefined?null:(it.options[a].why||''); }
+      if(it.sec==='abstract'){ r.rules=it.rules; r.broken=ok||a===undefined?null:it.options[a].broken; r.hard=it.hard; }
+      return r;});
+    rec.parts.push({sec:P.sec,n:P.items.length,score:scorePart(P),secs:Math.round((P.ended-P.started)/1000),limit:P.timed?P.seconds:null,auto:!!P.auto,att});
+  });
+  DB.sessions.unshift(rec); DB.sessions=DB.sessions.slice(0,300); saveDB();
+  S.rec=rec; renderResults(); window.scrollTo(0,0);
+}
+
+// ---------- verdict per notice ----------
+function verdict(rec){
+  const g=s=>rec.parts.find(p=>p.sec===s);
+  const v=g('verbal'), n=g('numerical'), a=g('abstract'); const out=[];
+  if(v&&v.n===20) out.push({label:'Verbale',score:`${v.score}/20`,pass:v.score>=PASS.verbal,rule:'soglia 10/20'});
+  if(n&&a&&n.n===10&&a.n===10) out.push({label:'Numerico + astratto',score:`${n.score+a.score}/20`,pass:n.score+a.score>=PASS.numabs,rule:'soglia combinata 10/20'});
+  return out;
+}
+
+
+// ---------- study plan (from the user's plan, 4-13 Nov 2026) ----------
+const PLAN=[
+ {d:'2026-11-04',t:'Mer 4 nov',h:'1 h',todo:['Scegli un solo banco di quiz in inglese per il verbale.','Se hai tempo: una prova a tempo per tipo di test, per misurare la partenza.'],act:['single:verbal','single:numerical','single:abstract']},
+ {d:'2026-11-05',t:'Gio 5 nov (pomeriggio)',h:'4 h',todo:['Diagnosi senza libro. Verbale: 20 domande / 35:00, poi 45 min di analisi errori (testo letto male, tempo, formulazione).','Numerico: 10 / 20:00 + analisi. Astratto: 10 / 10:00 + analisi.','Ultimi 30 min: riepilogo errori in Statistiche e scelta del punto debole.'],act:['single:verbal','single:numerical','single:abstract','stats']},
+ {d:'2026-11-06',t:'Ven 6 nov',h:'5 h',warn:'Ultimo giorno per il controllo tecnico su TAO: entro le 11:59, ora di Bruxelles.',todo:['Controllo tecnico TAO.','Numerico e astratto sul manuale: usa il foglio risposte per tempi e punteggio.','Verbale qui, in inglese (non sul manuale in italiano).'],act:['sheet','single:verbal','practice:numerical','practice:abstract']},
+ {d:'2026-11-07',t:'Sab 7 nov',h:'5 h',todo:['Verbale 2 h: una simulazione a tempo + analisi.','Numerico 1,5 h.','Astratto 1 h.','30 min di riepilogo errori.'],act:['single:verbal','single:numerical','single:abstract','stats']},
+ {d:'2026-11-08',t:'Dom 8 nov',h:'5 h',dyn:true},
+ {d:'2026-11-09',t:'Lun 9 nov',h:'5 h',dyn:true},
+ {d:'2026-11-10',t:'Mar 10 nov',h:'5 h',dyn:true},
+ {d:'2026-11-11',t:'Mer 11 nov',h:'3 h',todo:['Prova generale alle 11:00, stesse condizioni di venerdì (stanza, connessione, orario): le tre prove di fila.','Analisi errori; il resto del tempo libero.'],act:['full','stats']},
+ {d:'2026-11-12',t:'Gio 12 nov',h:'1-2 h',todo:['Solo ripasso degli errori ricorrenti. Niente materiale nuovo né simulazioni complete.','Controlla l\'account EPSO, prepara documento d\'identità e postazione, dormi presto.'],act:['review','stats']},
+ {d:'2026-11-13',t:'Ven 13 nov',h:'–',todo:['Nessun ripasso la mattina. Collegati con margine prima delle 11:00 seguendo le istruzioni TAO.'],act:[]}
+];
+const ACT_LABEL={'single:verbal':'Verbale a tempo','single:numerical':'Numerico a tempo','single:abstract':'Astratto a tempo','practice:numerical':'Pratica numerico','practice:abstract':'Pratica astratto','practice:verbal':'Pratica verbale',full:'Simulazione completa',review:'Ripassa errori verbali',stats:'Statistiche',sheet:'Foglio risposte (manuale)'};
+function todayISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function latestPart(sec){for(const s of DB.sessions){if(s.kind!=='full'&&s.kind!=='single')continue;const p=s.parts.find(x=>x.sec===sec&&x.n===SEC[sec].n);if(p)return p}return null}
+function diagnosis(){
+  const v=latestPart('verbal'),n=latestPart('numerical'),a=latestPart('abstract');
+  if(!n||!a) return 'Prima fai la diagnosi: una prova a tempo di numerico e una di astratto.';
+  const c=n.score+a.score;
+  if(c>=10) return `Numerico + astratto sono sopra il 50% combinato (${c}/20 nell'ultima misura): sposta il tempo sul verbale.`;
+  const weak=n.score<=a.score?'numerico':'astratto';
+  return `Numerico + astratto sotto il 50% combinato (${c}/20): dividi il tempo tra verbale e ${weak}, il più debole dei due.`+(v?` Ultimo verbale: ${v.score}/20.`:'');
+}
+function planDay(day){
+  if(!day.dyn) return day;
+  return Object.assign({},day,{todo:['Ore divise in base alla diagnosi. '+diagnosis(),'Almeno una simulazione completa a tempo di un test, poi analisi degli errori.','Non ripetere gli stessi quiz: capisci l\'errore. Usa il ripasso solo per gli errori.'],act:['single:verbal','single:numerical','single:abstract','review','stats']});
+}
+function planPanel(){
+  const t=todayISO(); let i=PLAN.findIndex(x=>x.d===t);
+  let note='';
+  if(i<0){ if(t<PLAN[0].d){i=0;note='Il piano inizia il 4 novembre.'} else {i=PLAN.length-1;note='Il piano è terminato.'} }
+  const day=planDay(PLAN[i]); DB.plan=DB.plan||{}; const done=DB.plan[day.d]||{};
+  return `<div class="panel stack"><div class="row spread"><h2>Piano di oggi · ${esc(day.t)}</h2><span class="mono muted">${esc(day.h)}</span></div>
+    ${note?`<p class="muted small">${note}</p>`:''}${day.warn?`<p class="alert"><b>${esc(day.warn)}</b></p>`:''}
+    <ul class="checks">${day.todo.map((x,k)=>`<li><label class="chk"><input type="checkbox" data-plan="${day.d}:${k}" ${done[k]?'checked':''}><span>${esc(x)}</span></label></li>`).join('')}</ul>
+    ${day.act.length?`<div class="row wrap-gap">${day.act.map(a=>`<button data-act="${a}">${ACT_LABEL[a]}</button>`).join('')}</div>`:''}
+    <details><summary>Tutto il piano</summary><div class="tblwrap"><table class="times"><tbody>${PLAN.map(x=>{const y=planDay(x);return `<tr class="${x.d===day.d?'today':''}"><td><b>${esc(y.t)}</b><br><span class="muted small">${esc(y.h)}</span></td><td>${y.todo.map(esc).join('<br>')}</td></tr>`}).join('')}</tbody></table></div></details>
+  </div>`;
+}
+function bindPlan(){
+  document.querySelectorAll('[data-plan]').forEach(c=>c.onchange=()=>{const [d,k]=c.dataset.plan.split(':');DB.plan=DB.plan||{};DB.plan[d]=DB.plan[d]||{};DB.plan[d][k]=c.checked;saveDB();});
+  document.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>{const a=b.dataset.act;
+    if(a==='full') return startSession('full',{}); if(a==='review') return startSession('review',{sec:'verbal',n:20});
+    if(a==='stats') return renderStats(); if(a==='sheet') return renderSheetSetup();
+    const [k,sec]=a.split(':'); startSession(k,{sec,n:k==='practice'?10:undefined});});
+}
+
+// ---------- rendering ----------
+function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button></nav></div></header>`; }
+function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; ({home:renderHome,stats:renderStats,sheet:renderSheetSetup})[b.dataset.nav](); }); }
+let leaveArmed=false;
+function confirmLeave(){ if(leaveArmed){leaveArmed=false;return true} leaveArmed=true; toast('Prova in corso: premi di nuovo per uscire senza salvare.'); setTimeout(()=>leaveArmed=false,4000); return false; }
+function toast(t){ let el=$('#toast'); if(!el){el=document.createElement('div');el.id='toast';document.body.appendChild(el)} el.textContent=t; el.className='show'; clearTimeout(el._t); el._t=setTimeout(()=>el.className='',3500); }
+
+function renderHome(msg){
+  S=null; clearInterval(TIMER);
+  const last=DB.sessions.find(s=>s.kind==='full');
+  const vw=Object.keys(DB.vwrong).length, vt=verbalSources().length, vs=verbalSources().filter(s=>DB.seen[s.pid]).length;
+  app().innerHTML=header('Allenamento reasoning','Verbale, numerico e astratto con tempi, soglie e formato della prova.')+`
+  <main class="wrap stack">
+    ${msg?`<p class="alert">${esc(msg)}</p>`:''}
+    ${planPanel()}
+    <section class="hero">
+      <button class="card primary-card" id="go-full">
+        <span class="eyebrow">Simulazione completa</span>
+        <b>Le tre prove in sequenza, come all'esame</b>
+        <span class="spec mono">20 dom. · 35:00 → 10 dom. · 20:00 → 10 dom. · 10:00</span>
+        <span class="muted">Esito con le soglie del bando: verbale 10/20, numerico + astratto 10/20 combinati.</span>
+      </button>
+      <div class="cards3">
+        ${['verbal','numerical','abstract'].map(s=>`<div class="card"><span class="eyebrow">${SEC[s].it}</span><b>${SEC[s].n} domande · ${fmtT(SEC[s].sec)}</b>
+          <span class="muted">${s==='verbal'?`Brano + 4 affermazioni, una sola giusta. ${vs}/${vt} brani visti.`:s==='numerical'?'Tabelle e grafici, 5 opzioni, calcolatrice a schermo. Domande sempre nuove.':'Serie di 5 figure, scegli la sesta tra 5. Domande sempre nuove.'}</span>
+          <div class="row"><button class="primary" data-single="${s}">Prova a tempo</button><button data-practice="${s}">Pratica</button></div></div>`).join('')}
+      </div>
+    </section>
+    <section class="row wrap-gap">
+      <button id="go-review" ${vw?'':'disabled'}>Ripassa errori verbali (${vw})</button>
+      <button id="go-drill">Pratica breve: 5 per prova</button>
+    </section>
+    <section class="panel stack"><h2>Ultima simulazione completa</h2>${last?resultLines(last):'<p class="muted">Ancora nessuna. La prova generale del piano è mercoledì 11 alle 11:00.</p>'}</section>
+    ${footer()}
+  </main>`;
+  bindNav();
+  $('#go-full').onclick=()=>startSession('full',{});
+  document.querySelectorAll('[data-single]').forEach(b=>b.onclick=()=>startSession('single',{sec:b.dataset.single}));
+  document.querySelectorAll('[data-practice]').forEach(b=>b.onclick=()=>startSession('practice',{sec:b.dataset.practice,n:b.dataset.practice==='verbal'?10:10}));
+  const rv=$('#go-review'); if(rv) rv.onclick=()=>startSession('review',{sec:'verbal',n:20});
+  $('#go-drill').onclick=()=>{ S=null; startDrill(); };
+  bindPlan();
+}
+function startDrill(){
+  const parts=['verbal','numerical','abstract'].map(sec=>({sec,items:buildSection(sec,5),ans:{},flag:{},ms:{},changes:{},cur:0,timed:false,seconds:0}));
+  S={kind:'practice',parts,pi:0,created:Date.now(),done:false}; renderIntro();
+}
+
+function resultLines(rec){
+  const v=verdict(rec);
+  return `<p class="muted">${fmtD(rec.date)}</p><div class="verdicts">${v.map(x=>`<div class="vd ${x.pass?'ok':'bad'}"><span>${x.label}</span><b class="mono">${x.score}</b><span class="pill ${x.pass?'ok':'bad'}">${x.pass?'Superata':'Non superata'}</span><span class="muted small">${x.rule}</span></div>`).join('')}</div>`;
+}
+
+function renderIntro(){
+  const P=S.parts[S.pi], c=SEC[P.sec];
+  const tips={
+    verbal:['Leggi prima la domanda: cerca l\'affermazione <b>correct</b> o <b>incorrect</b>?','Poi le 4 opzioni, poi il brano cercando solo ciò che serve.','Vale solo ciò che il testo dice o implica: niente conoscenze esterne.','Attento a some/most/all, may/will, "dopo" vs "a causa di".'],
+    numerical:['Leggi la domanda prima della tabella: individua righe, colonne e unità.','Stima prima di calcolare: spesso le opzioni sono abbastanza distanti.','Usa la calcolatrice a schermo (pulsante in alto), come all\'esame.','Percentuali: la base è il valore di partenza. Punti percentuali ≠ %.'],
+    abstract:['Isola un elemento alla volta: forma, riempimento, lancetta, punti, quadratino.','Controlla il passo tra ogni coppia di figure, non solo tra la prima e l\'ultima.','Elimina le opzioni che violano anche una sola regola.','Un minuto a domanda: se dopo 60 secondi non vedi la regola, segna e passa oltre.']
+  }[P.sec];
+  app().innerHTML=header(c.it,S.kind==='full'?`Prova ${S.pi+1} di 3`:(P.timed?'Prova a tempo':'Pratica con correzione immediata'))+`
+  <main class="wrap stack narrow">
+    <div class="panel stack">
+      <div class="row spread"><h2>${c.name}</h2><span class="mono big2">${P.items.length} dom.${P.timed?' · '+fmtT(P.seconds):''}</span></div>
+      <ul class="tips">${tips.map(t=>`<li>${t}</li>`).join('')}</ul>
+      ${P.timed?'<p class="muted small">Puoi muoverti avanti e indietro e segnare le domande. Allo scadere la prova si chiude da sola. Nessuna penalità per le risposte sbagliate: rispondi sempre.</p>':'<p class="muted small">Dopo ogni risposta vedi subito la soluzione.</p>'}
+      <div class="row"><button class="primary" id="begin">Inizia</button></div>
+    </div>
+  </main>`;
+  bindNav(); $('#begin').onclick=beginPart;
+}
+
+function renderStim(it){
+  if(it.sec==='verbal') return `<article class="panel passage-panel"><div class="eyebrow">Text</div><p class="passage">${esc(it.text)}</p>${it.source?`<p class="src">Source: ${esc(it.source.act)}, recital ${it.source.recital}. © European Union, EUR-Lex.</p>`:''}</article>`;
+  if(it.sec==='numerical') return `<article class="panel stim">${it.stim}</article>`;
+  return `<article class="panel stim"><div class="eyebrow">Which figure comes next in the series?</div><div class="series">${it.series.map((f,i)=>frameSVG(f,'figura '+(i+1))).join('')}<div class="qmark">?</div></div></article>`;
+}
+function optionHTML(it,i,P,reveal){
+  const a=P.ans[P.cur]; let c='opt'; if(a===i) c+=' sel';
+  if(reveal){ if(i===it.key) c+=' right'; else if(a===i) c+=' wrong'; }
+  const L=LETTERS[i];
+  if(it.sec==='abstract') return `<button class="${c} figopt" data-c="${i}" aria-label="Opzione ${L}"><span class="ltr">${L}</span>${frameSVG(it.options[i].frame,'opzione '+L)}</button>`;
+  const lab=it.sec==='verbal'?it.options[i].text:it.options[i].label;
+  return `<button class="${c}" data-c="${i}"><span class="ltr">${L}</span><span class="otext${it.sec==='numerical'?' mono':''}">${esc(lab)}</span></button>`;
+}
+function feedbackHTML(it,a){
+  const ok=a===it.key;
+  if(it.sec==='verbal'){
+    return `<div class="fb ${ok?'ok':'bad'}"><b>${ok?'Corretto.':'Sbagliato: la risposta è '+LETTERS[it.key]+'.'}</b>${it.options.map((o,i)=>`<p><span class="mono">${LETTERS[i]}</span> <span class="kind k-${o.kind}">${{true:'Vera',false:'Falsa',cannot:'Non deducibile'}[o.kind]}</span> ${esc(o.why)}</p>`).join('')}${!ok&&a!==undefined?`<p class="small muted">Trappola: ${esc(TRAPS[verbalTrap(it,a)]||'')}</p>`:''}</div>`;
+  }
+  if(it.sec==='numerical'){
+    const w=a!==undefined&&!ok?it.options[a].why:null;
+    return `<div class="fb ${ok?'ok':'bad'}"><b>${ok?'Corretto.':'Sbagliato: la risposta è '+LETTERS[it.key]+'.'}</b><p>${esc(it.explain)}</p>${w?`<p class="small muted">La tua opzione corrisponde a: ${esc(w)}.</p>`:''}</div>`;
+  }
+  const br=a!==undefined&&!ok?it.options[a].broken:[];
+  return `<div class="fb ${ok?'ok':'bad'}"><b>${ok?'Corretto.':'Sbagliato: la risposta è '+LETTERS[it.key]+'.'}</b><p>${esc(it.explain)}</p>${br.length?`<p class="small muted">La tua opzione viola: ${br.map(r=>AB_RULES[r].label.toLowerCase()).join(', ')}.</p>`:''}</div>`;
+}
+
+function renderTest(){
+  const P=S.parts[S.pi], it=P.items[P.cur], a=P.ans[P.cur], reveal=!P.timed&&a!==undefined, c=SEC[P.sec];
+  app().innerHTML=`
+  <div class="bar"><div class="in">
+    <div class="row"><span class="secname">${c.it}</span><span class="clock mono" id="clock">--:--</span><span class="pace small muted" id="pace">${P.timed?'':'Pratica · tempo trascorso'}</span></div>
+    <div class="row">${P.sec==='numerical'?'<button class="ghost" id="calc-t">Calcolatrice</button>':''}<button class="primary" id="end">${S.kind==='full'&&S.pi<2?'Consegna e passa alla prova successiva':'Consegna'}</button></div>
+  </div></div>
+  <main class="wrap">
+    <div class="qgrid" aria-label="Domande">${P.items.map((x,i)=>{let k='cell'; if(i===P.cur)k+=' cur'; if(P.ans[i]!==undefined) k+= !P.timed?(P.ans[i]===x.key?' r-ok':' r-bad'):' ans'; if(P.flag[i])k+=' flag'; return `<button class="${k}" data-go="${i}">${i+1}</button>`}).join('')}</div>
+    <div class="split ${P.sec}">
+      ${renderStim(it)}
+      <section class="panel qpanel stack">
+        <div class="row spread"><span class="eyebrow">Question ${P.cur+1} of ${P.items.length}</span>${P.timed?`<button class="ghost small" id="flag">${P.flag[P.cur]?'Togli segno':'Segna'}</button>`:''}</div>
+        <p class="qtext">${esc(it.sec==='verbal'?it.question:it.sec==='numerical'?it.question:'Select the figure that completes the series.')}</p>
+        <div class="opts ${it.sec==='abstract'?'figs':''}">${it.options.map((_,i)=>optionHTML(it,i,P,reveal)).join('')}</div>
+        ${reveal?feedbackHTML(it,a):''}
+        <div class="row spread"><button id="prev" ${P.cur===0?'disabled':''}>← Precedente</button>${P.cur<P.items.length-1?'<button id="next">Successiva →</button>':`<button class="primary" id="end2">Consegna</button>`}</div>
+        <p class="small muted">Tastiera: ${c.letters===4?'A–D':'A–E'} o 1–${c.letters} per rispondere · ← → per spostarti${P.timed?' · F per segnare':''}</p>
+      </section>
+    </div>
+    <div id="calc" class="calc panel" hidden></div>
+    <div id="confirm" class="panel stack" hidden><p><b>Consegnare questa prova?</b> <span id="cmsg"></span></p><div class="row"><button class="primary" id="yes">Consegna</button><button id="no">Continua</button></div></div>
+  </main>`;
+  tick();
+  document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(+b.dataset.go));
+  document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>choose(+b.dataset.c));
+  if($('#prev')) $('#prev').onclick=()=>go(P.cur-1);
+  if($('#next')) $('#next').onclick=()=>go(P.cur+1);
+  if($('#flag')) $('#flag').onclick=()=>{P.flag[P.cur]=!P.flag[P.cur];renderTest()};
+  const ask=()=>{const blank=P.items.length-Object.keys(P.ans).length, fl=Object.values(P.flag).filter(Boolean).length; $('#cmsg').textContent=(blank?blank+' senza risposta. ':'Tutte risposte. ')+(fl?fl+' segnate.':''); $('#confirm').hidden=false; $('#confirm').scrollIntoView({block:'nearest'})};
+  $('#end').onclick=ask; if($('#end2')) $('#end2').onclick=ask;
+  $('#yes').onclick=()=>endPart(false); $('#no').onclick=()=>{$('#confirm').hidden=true};
+  if($('#calc-t')) $('#calc-t').onclick=()=>toggleCalc();
+  if(CALC.open&&P.sec==='numerical') toggleCalc(true);
+}
+
+// ---------- on-screen calculator ----------
+const CALC={open:false,expr:'',out:'0'};
+function toggleCalc(keep){
+  const el=$('#calc'); if(!el) return; if(!keep) CALC.open=!CALC.open; el.hidden=!CALC.open; if(!CALC.open) return;
+  const keys=['7','8','9','÷','4','5','6','×','1','2','3','−','0','.','%','+','C','⌫','(',')','='];
+  el.innerHTML=`<div class="row spread"><span class="eyebrow">Calcolatrice</span><button class="ghost small" id="calc-x">Chiudi</button></div><div class="cdisp mono"><div class="cexpr">${esc(CALC.expr||' ')}</div><div class="cout">${esc(CALC.out)}</div></div><div class="ckeys">${keys.map(k=>`<button data-k="${k}" class="${k==='='?'primary':''}">${k}</button>`).join('')}</div>`;
+  el.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>calcKey(b.dataset.k)); $('#calc-x').onclick=()=>toggleCalc();
+}
+function calcKey(k){
+  if(k==='C'){CALC.expr='';CALC.out='0'} else if(k==='⌫'){CALC.expr=CALC.expr.slice(0,-1)} else if(k==='='){CALC.out=calcEval(CALC.expr)} else CALC.expr+=k;
+  toggleCalc(true);
+}
+function calcEval(e){
+  const s=e.replace(/×/g,'*').replace(/÷/g,'/').replace(/−/g,'-').replace(/(\d+(?:\.\d+)?)%/g,'($1/100)');
+  if(!/^[0-9+\-*/().\s]*$/.test(s)||!s.trim()) return 'Errore';
+  try{ const v=Function('"use strict";return ('+s+')')(); return isFinite(v)?String(+v.toPrecision(12)):'Errore'; }catch(x){ return 'Errore'; }
+}
+
+// ---------- results ----------
+function renderResults(){
+  const rec=S.rec, v=verdict(rec);
+  app().innerHTML=header('Risultati',fmtD(rec.date)+' · '+({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori'}[rec.kind]))+`
+  <main class="wrap stack">
+    ${v.length?`<section class="verdicts big">${v.map(x=>`<div class="vd ${x.pass?'ok':'bad'}"><span>${x.label}</span><b class="mono">${x.score}</b><span class="pill ${x.pass?'ok':'bad'}">${x.pass?'Superata':'Non superata'}</span><span class="muted small">${x.rule}</span></div>`).join('')}</section>`:''}
+    ${rec.parts.map((p,pi)=>partResult(p,S.parts[pi],pi)).join('')}
+    <section class="panel stack"><h2>Esporta questa sessione</h2>${exportBlock(sessionCSV([rec]),'sessione')}</section>
+    <div class="row"><button class="primary" data-nav="home">Torna all'inizio</button><button data-nav="stats">Statistiche</button></div>
+    ${footer()}
+  </main>`;
+  bindNav(); bindExport();
+  document.querySelectorAll('[data-cause]').forEach(b=>b.onclick=()=>{const [pi,i,k]=b.dataset.cause.split(':');const a=S.rec.parts[+pi].att[+i];a.cause=a.cause===k?null:k;saveDB();b.parentNode.querySelectorAll('button').forEach(x=>x.classList.toggle('csel',x===b&&a.cause===k));});
+}
+const CAUSES={letto:'Testo letto male',tempo:'Tempo',form:'Formulazione',calcolo:'Calcolo'};
+function partResult(p,P,pi){
+  const c=SEC[p.sec], budget=SEC[p.sec].sec/SEC[p.sec].n;
+  let analysis='';
+  if(p.sec==='verbal'){
+    const cnt={}; p.att.forEach(a=>{if(a.trap)cnt[a.trap]=(cnt[a.trap]||0)+1});
+    const kinds={cannot:0,false:0,true:0}; p.att.forEach(a=>{if(!a.ok&&a.kind)kinds[a.kind]++});
+    analysis=`<div class="stack"><h3>Dove hai sbagliato</h3>${Object.keys(cnt).length?`<ul class="bars">${Object.entries(cnt).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<li><span>${esc(TRAPS[k]||k)}</span><b class="mono">${n}</b></li>`).join('')}</ul>`:'<p class="muted">Nessun errore classificato.</p>'}
+      <p class="small muted">Opzioni sbagliate scelte: ${kinds.cannot} non deducibili, ${kinds.false} false${kinds.true?', '+kinds.true+' vere (nelle domande "incorrect")':''}.</p></div>`;
+  } else if(p.sec==='numerical'){
+    const by={}; p.att.forEach(a=>{const k=a.tpl;by[k]=by[k]||{n:0,ok:0};by[k].n++;if(a.ok)by[k].ok++});
+    const slips={}; p.att.forEach(a=>{if(a.slip)slips[a.slip]=(slips[a.slip]||0)+1});
+    analysis=`<div class="stack"><h3>Per tipo di calcolo</h3><ul class="bars">${Object.entries(by).map(([k,o])=>`<li><span>${esc(NUM_T[k].label)}</span><b class="mono">${o.ok}/${o.n}</b></li>`).join('')}</ul>${Object.keys(slips).length?`<p class="small muted">Errori tipici: ${Object.entries(slips).map(([k,n])=>esc(k)+(n>1?' ×'+n:'')).join(' · ')}.</p>`:''}</div>`;
+  } else {
+    const br={}; p.att.forEach(a=>{(a.broken||[]).forEach(r=>br[r]=(br[r]||0)+1)});
+    const hard=p.att.filter(a=>a.hard), easy=p.att.filter(a=>!a.hard);
+    analysis=`<div class="stack"><h3>Regole mancate</h3>${Object.keys(br).length?`<ul class="bars">${Object.entries(br).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<li><span>${esc(AB_RULES[k].label)}</span><b class="mono">${n}</b></li>`).join('')}</ul>`:'<p class="muted">Nessuna regola mancata.</p>'}<p class="small muted">Serie con 2 regole: ${easy.filter(a=>a.ok).length}/${easy.length} · con 3 regole: ${hard.filter(a=>a.ok).length}/${hard.length}.</p></div>`;
+  }
+  const maxms=Math.max(...p.att.map(a=>a.ms),1);
+  return `<section class="panel stack">
+    <div class="row spread"><h2>${c.it}</h2><span class="mono big2">${p.score}/${p.n}</span></div>
+    <p class="muted">Tempo usato ${fmtT(p.secs)}${p.limit?' su '+fmtT(p.limit):''}${p.auto?' · consegna automatica allo scadere':''} · ${p.att.filter(a=>a.ans===null).length} senza risposta · budget ${fmtT(budget)} a domanda</p>
+    <div class="grid2">${analysis}
+      <div class="stack"><h3>Tempo per domanda</h3><div class="tblwrap"><table class="times"><thead><tr><th>#</th><th>Esito</th><th>Tempo</th><th></th></tr></thead><tbody>${p.att.map((a,i)=>`<tr><td class="mono">${i+1}</td><td>${a.ans===null?'<span class="muted">vuota</span>':a.ok?'<span class="okc">✓</span>':'<span class="badc">✗</span>'}${a.fl?' ⚑':''}</td><td class="mono">${fmtT(a.ms/1000)}</td><td class="tb"><i class="${a.ms/1000>budget?'over':''}" style="width:${Math.round(a.ms/maxms*100)}%"></i></td></tr>`).join('')}</tbody></table></div></div>
+    </div>
+    <details ${p.score<p.n?'open':''}><summary>Rivedi le ${p.n} domande con le soluzioni. Per ogni errore indica la causa.</summary><div class="review">${P.items.map((it,i)=>reviewItem(it,P.ans[i],i,pi,p.att[i])).join('')}</div></details>
+  </section>`;
+}
+function reviewItem(it,a,i,pi,att){
+  const ok=a===it.key;
+  const causeBtns=(!ok&&att)?`<div class="row causes"><span class="small muted">Causa dell'errore:</span>${Object.entries(CAUSES).map(([k,l])=>`<button class="small ${att.cause===k?'csel':''}" data-cause="${pi}:${i}:${k}">${l}</button>`).join('')}</div>`:'';
+  let body='';
+  if(it.sec==='verbal') body=`<details class="inner"><summary>Brano</summary><p class="passage small2">${esc(it.text)}</p></details><p class="small muted">${esc(it.question)}</p>${it.options.map((o,j)=>`<p class="${j===it.key?'okc':(j===a?'badc':'')}"><span class="mono">${LETTERS[j]}</span> ${esc(o.text)}<br><span class="small muted">${{true:'Vera',false:'Falsa',cannot:'Non deducibile'}[o.kind]}: ${esc(o.why)}</span></p>`).join('')}`;
+  else if(it.sec==='numerical') body=`<details class="inner"><summary>Dati</summary>${it.stim}</details><p>${esc(it.question)}</p><p class="small">${it.options.map((o,j)=>`<span class="${j===it.key?'okc':(j===a?'badc':'')}">${LETTERS[j]}. ${esc(o.label)}</span>`).join(' · ')}</p><p class="small muted">${esc(it.explain)}</p>`;
+  else body=`<div class="series sm">${it.series.map(f=>frameSVG(f)).join('')}<div class="qmark">?</div></div><div class="series sm">${it.options.map((o,j)=>`<div class="optmini ${j===it.key?'k':''} ${j===a&&!ok?'w':''}"><span class="mono">${LETTERS[j]}</span>${frameSVG(o.frame)}</div>`).join('')}</div><p class="small muted">${esc(it.explain)}</p>`;
+  return `<div class="ritem ${ok?'ok':'bad'}"><div class="row"><span class="mono">${String(i+1).padStart(2,'0')}</span><span>${a===undefined?'Senza risposta':ok?'Corretta':'Tua: '+LETTERS[a]+' · giusta: '+LETTERS[it.key]}</span></div>${body}${causeBtns}</div>`;
+}
+
+// ---------- statistics ----------
+function renderStats(){
+  const ss=DB.sessions;
+  const all=[]; ss.forEach(s=>s.parts.forEach(p=>p.att&&p.att.forEach(a=>all.push(Object.assign({date:s.date},a)))));
+  const by=sec=>all.filter(a=>a.sec===sec);
+  const acc=list=>list.length?Math.round(list.filter(a=>a.ok).length/list.length*100)+'%':'–';
+  const avg=list=>list.length?fmtT(list.reduce((s,a)=>s+a.ms,0)/list.length/1000):'–';
+  const traps={}; by('verbal').forEach(a=>{if(a.trap)traps[a.trap]=(traps[a.trap]||0)+1});
+  const tpl={}; by('numerical').forEach(a=>{tpl[a.tpl]=tpl[a.tpl]||{n:0,ok:0,ms:0};tpl[a.tpl].n++;tpl[a.tpl].ms+=a.ms;if(a.ok)tpl[a.tpl].ok++});
+  const rules={}; by('abstract').forEach(a=>{(a.rules||[]).forEach(r=>{rules[r]=rules[r]||{n:0,miss:0};rules[r].n++}); (a.broken||[]).forEach(r=>{rules[r]=rules[r]||{n:0,miss:0};rules[r].miss++})});
+  const causes={}; all.forEach(a=>{if(a.cause)causes[a.cause]=(causes[a.cause]||0)+1});
+  const full=ss.filter(s=>s.kind==='full');
+  const sheets=ss.filter(s=>s.kind==='sheet');
+  app().innerHTML=header('Statistiche','Tutto resta in questo browser. Esporta un backup se cambi computer.')+`
+  <main class="wrap stack">
+    <section class="cards3">${['verbal','numerical','abstract'].map(s=>`<div class="card"><span class="eyebrow">${SEC[s].it}</span><b class="mono big2">${acc(by(s))}</b><span class="muted small">${by(s).length} risposte · tempo medio ${avg(by(s))} (budget ${fmtT(SEC[s].sec/SEC[s].n)})</span></div>`).join('')}</section>
+    <section class="panel stack"><h2>Simulazioni complete</h2>${full.length?`<div class="tblwrap"><table class="times"><thead><tr><th>Data</th><th>Verbale</th><th>Num.</th><th>Astr.</th><th>Num + astr.</th><th>Esito</th></tr></thead><tbody>${full.map(s=>{const g=k=>s.parts.find(p=>p.sec===k)||{score:0};const v=verdict(s);return `<tr><td>${fmtD(s.date)}</td><td class="mono">${g('verbal').score}/20</td><td class="mono">${g('numerical').score}/10</td><td class="mono">${g('abstract').score}/10</td><td class="mono">${g('numerical').score+g('abstract').score}/20</td><td>${v.every(x=>x.pass)?'<span class="pill ok">Superata</span>':'<span class="pill bad">Non superata</span>'}</td></tr>`}).join('')}</tbody></table></div>`:'<p class="muted">Nessuna simulazione completa salvata.</p>'}</section>
+    <section class="grid2">
+      <div class="panel stack"><h2>Cause degli errori (indicate da te)</h2>${Object.keys(causes).length?`<ul class="bars">${Object.entries(causes).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<li><span>${esc(CAUSES[k])}</span><b class="mono">${n}</b></li>`).join('')}</ul>`:'<p class="muted">Nei risultati, per ogni errore, indica la causa: qui vedrai quale prevale.</p>'}</div>
+      <div class="panel stack"><h2>Trappole verbali più frequenti</h2>${Object.keys(traps).length?`<ul class="bars">${Object.entries(traps).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<li><span>${esc(TRAPS[k]||k)}</span><b class="mono">${n}</b></li>`).join('')}</ul>`:'<p class="muted">Ancora nessun errore verbale.</p>'}</div>
+      <div class="panel stack"><h2>Numerico per tipo di calcolo</h2>${Object.keys(tpl).length?`<div class="tblwrap"><table class="times"><thead><tr><th>Tipo</th><th>Corrette</th><th>Tempo medio</th></tr></thead><tbody>${Object.entries(tpl).sort((a,b)=>a[1].ok/a[1].n-b[1].ok/b[1].n).map(([k,o])=>`<tr><td>${esc(NUM_T[k]?NUM_T[k].label:k)}</td><td class="mono">${o.ok}/${o.n}</td><td class="mono">${fmtT(o.ms/o.n/1000)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Ancora nessuna risposta.</p>'}</div>
+      <div class="panel stack"><h2>Astratto per regola</h2>${Object.keys(rules).length?`<div class="tblwrap"><table class="times"><thead><tr><th>Regola</th><th>Presente</th><th>Mancata</th></tr></thead><tbody>${Object.entries(rules).map(([k,o])=>`<tr><td>${esc(AB_RULES[k].label)}</td><td class="mono">${o.n}</td><td class="mono">${o.miss}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Ancora nessuna risposta.</p>'}</div>
+      <div class="panel stack"><h2>Fogli risposte (libro)</h2>${sheets.length?`<div class="tblwrap"><table class="times"><thead><tr><th>Data</th><th>Etichetta</th><th>Punteggio</th><th>Tempo</th></tr></thead><tbody>${sheets.map(s=>`<tr><td>${fmtD(s.date)}</td><td>${esc(s.label||'')}</td><td class="mono">${s.parts[0].score}/${s.parts[0].n}</td><td class="mono">${fmtT(s.parts[0].secs)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Nessun foglio risposte salvato.</p>'}</div>
+    </section>
+    <section class="panel stack"><h2>Esporta e backup</h2>
+      <p class="muted small">CSV: una riga per domanda, da aprire in Excel o Google Sheets. Backup JSON: per spostare lo storico su un altro computer o browser.</p>
+      ${exportBlock(sessionCSV(ss),'tutto')}
+      <div class="row"><button id="bk">Scarica backup JSON</button><label class="filebtn">Importa backup<input type="file" id="imp" accept="application/json"></label><button id="reset" class="ghost">Cancella tutto lo storico</button></div>
+    </section>
+    ${footer()}
+  </main>`;
+  bindNav(); bindExport();
+  $('#bk').onclick=()=>download('epso-reasoning-backup.json',JSON.stringify(DB),'application/json');
+  $('#imp').onchange=e=>{const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{try{const d=JSON.parse(r.result); if(!d.sessions) throw 0; DB=d; saveDB(); toast('Backup importato.'); renderStats();}catch(x){toast('File non valido: serve un backup esportato da questo programma.')}}; r.readAsText(f);};
+  let armed=false; $('#reset').onclick=()=>{ if(!armed){armed=true;$('#reset').textContent='Conferma: cancella tutto';return} DB={sessions:[],seen:{},vwrong:{},plan:{}}; saveDB(); renderStats(); toast('Storico cancellato.'); };
+}
+
+function sessionCSV(list){
+  const rows=[['session_date','mode','section','q','item','correct','answer','key','seconds','answer_changes','flagged','detail','cause']];
+  list.forEach(s=>s.parts.forEach(p=>(p.att||[]).forEach((a,i)=>{
+    const det=a.sec==='verbal'?(a.trap||''):a.sec==='numerical'?(a.tpl+(a.slip?': '+a.slip:'')):a.sec==='abstract'?((a.rules||[]).join('+')+(a.broken?' missed '+a.broken.join('+'):'')):(s.label||'');
+    rows.push([new Date(s.date).toISOString(),s.kind,a.sec,i+1,a.id,a.ok?1:0,a.ans===null?'':LETTERS[a.ans],a.key===null||a.key===undefined?'':LETTERS[a.key],(a.ms/1000).toFixed(1),a.ch||0,a.fl?1:0,det,a.cause?CAUSES[a.cause]:'']);
+  })));
+  return rows.map(r=>r.map(x=>/[",\n]/.test(String(x))?'"'+String(x).replace(/"/g,'""')+'"':x).join(',')).join('\n');
+}
+function exportBlock(csv,name){ return `<div class="stack exp" data-name="${name}"><div class="row"><button class="dl">Scarica CSV</button><button class="cp">Copia CSV</button><span class="small muted st"></span></div><textarea readonly class="csv">${esc(csv)}</textarea></div>`; }
+function bindExport(){ document.querySelectorAll('.exp').forEach(b=>{const t=b.querySelector('textarea'), st=b.querySelector('.st');
+  b.querySelector('.dl').onclick=()=>download('epso-reasoning-'+b.dataset.name+'.csv',t.value,'text/csv');
+  b.querySelector('.cp').onclick=()=>{const fb=()=>{t.focus();t.select();st.textContent='Testo selezionato: copia con Ctrl/Cmd+C.'}; try{navigator.clipboard.writeText(t.value).then(()=>st.textContent='Copiato.',fb)}catch(e){fb()}};});}
+function download(name,text,type){ try{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500);toast('Download avviato. Se non parte, usa "Copia".')}catch(e){toast('Download non disponibile qui: usa "Copia".')} }
+
+// ---------- answer sheet for book practice ----------
+let SH=null;
+function renderSheetSetup(){
+  app().innerHTML=header('Foglio risposte','Per i test su carta o su libro: cronometro, risposte, correzione e statistiche. Il programma non contiene le domande.')+`
+  <main class="wrap stack narrow"><div class="panel stack">
+    <label>Tipo di prova<select id="sh-type"><option value="verbal">Verbale · 20 dom. · 35:00 · 4 opzioni</option><option value="numerical">Numerico · 10 dom. · 20:00 · 5 opzioni</option><option value="abstract">Astratto · 10 dom. · 10:00 · 5 opzioni</option><option value="custom">Personalizzato</option></select></label>
+    <div class="row wrap-gap"><label>Domande<input id="sh-n" type="number" min="1" max="120" value="20"></label><label>Minuti<input id="sh-m" type="number" min="1" max="240" value="35"></label><label>Opzioni<select id="sh-o"><option>4</option><option>5</option></select></label></div>
+    <label>Etichetta (es. "Libro AD 2015, test verbale 1, dom. 1-20")<input id="sh-l" type="text" maxlength="80"></label>
+    <div class="row"><button class="primary" id="sh-go">Avvia cronometro</button></div>
+  </div>${footer()}</main>`;
+  bindNav();
+  const set=()=>{const t=$('#sh-type').value; if(t!=='custom'){ $('#sh-n').value=SEC[t].n; $('#sh-m').value=SEC[t].sec/60; $('#sh-o').value=SEC[t].letters; }};
+  $('#sh-type').onchange=set;
+  $('#sh-go').onclick=()=>{ const n=Math.max(1,Math.min(120,+$('#sh-n').value||20)), m=Math.max(1,+$('#sh-m').value||35), o=+$('#sh-o').value;
+    SH={type:$('#sh-type').value,n,sec:m*60,o,label:$('#sh-l').value.trim(),ans:{},key:{},t:{},start:Date.now(),last:Date.now(),phase:'run'}; clearInterval(TIMER); TIMER=setInterval(sheetTick,250); renderSheet(); };
+}
+function sheetTick(){ if(!SH||SH.phase!=='run') return; const left=SH.sec-(Date.now()-SH.start)/1000; const el=$('#clock'); if(el){el.textContent=fmtT(left); el.classList.toggle('low',left<=Math.min(300,SH.sec*0.15));} if(left<=0){ sheetStop(); } }
+function sheetStop(){ SH.phase='key'; SH.end=Date.now(); clearInterval(TIMER); renderSheet(); }
+function renderSheet(){
+  const L=LETTERS.slice(0,SH.o).split('');
+  const run=SH.phase==='run';
+  app().innerHTML=`<div class="bar"><div class="in"><div class="row"><span class="secname">Foglio risposte</span><span class="clock mono" id="clock">${run?'--:--':fmtT((SH.end-SH.start)/1000)}</span><span class="small muted">${esc(SH.label)}</span></div><div class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="stats">Statistiche</button>${run?'<button class="primary" id="sh-stop">Ferma e correggi</button>':'<button class="primary" id="sh-score">Calcola punteggio</button>'}</div></div></div>
+  <main class="wrap stack narrow"><div class="panel stack">
+    <p class="muted small">${run?'Segna la risposta di ogni domanda. Il tempo di ogni domanda è misurato dalla risposta precedente.':'Ora inserisci la soluzione dal libro (colonna "Chiave"). Il punteggio si aggiorna quando premi "Calcola punteggio".'}</p>
+    <div class="tblwrap"><table class="sheet"><thead><tr><th>#</th><th>Tua risposta</th>${run?'':'<th>Chiave</th>'}<th>Tempo</th></tr></thead><tbody>
+    ${Array.from({length:SH.n},(_,i)=>`<tr><td class="mono">${i+1}</td><td><div class="seg">${L.map(l=>`<button class="${SH.ans[i]===l?'sel':''}" data-a="${i}:${l}" ${run?'':'disabled'}>${l}</button>`).join('')}</div></td>${run?'':`<td><div class="seg">${L.map(l=>`<button class="${SH.key[i]===l?'selk':''}" data-k="${i}:${l}">${l}</button>`).join('')}</div></td>`}<td class="mono">${SH.t[i]?fmtT(SH.t[i]/1000):'–'}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div id="sh-res"></div>
+  </div>${footer()}</main>`;
+  sheetTick(); bindNav();
+  document.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{const [i,l]=b.dataset.a.split(':'); const now=Date.now(); if(SH.ans[i]===undefined){SH.t[i]=now-SH.last; SH.last=now;} SH.ans[i]=l; renderSheet();});
+  document.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{const [i,l]=b.dataset.k.split(':'); SH.key[i]=l; renderSheet();});
+  if($('#sh-stop')) $('#sh-stop').onclick=sheetStop;
+  if($('#sh-score')) $('#sh-score').onclick=()=>{
+    const keyed=Object.keys(SH.key).length; if(keyed<SH.n){ $('#sh-res').innerHTML=`<p class="alert">Mancano ${SH.n-keyed} chiavi.</p>`; return; }
+    const att=Array.from({length:SH.n},(_,i)=>({sec:'sheet',id:'q'+(i+1),ok:SH.ans[i]===SH.key[i],ans:SH.ans[i]?LETTERS.indexOf(SH.ans[i]):null,key:LETTERS.indexOf(SH.key[i]),ms:SH.t[i]||0,ch:0,fl:false}));
+    const score=att.filter(a=>a.ok).length;
+    const rec={id:Date.now(),date:SH.start,kind:'sheet',label:SH.label||(SEC[SH.type]?SEC[SH.type].it:'Personalizzato'),parts:[{sec:SH.type,n:SH.n,score,secs:Math.round((SH.end-SH.start)/1000),limit:SH.sec,att}]};
+    DB.sessions.unshift(rec); saveDB();
+    const pass=SH.type==='verbal'&&SH.n===20?`<span class="pill ${score>=10?'ok':'bad'}">${score>=10?'Sopra':'Sotto'} la soglia 10/20</span>`:'';
+    $('#sh-res').innerHTML=`<div class="row"><b class="mono big2">${score}/${SH.n}</b>${pass}<span class="muted">Salvato nelle statistiche.</span></div>`+exportBlock(sessionCSV([rec]),'foglio');
+    bindExport(); SH.phase='done';
+  };
+}
+
+function footer(){ return `<footer class="foot">
+  <p>Formato e soglie dal bando EPSO/AD/427/26: verbale 20 domande in 35 minuti (soglia 10/20); numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Numerico e astratto sono generati al momento con dati fittizi. Il punteggio qui non predice il risultato reale.</p>
+  <p>Verbale: 30 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO.</p>
+</footer>`; }
+
+document.addEventListener('keydown',e=>{
+  if(!S||S.done||e.metaKey||e.ctrlKey||e.altKey) return; const P=S.parts[S.pi]; if(!P||!P.started||P.ended) return;
+  if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+  const n=P.items[P.cur].options.length, k=e.key.toLowerCase();
+  let idx='abcde'.indexOf(k); if(idx<0) idx='12345'.indexOf(k);
+  if(idx>=0&&idx<n){ choose(idx); e.preventDefault(); return; }
+  if(e.key==='ArrowRight') go(P.cur+1); else if(e.key==='ArrowLeft') go(P.cur-1);
+  else if(k==='f'&&P.timed){P.flag[P.cur]=!P.flag[P.cur];renderTest();}
+});
+window.addEventListener('beforeunload',e=>{ if(S&&!S.done&&S.parts[S.pi]&&S.parts[S.pi].started){ e.preventDefault(); e.returnValue=''; } });
+
+renderHome();
+
+
+</script>
+</body>
+</html>

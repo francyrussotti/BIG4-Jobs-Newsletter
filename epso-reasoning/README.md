@@ -1,0 +1,43 @@
+# EPSO Reasoning Trainer (AD/427/26)
+
+Programma di allenamento per la Parte 1 del concorso EPSO/AD/427/26 (AD5): solo le tre prove di reasoning, con formato, tempi e soglie del bando.
+
+| Prova | Domande | Tempo | Soglia |
+|---|---|---|---|
+| Verbale | 20 | 35 min | 10/20 |
+| Numerico | 10 | 20 min | 10/20 combinata con l'astratto |
+| Astratto | 10 | 10 min | (vedi sopra) |
+
+## Come aprirlo
+
+- **Dal computer, senza installare nulla:** scarica `index.html` e aprilo con doppio clic. Funziona anche offline.
+- **Online con GitHub Pages:** Settings → Pages → "Deploy from a branch" → scegli il branch e la cartella `/ (root)`. L'indirizzo sarà `https://<utente>.github.io/<repo>/epso-reasoning/`.
+
+Lo storico (punteggi, tempi, errori) resta nel browser in cui fai i test. Per spostarlo usa "Scarica backup JSON" e "Importa backup" nella pagina Statistiche.
+
+## Cosa contiene
+
+- **Simulazione completa:** verbale → numerico → astratto di fila, con esito secondo le soglie del bando.
+- **Prove singole a tempo** e **pratica** con correzione immediata.
+- **Verbale:** brano + "Which of the following statements is correct/incorrect?" + 4 opzioni. 44 brani: 30 originali, 14 da atti UE.
+- **Numerico:** 12 tipi di domanda generati al momento con dati fittizi (variazioni %, quote, pro capite, valute, percentuale inversa, crescita composta, punti percentuali, grafici a barre e a torta, medie ponderate), 5 opzioni, calcolatrice a schermo.
+- **Astratto:** serie di 5 figure generate al momento con 2-3 regole (rotazione, conteggio, posizione, riempimento, forma), 5 opzioni.
+- **Analisi:** tempo per domanda rispetto al budget, trappole verbali, tipi di calcolo sbagliati, regole astratte mancate, causa dell'errore indicata da te, export CSV.
+- **Piano di preparazione** 4-13 novembre con le attività del giorno.
+- **Foglio risposte** cronometrato per esercitarsi sul manuale (il programma non contiene domande del manuale).
+
+## Modificare il programma
+
+I sorgenti sono in `src/`. Dopo una modifica rigenera `index.html`:
+
+```bash
+python3 build.py .
+```
+
+## Fonti e licenze
+
+- Brani `o01`-`o30`, generatori numerici e astratti, interfaccia: scritti per questo progetto.
+- Brani `k01`-`k14`: considerando di atti UE © European Union, [EUR-Lex](https://eur-lex.europa.eu), riuso autorizzato dalla Decisione della Commissione 2011/833/UE. Affermazioni e spiegazioni adattate da [EPSO AI Field Trainer](https://github.com/Chartres/epso-kviz) (commit `fdce428`) di Pavol Dravecký, licenza [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). Questi contenuti, e il file `src/verbal-kviz.js`, restano sotto CC BY-NC-SA 4.0: uso non commerciale, con attribuzione, adattamenti con la stessa licenza.
+- Formato delle domande ricavato dal bando EPSO/AD/427/26 e dalle descrizioni generali del formato EPSO. Nessuna domanda reale d'esame o di manuali commerciali è inclusa.
+
+Progetto indipendente, non affiliato a EPSO. Il punteggio ottenuto qui non predice il risultato reale.
