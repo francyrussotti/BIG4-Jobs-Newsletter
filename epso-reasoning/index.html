@@ -724,7 +724,7 @@ const AB_RULES={
 };
 const ATTR={rot:'rot',cnt:'cnt',pos:'pos',fill:'fill',shape:'shape'};
 
-function buildAbstractItem(hard){
+function buildRulesItem(hard){
   const n=hard?3:2;
   let names=R.sample(['rot','cnt','pos','fill','shape'],n);
   const P={}; names.forEach(r=>P[r]=AB_RULES[r].init());
@@ -750,7 +750,7 @@ function buildAbstractItem(hard){
 }
 
 const MARK=[[3,3],[46.5,3],[90,3],[90,46.5],[90,90],[46.5,90],[3,90],[3,46.5]];
-function frameSVG(f,label){
+function frameRulesSVG(f,label){
   const cx=50,cy=44, fill=f.fill==='white'?'#ffffff':f.fill==='black'?'#111111':f.fill==='grey'?'#9aa0a6':'url(#hatch)';
   let s='';
   const st=`fill="${fill}" stroke="#111" stroke-width="2.2"`;
@@ -763,6 +763,119 @@ function frameSVG(f,label){
     s+=`<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#fff" stroke-width="6" stroke-linecap="round"/><line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#111" stroke-width="2.6" stroke-linecap="round"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.6" fill="#111" stroke="#fff" stroke-width="1.2"/>`;}
   if(f.cnt){const n=f.cnt, w=(n-1)*9; for(let i=0;i<n;i++) s+=`<circle cx="${(50-w/2+i*9).toFixed(1)}" cy="78" r="3.2" fill="#111"/>`;}
   if(f.pos!==null&&f.pos!==undefined){const [x,y]=MARK[f.pos]; s+=`<rect x="${x}" y="${y}" width="7" height="7" fill="#111"/>`;}
+  return `<svg class="fig" viewBox="0 0 100 100" role="img" aria-label="${esc(label||'figura')}"><rect x="0.5" y="0.5" width="99" height="99" fill="#fff" stroke="#8a929c"/>${s}</svg>`;
+}
+
+// ---------- more abstract rule families: wheel, grid, overlay, sides ----------
+Object.assign(AB_RULES,{
+  wheel:{label:'Settori di una ruota che ruotano'},
+  grid:{label:'Caselle che si spostano in una griglia'},
+  union:{label:'Sovrapposizione (1 + 2 = 3)'},
+  xor:{label:'Sovrapposizione senza parti comuni'},
+  sides:{label:'Conteggio dei lati'}
+});
+const TOKF=['black','hatch','grey'];
+const sigOf=f=>JSON.stringify(f);
+function finishAbstract(code,series,ans,wrongs,explain){
+  const opts=[{f:ans,broken:[]}], seen=new Set([sigOf(ans)]);
+  for(const w of wrongs){ if(opts.length>=5) break; const s=sigOf(w.f); if(seen.has(s)) continue; seen.add(s); opts.push({f:w.f,broken:[w.code||code]}); }
+  if(opts.length<5) return null;
+  const sh=R.shuffle(opts);
+  return {sec:'abstract',id:'a-'+code+'-'+Math.random().toString(36).slice(2,8),rules:[code],hard:true,series,options:sh.map(o=>({frame:o.f,broken:o.broken})),key:sh.findIndex(o=>o.broken.length===0),explain};
+}
+function moving(cells,k){ // k tokens moving on a ring of `cells` positions with distinct steps, never colliding over 7 frames
+  for(let t=0;t<200;t++){
+    const steps=R.sample([1,2,3,-1,-2,-3].filter(x=>Math.abs(x)<cells/2),k), starts=R.sample([...Array(cells).keys()],k);
+    let ok=true; const at=(i,j)=>mod(starts[i]+steps[i]*j,cells);
+    for(let j=0;j<7&&ok;j++){ const set=new Set(); for(let i=0;i<k;i++) set.add(at(i,j)); if(set.size<k) ok=false; }
+    if(ok) return {steps,starts,at};
+  }
+  return null;
+}
+function buildMovingItem(kind){
+  const cells=kind==='wheel'?8:9, k=R.pick([2,3]);
+  const m=moving(cells,k); if(!m) return null;
+  const fills=R.sample(TOKF,k);
+  const fr=j=>({kind,cells,tok:fills.map((f,i)=>({f,p:m.at(i,j)}))});
+  const series=[0,1,2,3,4].map(fr), ans=fr(5);
+  const wrongs=[];
+  const valid=f=>new Set(f.tok.map(t=>t.p)).size===f.tok.length;
+  for(let g=0;g<60&&wrongs.length<8;g++){
+    const f=JSON.parse(JSON.stringify(ans)), i=R.int(0,k-1), how=R.int(0,3);
+    if(how===0) f.tok[i].p=mod(f.tok[i].p+m.steps[i],cells);       // one step too far
+    else if(how===1) f.tok[i].p=mod(f.tok[i].p-m.steps[i],cells);  // stayed in place
+    else if(how===2) f.tok[i].p=mod(f.tok[i].p+(R.chance(.5)?1:-1),cells);
+    else { const j=(i+1)%k; const tmp=f.tok[i].f; f.tok[i].f=f.tok[j].f; f.tok[j].f=tmp; } // fills swapped
+    if(valid(f)) wrongs.push({f});
+  }
+  const FN=kind==='wheel'?{black:'nero',hatch:'tratteggiato',grey:'grigio'}:{black:'nera',hatch:'tratteggiata',grey:'grigia'};
+  const one=(f,st)=>{const n=Math.abs(st), pos=n===1?'posizione':'posizioni'; return kind==='wheel'?`settore ${FN[f]}: ${n} ${pos} in senso ${st>0?'orario':'antiorario'}`:`casella ${FN[f]}: ${n} ${pos} ${st>0?'in avanti':'all\'indietro'}`;};
+  const explain=(kind==='wheel'?'Ogni settore colorato ruota con un passo proprio. ':'Ogni casella colorata si sposta nella griglia letta riga per riga (dopo l\'ultima casella si riparte dalla prima), con un passo proprio. ')+
+    fills.map((f,i)=>one(f,m.steps[i])).join('; ')+'. Segui un elemento alla volta.';
+  return finishAbstract(kind,series,ans,wrongs,explain);
+}
+const STROKES={t:[20,20,80,20],r:[80,20,80,80],b:[20,80,80,80],l:[20,20,20,80],d1:[20,20,80,80],d2:[80,20,20,80],v:[50,20,50,80],h:[20,50,80,50],c:'circle'};
+const SK=Object.keys(STROKES);
+function buildOverlayItem(){
+  const mode=R.pick(['union','xor']);
+  const pair=()=>{ for(let t=0;t<100;t++){ const a=R.sample(SK,R.int(2,3)), b=R.sample(SK,R.int(2,3)); const common=a.filter(x=>b.includes(x)); if(common.length>=1&&common.length<Math.min(a.length,b.length)) return [a,b]; } return null; };
+  const comb=(a,b,md)=>md==='union'?SK.filter(x=>a.includes(x)||b.includes(x)):SK.filter(x=>a.includes(x)!==b.includes(x));
+  const p1=pair(), p2=pair(); if(!p1||!p2) return null;
+  const F=e=>({kind:'lines',e:SK.filter(x=>e.includes(x))});
+  const series=[F(p1[0]),F(p1[1]),F(comb(p1[0],p1[1],mode)),F(p2[0]),F(p2[1])];
+  const ans=F(comb(p2[0],p2[1],mode));
+  const other=mode==='union'?'xor':'union';
+  const inter=SK.filter(x=>p2[0].includes(x)&&p2[1].includes(x));
+  const wrongs=[{f:F(comb(p2[0],p2[1],other)),code:mode},{f:F(p2[0])},{f:F(p2[1])},{f:F(inter)}];
+  for(let g=0;g<20;g++){ const e=ans.e.slice(); const x=R.pick(SK); const i=e.indexOf(x); if(i>=0) e.splice(i,1); else e.push(x); if(e.length) wrongs.push({f:F(e)}); }
+  const explain=mode==='union'?'La terza figura è la sovrapposizione della prima e della seconda; allo stesso modo la sesta è la sovrapposizione della quarta e della quinta.':'La terza figura sovrappone la prima e la seconda ed elimina gli elementi in comune; allo stesso modo la sesta si ottiene da quarta e quinta.';
+  return finishAbstract(mode,series,ans,wrongs.filter(w=>w.f.e.length>0),explain);
+}
+function buildSidesItem(){
+  const rule=R.pick(['same','minus']);
+  const ok=(o,i)=>rule==='same'?i===o:i===o-1;
+  const pairOK=()=>{ const o=rule==='same'?R.int(3,6):R.int(4,7); return [o,rule==='same'?o:o-1]; };
+  const F=(o,i)=>({kind:'sides',o,i,ro:R.int(0,11)*30,ri:R.int(0,11)*30,inv:R.chance(.5)});
+  const series=[]; let prev=null; for(let j=0;j<5;j++){ let pr; do{pr=pairOK()}while(prev&&pr[0]===prev); prev=pr[0]; series.push(F(pr[0],pr[1])); }
+  const a=pairOK(), ans=F(a[0],a[1]);
+  const wrongs=[];
+  const used=new Set([a[0]+':'+a[1]]);
+  for(let g=0;g<120&&wrongs.length<6;g++){ const o=R.int(3,7), i=R.int(3,6), key=o+':'+i; if(!ok(o,i)&&!used.has(key)&&Math.abs(o-a[0])<=2){ used.add(key); wrongs.push({f:F(o,i)}); } }
+  const explain=rule==='same'?'In ogni figura la forma interna ha lo stesso numero di lati di quella esterna. Solo la risposta corretta rispetta questa relazione.':'In ogni figura la forma interna ha un lato in meno di quella esterna. Solo la risposta corretta rispetta questa relazione.';
+  // compare by side counts only, so a distractor never has the same counts as the key
+  const it=finishAbstract('sides',series,ans,wrongs.filter(w=>!(w.f.o===ans.o&&w.f.i===ans.i)),explain);
+  return it;
+}
+function buildAbstractItem(hard){
+  const kinds=hard?['rules','rules','wheel','grid','union','sides']:['rules','rules','rules','wheel','sides'];
+  for(let t=0;t<20;t++){
+    const k=R.pick(kinds); let it=null;
+    if(k==='rules') it=buildRulesItem(hard); else if(k==='wheel'||k==='grid') it=buildMovingItem(k); else if(k==='union') it=buildOverlayItem(); else it=buildSidesItem();
+    if(it&&it.options.length===5&&it.key>=0){ it.hard=!!hard; return it; }
+  }
+  return buildRulesItem(hard);
+}
+function polyPts(cx,cy,r,n,rot){ return [...Array(n).keys()].map(k=>{const a=(rot-90+360*k/n)*Math.PI/180;return (cx+r*Math.cos(a)).toFixed(1)+','+(cy+r*Math.sin(a)).toFixed(1)}).join(' '); }
+const FILLC={black:'#111111',grey:'#9aa0a6',hatch:'url(#hatch)',white:'#ffffff'};
+function frameSVG(f,label){
+  if(!f.kind) return frameRulesSVG(f,label);
+  let s='';
+  if(f.kind==='wheel'){
+    const cx=50,cy=50,r=40;
+    const sect=(i,fill)=>{const a0=(-90+45*i)*Math.PI/180,a1=(-90+45*(i+1))*Math.PI/180;return `<path d="M${cx},${cy} L${(cx+r*Math.cos(a0)).toFixed(1)},${(cy+r*Math.sin(a0)).toFixed(1)} A${r},${r} 0 0 1 ${(cx+r*Math.cos(a1)).toFixed(1)},${(cy+r*Math.sin(a1)).toFixed(1)} Z" fill="${fill}" stroke="#111" stroke-width="1.6"/>`};
+    for(let i=0;i<8;i++) s+=sect(i,'#ffffff');
+    f.tok.forEach(t=>s+=sect(t.p,FILLC[t.f]));
+    s+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#111" stroke-width="2.2"/>`;
+  } else if(f.kind==='grid'){
+    const x0=14,w=24;
+    f.tok.forEach(t=>{const r=Math.floor(t.p/3),c=t.p%3;s+=`<rect x="${x0+c*w}" y="${x0+r*w}" width="${w}" height="${w}" fill="${FILLC[t.f]}"/>`;});
+    for(let i=0;i<=3;i++) s+=`<line x1="${x0}" y1="${x0+i*w}" x2="${x0+3*w}" y2="${x0+i*w}" stroke="#111" stroke-width="2"/><line x1="${x0+i*w}" y1="${x0}" x2="${x0+i*w}" y2="${x0+3*w}" stroke="#111" stroke-width="2"/>`;
+  } else if(f.kind==='lines'){
+    f.e.forEach(k=>{const v=STROKES[k]; s+= v==='circle'?`<circle cx="50" cy="50" r="16" fill="none" stroke="#111" stroke-width="3"/>`:`<line x1="${v[0]}" y1="${v[1]}" x2="${v[2]}" y2="${v[3]}" stroke="#111" stroke-width="3.2" stroke-linecap="round"/>`;});
+  } else if(f.kind==='sides'){
+    const oFill=f.inv?'#111111':'#ffffff', iFill=f.inv?'#ffffff':'#111111';
+    s+=`<polygon points="${polyPts(50,50,38,f.o,f.ro)}" fill="${oFill}" stroke="#111" stroke-width="2.2"/><polygon points="${polyPts(50,50,15,f.i,f.ri)}" fill="${iFill}" stroke="${f.inv?'#fff':'#111'}" stroke-width="1.6"/>`;
+  }
   return `<svg class="fig" viewBox="0 0 100 100" role="img" aria-label="${esc(label||'figura')}"><rect x="0.5" y="0.5" width="99" height="99" fill="#fff" stroke="#8a929c"/>${s}</svg>`;
 }
 
@@ -813,7 +926,12 @@ const METHOD=[
    ['Rotazione','di quanti gradi gira ogni volta, e in che verso?'],
    ['Numero','punti, lati o linee aumentano o diminuiscono? Di quanto? Con schemi tipo +2, −1?'],
    ['Posizione','un elemento si sposta lungo il bordo o in una griglia? Di quante caselle, in che verso?'],
-   ['Dimensione e colore','cresce, si riduce, alterna?']]},
+   ['Dimensione e colore','cresce, si riduce, alterna?'],
+   ['Più elementi che si muovono','in una ruota o in una griglia ogni elemento colorato può avere un passo e un verso propri: seguine uno alla volta.'],
+   ['Sovrapposizione','a volte la terza figura è la somma delle prime due, oppure la somma senza le parti in comune; poi si ripete con quarta e quinta.'],
+   ['Conteggio dei lati','due forme nella stessa figura possono avere lo stesso numero di lati, o una un lato in meno dell\'altra: conta sempre i lati.'],
+   ['Alternanza','figure in posizione 1, 3, 5 uguali tra loro e 2, 4 uguali tra loro (X, Y, X, Y…).'],
+   ['Elementi di disturbo','un elemento che cambia senza regola serve a confondere: individua quello che segue la regola e ignora il resto.']]},
  {h:'Metodo',ol:['Scegli un elemento e confronta ogni coppia di figure vicine, non solo la prima con l\'ultima.','Trovata la regola, scarta subito le opzioni che la violano.','Passa all\'elemento successivo con le opzioni rimaste.','Di solito restano una o due opzioni dopo due regole. Se dopo un minuto non vedi la regola, scegli la più probabile, segna e passa oltre.']}
 ]}
 ];
@@ -1054,7 +1172,7 @@ function renderIntro(){
   const tips={
     verbal:['Leggi prima la domanda: cerca l\'affermazione <b>correct</b> o <b>incorrect</b>? Alcune domande vanno completate ("According to the passage, …", "Why…?"): vale la stessa regola, conta solo il testo.','Poi le 4 opzioni, poi il brano cercando solo ciò che serve.','Vale solo ciò che il testo dice o implica: niente conoscenze esterne.','Attento a some/most/all, may/will, "dopo" vs "a causa di".'],
     numerical:['Leggi la domanda prima della tabella: individua righe, colonne e unità.','Stima prima di calcolare: spesso le opzioni sono abbastanza distanti.','Usa la calcolatrice a schermo (pulsante in alto), come all\'esame.','Percentuali: la base è il valore di partenza. Punti percentuali ≠ %.'],
-    abstract:['Isola un elemento alla volta: forma, riempimento, lancetta, punti, quadratino.','Controlla il passo tra ogni coppia di figure, non solo tra la prima e l\'ultima.','Elimina le opzioni che violano anche una sola regola.','Un minuto a domanda: se dopo 60 secondi non vedi la regola, segna e passa oltre.']
+    abstract:['Isola un elemento alla volta: forma, riempimento, lancetta, punti, quadratino, settori, caselle, lati.','Se una regola non torna tra figure vicine, prova a coppie: 1 + 2 = 3 e 4 + 5 = 6 (sovrapposizione).','Controlla il passo tra ogni coppia di figure, non solo tra la prima e l\'ultima.','Elimina le opzioni che violano anche una sola regola.','Un minuto a domanda: se dopo 60 secondi non vedi la regola, segna e passa oltre.']
   }[P.sec];
   app().innerHTML=header(c.it,S.kind==='full'?`Prova ${S.pi+1} di 3`:(P.timed?'Prova a tempo':'Pratica con correzione immediata'))+`
   <main class="wrap stack narrow">
@@ -1178,7 +1296,7 @@ function partResult(p,P,pi){
   } else {
     const br={}; p.att.forEach(a=>{(a.broken||[]).forEach(r=>br[r]=(br[r]||0)+1)});
     const hard=p.att.filter(a=>a.hard), easy=p.att.filter(a=>!a.hard);
-    analysis=`<div class="stack"><h3>Regole mancate</h3>${Object.keys(br).length?`<ul class="bars">${Object.entries(br).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<li><span>${esc(AB_RULES[k].label)}</span><b class="mono">${n}</b></li>`).join('')}</ul>`:'<p class="muted">Nessuna regola mancata.</p>'}<p class="small muted">Serie con 2 regole: ${easy.filter(a=>a.ok).length}/${easy.length} · con 3 regole: ${hard.filter(a=>a.ok).length}/${hard.length}.</p></div>`;
+    analysis=`<div class="stack"><h3>Regole mancate</h3>${Object.keys(br).length?`<ul class="bars">${Object.entries(br).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<li><span>${esc(AB_RULES[k].label)}</span><b class="mono">${n}</b></li>`).join('')}</ul>`:'<p class="muted">Nessuna regola mancata.</p>'}<p class="small muted">Domande più semplici: ${easy.filter(a=>a.ok).length}/${easy.length} · più difficili: ${hard.filter(a=>a.ok).length}/${hard.length}.</p></div>`;
   }
   const maxms=Math.max(...p.att.map(a=>a.ms),1);
   return `<section class="panel stack">

@@ -216,7 +216,7 @@ function renderIntro(){
   const tips={
     verbal:['Leggi prima la domanda: cerca l\'affermazione <b>correct</b> o <b>incorrect</b>? Alcune domande vanno completate ("According to the passage, …", "Why…?"): vale la stessa regola, conta solo il testo.','Poi le 4 opzioni, poi il brano cercando solo ciò che serve.','Vale solo ciò che il testo dice o implica: niente conoscenze esterne.','Attento a some/most/all, may/will, "dopo" vs "a causa di".'],
     numerical:['Leggi la domanda prima della tabella: individua righe, colonne e unità.','Stima prima di calcolare: spesso le opzioni sono abbastanza distanti.','Usa la calcolatrice a schermo (pulsante in alto), come all\'esame.','Percentuali: la base è il valore di partenza. Punti percentuali ≠ %.'],
-    abstract:['Isola un elemento alla volta: forma, riempimento, lancetta, punti, quadratino.','Controlla il passo tra ogni coppia di figure, non solo tra la prima e l\'ultima.','Elimina le opzioni che violano anche una sola regola.','Un minuto a domanda: se dopo 60 secondi non vedi la regola, segna e passa oltre.']
+    abstract:['Isola un elemento alla volta: forma, riempimento, lancetta, punti, quadratino, settori, caselle, lati.','Se una regola non torna tra figure vicine, prova a coppie: 1 + 2 = 3 e 4 + 5 = 6 (sovrapposizione).','Controlla il passo tra ogni coppia di figure, non solo tra la prima e l\'ultima.','Elimina le opzioni che violano anche una sola regola.','Un minuto a domanda: se dopo 60 secondi non vedi la regola, segna e passa oltre.']
   }[P.sec];
   app().innerHTML=header(c.it,S.kind==='full'?`Prova ${S.pi+1} di 3`:(P.timed?'Prova a tempo':'Pratica con correzione immediata'))+`
   <main class="wrap stack narrow">
@@ -340,7 +340,7 @@ function partResult(p,P,pi){
   } else {
     const br={}; p.att.forEach(a=>{(a.broken||[]).forEach(r=>br[r]=(br[r]||0)+1)});
     const hard=p.att.filter(a=>a.hard), easy=p.att.filter(a=>!a.hard);
-    analysis=`<div class="stack"><h3>Regole mancate</h3>${Object.keys(br).length?`<ul class="bars">${Object.entries(br).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<li><span>${esc(AB_RULES[k].label)}</span><b class="mono">${n}</b></li>`).join('')}</ul>`:'<p class="muted">Nessuna regola mancata.</p>'}<p class="small muted">Serie con 2 regole: ${easy.filter(a=>a.ok).length}/${easy.length} · con 3 regole: ${hard.filter(a=>a.ok).length}/${hard.length}.</p></div>`;
+    analysis=`<div class="stack"><h3>Regole mancate</h3>${Object.keys(br).length?`<ul class="bars">${Object.entries(br).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<li><span>${esc(AB_RULES[k].label)}</span><b class="mono">${n}</b></li>`).join('')}</ul>`:'<p class="muted">Nessuna regola mancata.</p>'}<p class="small muted">Domande più semplici: ${easy.filter(a=>a.ok).length}/${easy.length} · più difficili: ${hard.filter(a=>a.ok).length}/${hard.length}.</p></div>`;
   }
   const maxms=Math.max(...p.att.map(a=>a.ms),1);
   return `<section class="panel stack">

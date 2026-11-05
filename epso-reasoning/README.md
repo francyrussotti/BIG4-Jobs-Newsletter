@@ -21,7 +21,7 @@ Lo storico (punteggi, tempi, errori) resta nel browser in cui fai i test. Per sp
 - **Prove singole a tempo** e **pratica** con correzione immediata.
 - **Verbale:** brano + 4 opzioni, una sola giusta. Domande "Which of the following statements is correct / incorrect / can be deduced?" e domande mirate da completare ("According to the passage, …", "Why…?"). 56 brani: 42 originali, 14 da atti UE.
 - **Numerico:** 12 tipi di domanda generati al momento con dati fittizi (variazioni %, quote, pro capite, valute, percentuale inversa, crescita composta, punti percentuali, grafici a barre e a torta, medie ponderate), 5 opzioni, calcolatrice a schermo.
-- **Astratto:** serie di 5 figure generate al momento con 2-3 regole (rotazione, conteggio, posizione, riempimento, forma), 5 opzioni.
+- **Astratto:** serie di 5 figure generate al momento, 5 opzioni. Famiglie di regole: rotazione, conteggio, posizione, riempimento, forma (2-3 regole insieme), settori di una ruota e caselle di una griglia che si muovono con passi diversi, sovrapposizione (con o senza parti comuni), conteggio dei lati.
 - **Analisi:** tempo per domanda rispetto al budget, trappole verbali, tipi di calcolo sbagliati, regole astratte mancate, causa dell'errore indicata da te, export CSV.
 - **Metodo:** guida alle tre prove (tipi di affermazione, trappole verbali con esempi, formule del numerico, checklist dell'astratto, gestione del tempo).
 - **Piano di preparazione** 4-13 novembre con le attività del giorno.

@@ -45,7 +45,12 @@ const METHOD=[
    ['Rotazione','di quanti gradi gira ogni volta, e in che verso?'],
    ['Numero','punti, lati o linee aumentano o diminuiscono? Di quanto? Con schemi tipo +2, −1?'],
    ['Posizione','un elemento si sposta lungo il bordo o in una griglia? Di quante caselle, in che verso?'],
-   ['Dimensione e colore','cresce, si riduce, alterna?']]},
+   ['Dimensione e colore','cresce, si riduce, alterna?'],
+   ['Più elementi che si muovono','in una ruota o in una griglia ogni elemento colorato può avere un passo e un verso propri: seguine uno alla volta.'],
+   ['Sovrapposizione','a volte la terza figura è la somma delle prime due, oppure la somma senza le parti in comune; poi si ripete con quarta e quinta.'],
+   ['Conteggio dei lati','due forme nella stessa figura possono avere lo stesso numero di lati, o una un lato in meno dell\'altra: conta sempre i lati.'],
+   ['Alternanza','figure in posizione 1, 3, 5 uguali tra loro e 2, 4 uguali tra loro (X, Y, X, Y…).'],
+   ['Elementi di disturbo','un elemento che cambia senza regola serve a confondere: individua quello che segue la regola e ignora il resto.']]},
  {h:'Metodo',ol:['Scegli un elemento e confronta ogni coppia di figure vicine, non solo la prima con l\'ultima.','Trovata la regola, scarta subito le opzioni che la violano.','Passa all\'elemento successivo con le opzioni rimaste.','Di solito restano una o due opzioni dopo due regole. Se dopo un minuto non vedi la regola, scegli la più probabile, segna e passa oltre.']}
 ]}
 ];
