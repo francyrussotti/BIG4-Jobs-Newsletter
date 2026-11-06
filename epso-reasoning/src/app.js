@@ -7,7 +7,7 @@ const SEC={
   mind:{name:'MIND',it:'EY · MIND',n:16,sec:10*60,letters:5,ey:true},
   crit:{name:'Basic critical thinking',it:'EY · Critical thinking',n:13,sec:8*60,letters:5,ey:true},
   adapt:{name:'Adaptability',it:'EY · Adaptability',n:10,sec:8*60,letters:4,ey:true},
-  aipro:{name:'AI proficiency',it:'EY · AI proficiency',n:10,sec:10*60,letters:4,ey:true}
+  aipro:{name:'AI proficiency',it:'EY · AI proficiency',n:10,sec:12*60,letters:4,ey:true}
 };
 const PASS={verbal:10,numabs:10};
 const KEY='epsoAD5reasoning:v1';
@@ -244,6 +244,7 @@ function renderIntro(){
 function renderStim(it){
   if(FMT(it)==='verbal') return `<article class="panel passage-panel"><div class="eyebrow">Text</div>${it.title?`<h3 class="ptitle">${esc(it.title)}</h3>`:''}<p class="passage">${esc(it.text)}</p>${it.source?`<p class="src">Source: ${esc(it.source.act)}, recital ${it.source.recital}. © European Union, EUR-Lex.</p>`:''}</article>`;
   if(FMT(it)==='numerical') return it.stim?`<article class="panel stim">${it.stim}</article>`:'';
+  if(it.odd) return '';
   return `<article class="panel stim"><div class="eyebrow">Which figure comes next in the series?</div><div class="series">${it.series.map((f,i)=>frameSVG(f,'figura '+(i+1))).join('')}<div class="qmark">?</div></div></article>`;
 }
 function optionHTML(it,i,P,reveal){
@@ -276,11 +277,11 @@ function renderTest(){
   </div></div>
   <main class="wrap">
     <div class="qgrid" aria-label="Domande">${P.items.map((x,i)=>{let k='cell'; if(i===P.cur)k+=' cur'; if(P.ans[i]!==undefined) k+= !P.timed?(P.ans[i]===x.key?' r-ok':' r-bad'):' ans'; if(P.flag[i])k+=' flag'; return `<button class="${k}" data-go="${i}">${i+1}</button>`}).join('')}</div>
-    <div class="split ${FMT(it)==='numerical'&&!it.stim?'abstract':P.sec}">
+    <div class="split ${(FMT(it)==='numerical'&&!it.stim)||it.odd?'abstract':P.sec}">
       ${renderStim(it)}
       <section class="panel qpanel stack">
         <div class="row spread"><span class="eyebrow">Question ${P.cur+1} of ${P.items.length}</span>${P.timed?`<button class="ghost small" id="flag">${P.flag[P.cur]?'Togli segno':'Segna'}</button>`:''}</div>
-        <p class="qtext">${esc(FMT(it)==='verbal'?it.question:FMT(it)==='numerical'?it.question:'Select the figure that completes the series.')}</p>
+        <p class="qtext">${esc(FMT(it)==='verbal'?it.question:FMT(it)==='numerical'?it.question:(it.question||'Select the figure that completes the series.'))}</p>
         <div class="opts ${FMT(it)==='abstract'?'figs':''}">${it.options.map((_,i)=>optionHTML(it,i,P,reveal)).join('')}</div>
         ${reveal?feedbackHTML(it,a):''}
         <div class="row spread"><button id="prev" ${P.cur===0?'disabled':''}>← Precedente</button>${P.cur<P.items.length-1?'<button id="next">Successiva →</button>':`<button class="primary" id="end2">Consegna</button>`}</div>
@@ -526,7 +527,7 @@ function renderSheet(){
 
 function footer(){ return `<footer class="foot">
   <p>Formato e soglie dal bando EPSO/AD/427/26: verbale 20 domande in 35 minuti (soglia 10/20); numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Numerico e astratto sono generati al momento con dati fittizi. Il punteggio qui non predice il risultato reale.</p>
-  <p class="mono">Versione 2026-11-06g · Sezione Test EY</p>
+  <p class="mono">Versione 2026-11-06h · Test EY allineato al catalogo Maki</p>
   <p>Verbale: 42 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO.</p>
 </footer>`; }
 

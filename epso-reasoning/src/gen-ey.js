@@ -126,8 +126,24 @@ function eyFigItem(sec,hard){ const it=buildAbstractItem(hard); it.sec=sec; it.f
 function eyTableItem(sec){ const it=buildNumericalItem(R.pick(['maxratio','maxgrowth','yearboth','share'])); it.sec=sec; it.fmt='numerical'; return it; }
 
 function buildEY(sec,n){
-  if(sec==='mind'){ const plan=['num','num','num','num','num','ser','ser','ser','ser','fig','fig','fig','fig','ord','syl','num']; return plan.slice(0,n).map((k,i)=>k==='num'?eyNumItem(sec):k==='ser'?eySeriesItem(sec):k==='fig'?eyFigItem(sec,i%2===0):k==='ord'?eyOrderItem(sec):eySylItem(sec)); }
-  if(sec==='crit'){ const plan=['syl','syl','syl','syl','cond','cond','cond','ord','ord','tab','tab','syl','cond']; return R.shuffle(plan.slice(0,n).map(k=>k==='syl'?eySylItem(sec):k==='cond'?eyCondItem(sec):k==='ord'?eyOrderItem(sec):eyTableItem(sec))); }
+  if(sec==='mind'){ const plan=['num','num','num','num','num','ser','ser','ser','ser','fig','fig','fig','fig','ord','ser','num']; return plan.slice(0,n).map((k,i)=>k==='num'?eyNumItem(sec):k==='ser'?eySeriesItem(sec):k==='fig'?eyFigItem(sec,i%2===0):k==='ord'?eyOrderItem(sec):eySylItem(sec)); }
+  if(sec==='crit'){ const plan=['fig','fig','fig','fig','fig','fig','fig','fig','odd','odd','odd','odd','fig']; return plan.slice(0,n).map((k,i)=>k==='odd'?eyOddItem(sec):eyFigItem(sec,i%3!==0)); }
   if(sec==='adapt') return eyPickSJT(sec,n,EY_ADAPT,'Nelle situazioni di lavoro la risposta migliore di solito: affronta il problema, comunica con le persone coinvolte, mostra flessibilità e apprendimento. Evita rigidità, passività e iniziative non concordate.');
   return eyPickSJT(sec,n,EY_AI,'Uso dell\'AI: proteggere i dati, verificare i fatti e le fonti, dare contesto nei prompt, mantenere il controllo umano sulle decisioni importanti.');
+}
+
+// ----- non-verbal: odd one out (inner/outer side counts) -----
+function eyOddItem(sec){
+  for(let t=0;t<50;t++){
+    const rule=R.pick(['same','minus']); const ok=(o,i)=>rule==='same'?i===o:i===o-1;
+    const F=(o,i)=>({kind:'sides',o,i,ro:R.int(0,11)*30,ri:R.int(0,11)*30,inv:R.chance(.5)});
+    const good=[]; const used=new Set();
+    while(good.length<4){ const o=rule==='same'?R.int(3,6):R.int(4,7), i=rule==='same'?o:o-1; const k=o+':'+i; if(used.has(k)&&used.size<4) continue; used.add(k); good.push(F(o,i)); }
+    let bo,bi; do{ bo=R.int(3,7); bi=R.int(3,6); }while(ok(bo,bi));
+    const all=R.shuffle(good.map(f=>({f,odd:false})).concat([{f:F(bo,bi),odd:true}]));
+    const key=all.findIndex(x=>x.odd);
+    return {sec,fmt:'abstract',odd:true,id:eyId(sec+'-odd'),rules:['sides'],hard:true,series:[],question:'Which figure does not belong with the others?',
+      options:all.map(x=>({frame:x.f,broken:x.odd?[]:['sides']})),key,
+      explain:(rule==='same'?'In quattro figure la forma interna ha lo stesso numero di lati di quella esterna':'In quattro figure la forma interna ha un lato in meno di quella esterna')+`; la ${LETTERS[key]} (${bo} e ${bi} lati) no.`,tip:'Cerca la proprietà che hanno in comune quattro figure su cinque: numero di lati, colori, posizione, simmetria.'};
+  }
 }
