@@ -223,6 +223,9 @@ table.sheet td,table.sheet th{padding:5px 8px;border-bottom:1px solid var(--line
 .scenario{font-family:var(--f-read);font-size:1.05rem;line-height:1.6}
 .seriesnum{font-size:1.6rem;letter-spacing:.04em}
 textarea.eyex{min-height:90px;font-family:var(--f-ui);font-size:.95rem}
+.chart .ln1{fill:none;stroke:#20438f;stroke-width:2.5}.chart .ln2{fill:none;stroke:#b0602c;stroke-width:2.5;stroke-dasharray:6 4}
+.chart .ln1d{fill:#20438f}.chart .ln2d{fill:#b0602c}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:.85rem;margin-top:4px}.lg{display:inline-flex;align-items:center;gap:6px}.lg i{display:inline-block;width:22px;height:3px}.ln1k{background:#20438f}.ln2k{background:repeating-linear-gradient(90deg,#b0602c 0 6px,transparent 6px 10px)}
 .checks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .chk{flex-direction:row;align-items:flex-start;gap:10px;color:var(--fg);font-size:.95rem}
 .chk input{margin-top:4px;width:18px;height:18px;flex:none}
@@ -754,7 +757,7 @@ weighted:{label:'Media ponderata',make(){
 
 function buildNumericalItem(tpl){
   const t=tpl||R.pick(Object.keys(NUM_T));
-  let x=null; for(let g=0;g<20&&!(x&&x.options&&x.key>=0);g++) x=NUM_T[t].make();
+  let x=null; for(let g=0;g<30&&!(x&&x.options&&x.options.length===5&&x.key>=0);g++) x=NUM_T[t].make();
   return {sec:'numerical',id:'n-'+t+'-'+Math.random().toString(36).slice(2,8),tpl:t,stim:x.stim,question:x.question,options:x.options,key:x.key,explain:x.explain};
 }
 
@@ -1031,6 +1034,39 @@ function buildAbstractFamily(fam){
   return buildAbstractItem(true);
 }
 
+// ---------- line chart (two series over time) ----------
+function lineChartSVG(title,years,series,unit){
+  const W=540,H=280,pl=50,pr=16,pt=30,pb=44, all=series.flatMap(s=>s.vals), max=Math.max(...all), min=Math.min(...all);
+  const step=max-min>60?20:10, lo=Math.max(0,Math.floor((min-step)/step)*step), hi=Math.ceil((max+step/2)/step)*step;
+  const iw=W-pl-pr, ih=H-pt-pb, X=i=>pl+iw*i/(years.length-1), Y=v=>pt+ih-ih*(v-lo)/(hi-lo);
+  let g='';
+  for(let v=lo;v<=hi;v+=step){ g+=`<line x1="${pl}" x2="${W-pr}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" class="grid"/><text x="${pl-6}" y="${(Y(v)+4).toFixed(1)}" text-anchor="end" class="ax">${nf(v)}</text>`; }
+  years.forEach((y,i)=>{ g+=`<text x="${X(i).toFixed(1)}" y="${H-pb+18}" text-anchor="middle" class="ax">${y}</text>`; });
+  const cls=['ln1','ln2'];
+  series.forEach((s,k)=>{ g+=`<polyline points="${s.vals.map((v,i)=>X(i).toFixed(1)+','+Y(v).toFixed(1)).join(' ')}" class="${cls[k]}"/>`;
+    s.vals.forEach((v,i)=>{ g+=`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="3.5" class="${cls[k]}d"/><text x="${X(i).toFixed(1)}" y="${(Y(v)+(k===0?-8:15)).toFixed(1)}" text-anchor="middle" class="val">${nf(v)}</text>`; }); });
+  const leg=series.map((s,k)=>`<span class="lg"><i class="${cls[k]}k"></i>${esc(s.name)}</span>`).join('');
+  return `<figure class="chart"><figcaption>${esc(title)}</figcaption><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}">${g}</svg><div class="legend">${leg}</div><p class="src">${FICT}${unit?' Unità: '+esc(unit)+'.':''}</p></figure>`;
+}
+NUM_T.line={label:'Grafico a linee',make(){
+  const pair=R.pick([['Exports','Imports','€ billion'],['Applications received','Applications approved','thousands'],['Public spending','Tax revenue','€ billion']]);
+  const y0=R.int(2017,2019), years=[0,1,2,3,4,5].map(i=>y0+i);
+  const a=[R.int(40,90)]; const b=[a[0]-R.int(5,25)]; for(let i=1;i<6;i++){ a.push(Math.max(10,a[i-1]+R.int(-8,14))); b.push(Math.max(5,b[i-1]+R.int(-10,12))); }
+  const stim=lineChartSVG(`${pair[0]} and ${pair[1].toLowerCase()}, ${years[0]}-${years[5]} (${pair[2]})`,years,[{name:pair[0],vals:a},{name:pair[1],vals:b}],pair[2]);
+  if(R.chance(.5)){
+    const gaps=a.map((v,i)=>v-b[i]); const mx=Math.max(...gaps); if(gaps.filter(x=>x===mx).length>1) return NUM_T.line.make();
+    const k=gaps.indexOf(mx), big=a.indexOf(Math.max(...a)); const tm={}; if(big!==k) tm[String(years[big])]='valore più alto di una sola serie, non differenza più grande';
+    const pick=R.sample(years.map((_,i)=>i).filter(i=>i!==k),4).concat([k]).sort((x,y)=>x-y), names=pick.map(i=>String(years[i]));
+    return {stim,question:`In which year was the difference between ${pair[0].toLowerCase()} and ${pair[1].toLowerCase()} the largest?`,options:names.map(n=>({label:n,why:n===String(years[k])?null:(tm[n]||'differenza calcolata male')})),key:names.indexOf(String(years[k])),
+      explain:`Differenze: ${years.map((y,i)=>`${y}: ${gaps[i]}`).join(' · ')}. La più grande è nel ${years[k]}.`};
+  }
+  const i0=0, i1=5, s=R.chance(.5)?{n:pair[0],v:a}:{n:pair[1],v:b}; const v=(s.v[i1]-s.v[i0])/s.v[i0]*100; if(Math.abs(v)<8) return NUM_T.line.make();
+  const o=numOptions(v,[[(s.v[i1]-s.v[i0])/s.v[i1]*100,'base sbagliata (diviso per il valore finale)'],[s.v[i1]-s.v[i0],'differenza assoluta, non percentuale'],[-v,'segno invertito']],x=>fmtPct(x,0));
+  if(!o) return NUM_T.line.make();
+  return {stim,question:`By approximately what percentage did ${s.n.toLowerCase()} change between ${years[i0]} and ${years[i1]}?`,...o,explain:`(${s.v[i1]} − ${s.v[i0]}) ÷ ${s.v[i0]} × 100 = ${fmtPct(v,0)}.`};
+}};
+
+
 // ---------- EY (Maki) practice: original items. MIND, critical thinking, adaptability, AI proficiency ----------
 const eyId=p=>p+'-'+Math.random().toString(36).slice(2,8);
 function mcq(sec,tpl,stim,question,opts,keyIdx,explain,tip,shuffle=true){
@@ -1156,10 +1192,11 @@ function eySJT(sec,bank,tip){ const x=R.pick(bank); return mcq(sec,sec==='adapt'
 function eyPickSJT(sec,n,bank,tip){ return R.sample(bank,Math.min(n,bank.length)).map(x=>mcq(sec,sec==='adapt'?'ey-sjt':'ey-ai',`<p class="scenario">${esc(x.s)}</p>`,sec==='adapt'?'What is the most effective response?':(/[:?]$/.test(x.s)?'Choose the best answer.':'What should you do?'),x.o,x.k,x.w,tip)); }
 
 function eyFigItem(sec,hard){ const it=buildAbstractItem(hard); it.sec=sec; it.fmt='abstract'; return it; }
+function eyChartItem(sec,kind){ const pool=kind==='chart'?['bar','pie','line','line']:['pct','share','rowpct','cumul','maxgrowth']; let it=null; for(let t=0;t<10&&!(it&&it.options&&it.key>=0);t++) it=buildNumericalItem(R.pick(pool)); it.sec=sec; it.fmt='numerical'; return it; }
 function eyTableItem(sec){ const it=buildNumericalItem(R.pick(['maxratio','maxgrowth','yearboth','share'])); it.sec=sec; it.fmt='numerical'; return it; }
 
 function buildEY(sec,n){
-  if(sec==='mind'){ const plan=['num','num','num','num','num','ser','ser','ser','ser','fig','fig','fig','fig','ord','ser','num']; return plan.slice(0,n).map((k,i)=>k==='num'?eyNumItem(sec):k==='ser'?eySeriesItem(sec):k==='fig'?eyFigItem(sec,i%2===0):k==='ord'?eyOrderItem(sec):eySylItem(sec)); }
+  if(sec==='mind'){ const plan=['num','num','num','num','chart','chart','chart','tab','tab','ser','ser','ser','ser','fig','fig','fig']; return plan.slice(0,n).map((k,i)=>k==='num'?eyNumItem(sec):k==='ser'?eySeriesItem(sec):k==='fig'?eyFigItem(sec,i%2===0):k==='chart'?eyChartItem(sec,'chart'):k==='tab'?eyChartItem(sec,'table'):eyOrderItem(sec)); }
   if(sec==='crit'){ const plan=['fig','fig','fig','fig','fig','fig','fig','fig','odd','odd','odd','odd','fig']; return plan.slice(0,n).map((k,i)=>k==='odd'?eyOddItem(sec):eyFigItem(sec,i%3!==0)); }
   if(sec==='adapt') return eyPickSJT(sec,n,EY_ADAPT,'Nelle situazioni di lavoro la risposta migliore di solito: affronta il problema, comunica con le persone coinvolte, mostra flessibilità e apprendimento. Evita rigidità, passività e iniziative non concordate.');
   return eyPickSJT(sec,n,EY_AI,'Uso dell\'AI: proteggere i dati, verificare i fatti e le fonti, dare contesto nei prompt, mantenere il controllo umano sulle decisioni importanti.');
@@ -1297,7 +1334,8 @@ const NUM_TIP={
   inverse:'Calcola il rapporto solo in modo approssimato per ogni riga: basta a vedere quale si avvicina al valore.',
   twocol:'Leggi le intestazioni: € milioni ÷ unità. Controlla l\'ordine di grandezza del risultato.',
   rowpct:'Usa il totale della stessa riga e la percentuale della colonna giusta.',
-  split:'Prima la quota (totale × %), poi la divisione tra le persone.'
+  split:'Prima la quota (totale × %), poi la divisione tra le persone.',
+  line:'Grafico a linee: leggi i valori sui punti dell\'anno giusto e della serie giusta (guarda la legenda), poi calcola.'
 };
 const ABS_TIP={
   rot:'Rotazione: guarda solo la lancetta e misura l\'angolo tra due figure vicine (45°, 90°, 135°) e il verso.',
@@ -2387,7 +2425,7 @@ function renderSheet(){
 
 function footer(){ return `<footer class="foot">
   <p>Formato e soglie dal bando EPSO/AD/427/26: verbale 20 domande in 35 minuti (soglia 10/20); numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Numerico e astratto sono generati al momento con dati fittizi. Il punteggio qui non predice il risultato reale.</p>
-  <p class="mono">Versione 2026-11-06h · Test EY allineato al catalogo Maki</p>
+  <p class="mono">Versione 2026-11-06i · MIND con grafici e tabelle</p>
   <p>Verbale: 42 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO.</p>
 </footer>`; }
 

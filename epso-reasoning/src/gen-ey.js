@@ -123,10 +123,11 @@ function eySJT(sec,bank,tip){ const x=R.pick(bank); return mcq(sec,sec==='adapt'
 function eyPickSJT(sec,n,bank,tip){ return R.sample(bank,Math.min(n,bank.length)).map(x=>mcq(sec,sec==='adapt'?'ey-sjt':'ey-ai',`<p class="scenario">${esc(x.s)}</p>`,sec==='adapt'?'What is the most effective response?':(/[:?]$/.test(x.s)?'Choose the best answer.':'What should you do?'),x.o,x.k,x.w,tip)); }
 
 function eyFigItem(sec,hard){ const it=buildAbstractItem(hard); it.sec=sec; it.fmt='abstract'; return it; }
+function eyChartItem(sec,kind){ const pool=kind==='chart'?['bar','pie','line','line']:['pct','share','rowpct','cumul','maxgrowth']; let it=null; for(let t=0;t<10&&!(it&&it.options&&it.key>=0);t++) it=buildNumericalItem(R.pick(pool)); it.sec=sec; it.fmt='numerical'; return it; }
 function eyTableItem(sec){ const it=buildNumericalItem(R.pick(['maxratio','maxgrowth','yearboth','share'])); it.sec=sec; it.fmt='numerical'; return it; }
 
 function buildEY(sec,n){
-  if(sec==='mind'){ const plan=['num','num','num','num','num','ser','ser','ser','ser','fig','fig','fig','fig','ord','ser','num']; return plan.slice(0,n).map((k,i)=>k==='num'?eyNumItem(sec):k==='ser'?eySeriesItem(sec):k==='fig'?eyFigItem(sec,i%2===0):k==='ord'?eyOrderItem(sec):eySylItem(sec)); }
+  if(sec==='mind'){ const plan=['num','num','num','num','chart','chart','chart','tab','tab','ser','ser','ser','ser','fig','fig','fig']; return plan.slice(0,n).map((k,i)=>k==='num'?eyNumItem(sec):k==='ser'?eySeriesItem(sec):k==='fig'?eyFigItem(sec,i%2===0):k==='chart'?eyChartItem(sec,'chart'):k==='tab'?eyChartItem(sec,'table'):eyOrderItem(sec)); }
   if(sec==='crit'){ const plan=['fig','fig','fig','fig','fig','fig','fig','fig','odd','odd','odd','odd','fig']; return plan.slice(0,n).map((k,i)=>k==='odd'?eyOddItem(sec):eyFigItem(sec,i%3!==0)); }
   if(sec==='adapt') return eyPickSJT(sec,n,EY_ADAPT,'Nelle situazioni di lavoro la risposta migliore di solito: affronta il problema, comunica con le persone coinvolte, mostra flessibilità e apprendimento. Evita rigidità, passività e iniziative non concordate.');
   return eyPickSJT(sec,n,EY_AI,'Uso dell\'AI: proteggere i dati, verificare i fatti e le fonti, dare contesto nei prompt, mantenere il controllo umano sulle decisioni importanti.');

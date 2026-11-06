@@ -32,7 +32,8 @@ const NUM_TIP={
   inverse:'Calcola il rapporto solo in modo approssimato per ogni riga: basta a vedere quale si avvicina al valore.',
   twocol:'Leggi le intestazioni: € milioni ÷ unità. Controlla l\'ordine di grandezza del risultato.',
   rowpct:'Usa il totale della stessa riga e la percentuale della colonna giusta.',
-  split:'Prima la quota (totale × %), poi la divisione tra le persone.'
+  split:'Prima la quota (totale × %), poi la divisione tra le persone.',
+  line:'Grafico a linee: leggi i valori sui punti dell\'anno giusto e della serie giusta (guarda la legenda), poi calcola.'
 };
 const ABS_TIP={
   rot:'Rotazione: guarda solo la lancetta e misura l\'angolo tra due figure vicine (45°, 90°, 135°) e il verso.',

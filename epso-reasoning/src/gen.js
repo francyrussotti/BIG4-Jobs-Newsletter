@@ -250,7 +250,7 @@ weighted:{label:'Media ponderata',make(){
 
 function buildNumericalItem(tpl){
   const t=tpl||R.pick(Object.keys(NUM_T));
-  let x=null; for(let g=0;g<20&&!(x&&x.options&&x.key>=0);g++) x=NUM_T[t].make();
+  let x=null; for(let g=0;g<30&&!(x&&x.options&&x.options.length===5&&x.key>=0);g++) x=NUM_T[t].make();
   return {sec:'numerical',id:'n-'+t+'-'+Math.random().toString(36).slice(2,8),tpl:t,stim:x.stim,question:x.question,options:x.options,key:x.key,explain:x.explain};
 }
 
@@ -526,3 +526,36 @@ function buildAbstractFamily(fam){
     if(it&&it.options.length===5&&it.key>=0) return it; }
   return buildAbstractItem(true);
 }
+
+// ---------- line chart (two series over time) ----------
+function lineChartSVG(title,years,series,unit){
+  const W=540,H=280,pl=50,pr=16,pt=30,pb=44, all=series.flatMap(s=>s.vals), max=Math.max(...all), min=Math.min(...all);
+  const step=max-min>60?20:10, lo=Math.max(0,Math.floor((min-step)/step)*step), hi=Math.ceil((max+step/2)/step)*step;
+  const iw=W-pl-pr, ih=H-pt-pb, X=i=>pl+iw*i/(years.length-1), Y=v=>pt+ih-ih*(v-lo)/(hi-lo);
+  let g='';
+  for(let v=lo;v<=hi;v+=step){ g+=`<line x1="${pl}" x2="${W-pr}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" class="grid"/><text x="${pl-6}" y="${(Y(v)+4).toFixed(1)}" text-anchor="end" class="ax">${nf(v)}</text>`; }
+  years.forEach((y,i)=>{ g+=`<text x="${X(i).toFixed(1)}" y="${H-pb+18}" text-anchor="middle" class="ax">${y}</text>`; });
+  const cls=['ln1','ln2'];
+  series.forEach((s,k)=>{ g+=`<polyline points="${s.vals.map((v,i)=>X(i).toFixed(1)+','+Y(v).toFixed(1)).join(' ')}" class="${cls[k]}"/>`;
+    s.vals.forEach((v,i)=>{ g+=`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="3.5" class="${cls[k]}d"/><text x="${X(i).toFixed(1)}" y="${(Y(v)+(k===0?-8:15)).toFixed(1)}" text-anchor="middle" class="val">${nf(v)}</text>`; }); });
+  const leg=series.map((s,k)=>`<span class="lg"><i class="${cls[k]}k"></i>${esc(s.name)}</span>`).join('');
+  return `<figure class="chart"><figcaption>${esc(title)}</figcaption><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}">${g}</svg><div class="legend">${leg}</div><p class="src">${FICT}${unit?' Unità: '+esc(unit)+'.':''}</p></figure>`;
+}
+NUM_T.line={label:'Grafico a linee',make(){
+  const pair=R.pick([['Exports','Imports','€ billion'],['Applications received','Applications approved','thousands'],['Public spending','Tax revenue','€ billion']]);
+  const y0=R.int(2017,2019), years=[0,1,2,3,4,5].map(i=>y0+i);
+  const a=[R.int(40,90)]; const b=[a[0]-R.int(5,25)]; for(let i=1;i<6;i++){ a.push(Math.max(10,a[i-1]+R.int(-8,14))); b.push(Math.max(5,b[i-1]+R.int(-10,12))); }
+  const stim=lineChartSVG(`${pair[0]} and ${pair[1].toLowerCase()}, ${years[0]}-${years[5]} (${pair[2]})`,years,[{name:pair[0],vals:a},{name:pair[1],vals:b}],pair[2]);
+  if(R.chance(.5)){
+    const gaps=a.map((v,i)=>v-b[i]); const mx=Math.max(...gaps); if(gaps.filter(x=>x===mx).length>1) return NUM_T.line.make();
+    const k=gaps.indexOf(mx), big=a.indexOf(Math.max(...a)); const tm={}; if(big!==k) tm[String(years[big])]='valore più alto di una sola serie, non differenza più grande';
+    const pick=R.sample(years.map((_,i)=>i).filter(i=>i!==k),4).concat([k]).sort((x,y)=>x-y), names=pick.map(i=>String(years[i]));
+    return {stim,question:`In which year was the difference between ${pair[0].toLowerCase()} and ${pair[1].toLowerCase()} the largest?`,options:names.map(n=>({label:n,why:n===String(years[k])?null:(tm[n]||'differenza calcolata male')})),key:names.indexOf(String(years[k])),
+      explain:`Differenze: ${years.map((y,i)=>`${y}: ${gaps[i]}`).join(' · ')}. La più grande è nel ${years[k]}.`};
+  }
+  const i0=0, i1=5, s=R.chance(.5)?{n:pair[0],v:a}:{n:pair[1],v:b}; const v=(s.v[i1]-s.v[i0])/s.v[i0]*100; if(Math.abs(v)<8) return NUM_T.line.make();
+  const o=numOptions(v,[[(s.v[i1]-s.v[i0])/s.v[i1]*100,'base sbagliata (diviso per il valore finale)'],[s.v[i1]-s.v[i0],'differenza assoluta, non percentuale'],[-v,'segno invertito']],x=>fmtPct(x,0));
+  if(!o) return NUM_T.line.make();
+  return {stim,question:`By approximately what percentage did ${s.n.toLowerCase()} change between ${years[i0]} and ${years[i1]}?`,...o,explain:`(${s.v[i1]} − ${s.v[i0]}) ÷ ${s.v[i0]} × 100 = ${fmtPct(v,0)}.`};
+}};
+
