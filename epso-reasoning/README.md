@@ -26,7 +26,7 @@ Lo storico (punteggi, tempi, errori) resta nel browser in cui fai i test. Per sp
 - **Analisi:** tempo per domanda rispetto al budget, trappole verbali, tipi di calcolo sbagliati, regole astratte mancate, causa dell'errore indicata da te, export CSV.
 - **Metodo:** guida alle tre prove (tipi di affermazione, trappole verbali con esempi, formule del numerico, checklist dell'astratto, gestione del tempo).
 - **Piano di preparazione** 4-13 novembre con le attività del giorno.
-- **Manuale:** apri il PDF del tuo manuale dal computer e fai gli esercizi con il foglio risposte accanto (cronometro per domanda, chiave dal manuale, punteggio nelle statistiche). Il file resta nel browser: non viene caricato sul sito né altrove.
+- **Manuale:** apri il PDF del tuo manuale dal computer e fai gli esercizi accanto al foglio risposte. Le soluzioni stampate sono coperte; il programma legge le soluzioni dal PDF, corregge da solo quando premi Avanti, mostra la spiegazione e porta il PDF all'esercizio successivo (modalità test: esito solo alla fine). Il file resta nel browser: non viene caricato sul sito né altrove.
 - **Foglio risposte** cronometrato per esercitarsi sul manuale (il programma non contiene domande del manuale).
 
 ## Modificare il programma

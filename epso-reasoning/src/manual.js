@@ -1,5 +1,5 @@
 // ---------- "Manuale": practise on the user's own PDF, opened locally; the file never leaves the browser ----------
-const MAN={url:null,name:'',run:null,blob:null,doc:null,page:1,hide:true,revealed:{},pages:[],obs:null,vis:null};
+const MAN={url:null,name:'',run:null,blob:null,doc:null,page:1,hide:true,revealed:{},pages:[],obs:null,vis:null,index:null};
 const MAN_DB='epsoManualPdf';
 function manIDB(){ return new Promise((res,rej)=>{ try{ const r=indexedDB.open(MAN_DB,1); r.onupgradeneeded=()=>r.result.createObjectStore('f'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }catch(e){ rej(e) } }); }
 async function manSave(file){ try{ const db=await manIDB(); db.transaction('f','readwrite').objectStore('f').put({blob:file,name:file.name},'pdf'); }catch(e){} }
@@ -48,60 +48,119 @@ function renderManualWork(){
   initViewer();
 }
 
+// ---------- answer key read from the PDF (in the browser) ----------
+// Sections come from headings like "4.2. Esercizi di allenamento", "4.3. Test n 1"; keys from "N. Risposta corretta: X".
+async function buildKeyIndex(){
+  if(!MAN.doc) return null; if(MAN.index&&MAN.index.doc===MAN.doc) return MAN.index;
+  const idx={doc:MAN.doc,sections:[]}; let cur=null, ansFor=null, lastSol=null;
+  const findSec=name=>idx.sections.find(x=>x.name===name);
+  const newSec=name=>{ let x=findSec(name); if(!x){ x={name,keys:{},q:{},sol:{},why:{}}; idx.sections.push(x); } return x; };
+  for(let n=1;n<=MAN.doc.numPages;n++){
+    const pg=await MAN.doc.getPage(n), v=pg.getViewport({scale:1}), L=lineGroups((await pg.getTextContent()).items,v);
+    for(const l of L){
+      if(l.y<v.height*0.09) continue; // running header
+      const rk=l.text.match(/^\d+(\.\d+)*\.?\s+Risposte\s+del\s+test\s+n\.?\s*(\d+)/i);
+      if(rk){ ansFor=newSec('Test n. '+rk[2]); lastSol=null; continue; }
+      const hd=l.text.match(/^\d+\.\d+(\.\d+)?\.?\s+(Esercizi[^.]{0,40}|Test\s+n\.?\s*(\d+))/i);
+      if(hd&&l.x0<v.width*0.2){ cur=newSec(hd[3]?'Test n. '+hd[3]:hd[2].trim()); ansFor=null; lastSol=null; continue; }
+      const sol=l.text.match(/^(\d{1,3})\s?\.\s*Risposta\s+corretta\s*:?\s*([A-E])/);
+      const target=ansFor||cur;
+      if(sol&&target){ target.keys[+sol[1]]=sol[2]; target.sol[+sol[1]]={page:n,y:l.y}; lastSol={sec:target,num:+sol[1]}; target.why[+sol[1]]=''; continue; }
+      const q=l.text.match(/^(\d{1,3})\s?\.\s*\S/);
+      if(q&&cur&&!ansFor&&l.x0<v.width*0.25&&!/Risposta/i.test(l.text)){ if(!cur.q[+q[1]]) cur.q[+q[1]]={page:n,y:l.y}; lastSol=null; continue; }
+      if(lastSol&&l.x0<v.width*0.25&&lastSol.sec.why[lastSol.num].length<1500) lastSol.sec.why[lastSol.num]+=(lastSol.sec.why[lastSol.num]?' ':'')+l.text;
+    }
+  }
+  idx.sections=idx.sections.filter(x=>Object.keys(x.keys).length);
+  idx.sections.forEach(x=>{ const ks=Object.keys(x.keys).map(Number); x.min=Math.min(...ks); x.max=Math.max(...ks); x.count=ks.length; });
+  MAN.index=idx; return idx;
+}
+
 // ---------- answer sheet ----------
-function renderManSetup(){
+async function renderManSetup(){
   const side=$('#man-side');
+  side.innerHTML=`<h2>Nuova sessione</h2><p class="small muted">Lettura delle soluzioni dal PDF…</p>`;
+  let idx=null; try{ await waitDoc(); idx=await buildKeyIndex(); }catch(e){ idx=null; }
+  const secs=idx?idx.sections:[];
   side.innerHTML=`<h2>Nuova sessione</h2>
+    ${secs.length?`<label>Sezione del manuale<select id="ms-part">${secs.map((x,i)=>`<option value="${i}">${esc(x.name)} · ${x.count} esercizi</option>`).join('')}</select></label>
+      <p class="small muted">Correzione automatica: ho letto ${secs.reduce((a,x)=>a+x.count,0)} soluzioni dal PDF.</p>`
+      :`<p class="alert small">Non riesco a leggere le soluzioni da questo PDF: inserirai tu la risposta corretta dopo ogni esercizio.</p>`}
     <label>Prova<select id="ms-sec"><option value="abstract">Astratto</option><option value="numerical">Numerico</option><option value="verbal">Verbale</option></select></label>
-    <label>Etichetta (facoltativa)<input id="ms-lab" type="text" maxlength="80" placeholder="es. Cap. 4, esercizi di allenamento"></label>
-    <div class="row wrap-gap"><label>Primo esercizio n.<input id="ms-first" type="number" min="1" value="1"></label><label>Secondi per domanda<input id="ms-sec-q" type="number" min="10" max="600" value="50"></label><label>Opzioni<select id="ms-opt"><option>5</option><option>4</option></select></label></div>
-    <ol class="plan small"><li>Guarda l'esercizio nel PDF e clicca <b>la tua risposta</b>.</li><li>Clicca il riquadro grigio nel PDF per vedere la soluzione.</li><li>Clicca <b>la risposta corretta</b>: il programma registra l'esito e passa all'esercizio successivo.</li></ol>
+    <div class="row wrap-gap"><label>Dall'esercizio n.<input id="ms-first" type="number" min="1" value="1"></label><label>Secondi per domanda<input id="ms-sec-q" type="number" min="10" max="600" value="50"></label><label>Opzioni<select id="ms-opt"><option>5</option><option>4</option></select></label></div>
+    ${secs.length?`<label class="chk"><input type="checkbox" id="ms-now" checked><span>Mostra subito se è giusta (togli la spunta per simulare un test: esito solo alla fine)</span></label>`:''}
     <button class="primary" id="ms-go">Inizia</button>`;
   const dflt={abstract:[50,5],numerical:[120,5],verbal:[105,4]};
   $('#ms-sec').onchange=()=>{ const d=dflt[$('#ms-sec').value]; $('#ms-sec-q').value=d[0]; $('#ms-opt').value=d[1]; };
+  const part=$('#ms-part'); if(part){ const upd=()=>{ const x=secs[+part.value]; $('#ms-first').value=x.min; if(/^Test/.test(x.name)) $('#ms-now').checked=false; else $('#ms-now').checked=true; }; part.onchange=upd; }
   $('#ms-go').onclick=()=>{
-    MAN.run={sec:$('#ms-sec').value,label:$('#ms-lab').value.trim(),first:Math.max(1,+$('#ms-first').value||1),per:Math.max(10,+$('#ms-sec-q').value||50),opt:+$('#ms-opt').value,start:Date.now(),qStart:Date.now(),items:[],ans:null,ansMs:0,last:null};
-    clearInterval(TIMER); TIMER=setInterval(manTick,250); renderManSide(); };
+    const x=part?secs[+part.value]:null, first=Math.max(1,+$('#ms-first').value||1);
+    MAN.run={sec:$('#ms-sec').value,label:x?x.name:'',part:x,auto:!!x,now:x?$('#ms-now').checked:true,first,num:first,per:Math.max(10,+$('#ms-sec-q').value||50),opt:+$('#ms-opt').value,start:Date.now(),qStart:Date.now(),items:[],ans:null,ansMs:0,last:null};
+    clearInterval(TIMER); TIMER=setInterval(manTick,250); gotoExercise(first); renderManSide(); };
 }
+function waitDoc(){ return new Promise((res,rej)=>{ let t=0; const iv=setInterval(()=>{ if(MAN.doc){clearInterval(iv);res()} else if(++t>120){clearInterval(iv);rej()} },250); }); }
+function gotoExercise(num){ const R=MAN.run; if(!R||!R.part) return; const q=R.part.q[num]; if(q) scrollToPageY(q.page,q.y); }
+function scrollToPageY(n,y){ if(!MAN.pages.length) return; const p=MAN.pages[n-1]; if(!p) return; const sc=p.scale||1; const top=p.el.getBoundingClientRect().top+window.scrollY+y*sc-150; window.scrollTo({top:Math.max(0,top),behavior:'smooth'}); }
+function revealSolution(num){ const R=MAN.run; if(!R||!R.part) return; const s=R.part.sol[num]; if(!s) return; const p=MAN.pages[s.page-1]; if(!p) return;
+  const apply=()=>{ if(!p.blocks) return; const sc=p.scale; p.blocks.forEach((b,i)=>{ if(s.y*sc>=b.y0-2&&s.y*sc<=b.y1+2) MAN.revealed[s.page+':'+i]=1; }); drawMasks(p); };
+  if(p.rendered&&p.blocks) apply(); else { const iv=setInterval(()=>{ if(p.blocks){ clearInterval(iv); apply(); } },300); setTimeout(()=>clearInterval(iv),8000); } }
 function manTick(){ const R=MAN.run; if(!R) return; const el=$('#mq-clock'); if(!el) return; const s=(Date.now()-R.qStart)/1000; el.textContent=fmtT(s); el.classList.toggle('low',s>R.per); const tot=$('#mq-total'); if(tot) tot.textContent=fmtT((Date.now()-R.start)/1000); }
-function renderManSide(){
+function manNext(){ const R=MAN.run; if(!R||R.ans===null) return;
+  const key=R.part?R.part.keys[R.num]:null;
+  if(R.auto&&!key){ R.auto=false; R.missing=true; renderManSide(); return; } // no key for this one: ask the user
+  const it={num:R.num,ans:R.ans,key,ok:R.ans===key,ms:R.ansMs,why:R.part&&R.part.why[R.num]||''};
+  R.items.push(it); R.last=it; if(R.now&&R.part) revealSolution(R.num);
+  R.ans=null; R.qStart=Date.now(); R.num++; R.auto=!!R.part; R.missing=false;
+  if(R.part&&R.num>R.part.max){ renderManSide(true); return; }
+  gotoExercise(R.num); renderManSide(); }
+function renderManSide(ended){
   const R=MAN.run, side=$('#man-side'); if(!side) return;
-  const L=LETTERS.slice(0,R.opt).split(''), num=R.first+R.items.length, ok=R.items.filter(x=>x.ok).length;
-  const last=R.last;
+  const L=LETTERS.slice(0,R.opt).split(''), ok=R.items.filter(x=>x.ok).length, last=R.last, show=R.now;
+  const lastBox=last?(show?`<div class="result ${last.ok?'ok':'bad'}"><b>Esercizio ${last.num}: ${last.ok?'giusta ✓':'sbagliata ✗'}</b><span>${last.ans?`hai risposto ${last.ans}`:'senza risposta'}, corretta ${last.key} · ${fmtT(last.ms/1000)}</span>${last.why?`<details ${last.ok?'':'open'}><summary>Spiegazione del manuale</summary><p class="small">${esc(last.why)}</p></details>`:''}</div>`
+    :`<div class="result neutral"><b>Esercizio ${last.num}: risposta ${last.ans||'saltata'} registrata</b><span>L'esito lo vedi alla fine.</span></div>`):'';
+  if(ended){ side.innerHTML=`${lastBox}<h2>Sezione finita</h2><p>Hai fatto tutti gli esercizi di ${esc(R.label)}.</p><div class="row"><button class="primary" id="mq-end">Vedi il risultato e salva</button></div>`; $('#mq-end').onclick=manEnd; return; }
+  const manualKey=!R.auto;
   side.innerHTML=`<div class="row spread"><span class="eyebrow">${esc(SEC[R.sec].it)}${R.label?' · '+esc(R.label):''}</span><span class="small muted">totale <span class="mono" id="mq-total">--:--</span></span></div>
-    ${last?`<div class="result ${last.ok?'ok':'bad'}"><b>Esercizio ${last.num}: ${last.ok?'giusta ✓':'sbagliata ✗'}</b><span>${last.ans?`hai risposto ${last.ans}`:'senza risposta'}, corretta ${last.key} · ${fmtT(last.ms/1000)}</span></div>`:''}
-    <div class="row spread"><h2>Esercizio ${num}</h2><span class="clock mono" id="mq-clock">00:00</span></div>
-    <p class="small muted">Obiettivo ${fmtT(R.per)} · finora <b>${ok}/${R.items.length}</b> giuste</p>
-    <div class="step ${R.ans===null?'active':'done'}">
-      <div class="stephead"><span class="stepn">1</span><span>La tua risposta</span>${R.ans!==null?`<span class="chosen">${R.ans||'nessuna'} ✓</span>`:''}</div>
+    <div class="row spread"><h2>Esercizio ${R.num}</h2><span class="clock mono" id="mq-clock">00:00</span></div>
+    <p class="small muted">Obiettivo ${fmtT(R.per)}${show?` · finora <b>${ok}/${R.items.length}</b> giuste`:` · ${R.items.length} risposte date`}</p>
+    <div class="step active">
+      <div class="stephead"><span class="stepn">1</span><span>La tua risposta</span>${R.ans!==null?`<span class="chosen">${R.ans||'saltata'}</span>`:''}</div>
       <div class="seg big">${L.map(l=>`<button data-a="${l}" class="${R.ans===l?'sel':''}" aria-pressed="${R.ans===l}">${l}</button>`).join('')}<button data-a="" class="skip ${R.ans===''?'sel':''}">Salta</button></div>
-      ${R.ans!==null?'<p class="small muted">Puoi ancora cambiarla cliccando un\'altra lettera.</p>':''}
     </div>
-    <div class="step ${R.ans===null?'locked':'active'}">
-      <div class="stephead"><span class="stepn">2</span><span>Risposta corretta (dal manuale)</span></div>
-      <div class="seg big keyrow">${L.map(l=>`<button data-k="${l}" ${R.ans===null?'disabled':''}>${l}</button>`).join('')}</div>
-      <p class="small muted">${R.ans===null?'Prima scegli la tua risposta.':'Clicca il riquadro grigio nel PDF per vedere la soluzione, poi la lettera giusta qui.'}</p>
-    </div>
-    ${R.items.length?`<details ${R.items.length<=8?'open':''}><summary>Esercizi fatti (${R.items.length})</summary><div class="tblwrap"><table class="times"><thead><tr><th>Es.</th><th>Tua</th><th>Giusta</th><th>Tempo</th><th></th></tr></thead><tbody>${R.items.map(x=>`<tr><td class="mono">${x.num}</td><td class="mono">${x.ans||'–'}</td><td class="mono">${x.key}</td><td class="mono ${x.ms/1000>R.per?'badc':''}">${fmtT(x.ms/1000)}</td><td>${x.ok?'<span class="okc">✓</span>':'<span class="badc">✗</span>'}</td></tr>`).reverse().join('')}</tbody></table></div>
+    ${manualKey?`<div class="step ${R.ans===null?'locked':'active'}"><div class="stephead"><span class="stepn">2</span><span>Risposta corretta (dal manuale)</span></div>
+      ${R.missing?'<p class="small muted">Non ho trovato la soluzione di questo esercizio nel PDF: inseriscila tu.</p>':''}
+      <div class="seg big keyrow">${L.map(l=>`<button data-k="${l}" ${R.ans===null?'disabled':''}>${l}</button>`).join('')}</div></div>`
+      :`<button class="primary nextbtn" id="mq-next" ${R.ans===null?'disabled':''}>Avanti →</button><p class="small muted">${R.ans===null?'Scegli una lettera, poi Avanti (o tasto Invio).':'Puoi cambiare lettera prima di premere Avanti.'}</p>`}
+    ${lastBox}
+    ${R.items.length?`<details><summary>Esercizi fatti (${R.items.length})</summary><div class="tblwrap"><table class="times"><thead><tr><th>Es.</th><th>Tua</th>${show?'<th>Giusta</th>':''}<th>Tempo</th>${show?'<th></th>':''}</tr></thead><tbody>${R.items.map(x=>`<tr><td class="mono">${x.num}</td><td class="mono">${x.ans||'–'}</td>${show?`<td class="mono">${x.key}</td>`:''}<td class="mono ${x.ms/1000>R.per?'badc':''}">${fmtT(x.ms/1000)}</td>${show?`<td>${x.ok?'<span class="okc">✓</span>':'<span class="badc">✗</span>'}</td>`:''}</tr>`).reverse().join('')}</tbody></table></div>
       <button class="ghost small" id="mq-undo-last">Annulla l'ultimo esercizio</button></details>`:''}
-    <div class="row"><button class="primary" id="mq-end" ${R.items.length?'':'disabled'}>Termina e salva</button></div>`;
+    <div class="row"><button class="${R.items.length?'':'ghost'}" id="mq-end" ${R.items.length?'':'disabled'}>Termina e salva</button></div>`;
   manTick();
   side.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{ if(R.ans===null) R.ansMs=Date.now()-R.qStart; R.ans=b.dataset.a; renderManSide(); });
   side.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{ if(R.ans===null) return; const key=b.dataset.k;
-    const it={num:R.first+R.items.length,ans:R.ans,key,ok:R.ans===key,ms:R.ansMs}; R.items.push(it); R.last=it; R.ans=null; R.qStart=Date.now(); renderManSide(); });
-  if($('#mq-undo-last')) $('#mq-undo-last').onclick=()=>{ R.items.pop(); R.last=null; R.ans=null; R.qStart=Date.now(); renderManSide(); };
-  $('#mq-end').onclick=()=>{ clearInterval(TIMER);
-    const att=R.items.map((x,i)=>({sec:'sheet',id:'m'+x.num,ok:x.ok,ans:x.ans?LETTERS.indexOf(x.ans):null,key:LETTERS.indexOf(x.key),ms:x.ms,ch:0,fl:false}));
-    const score=att.filter(a=>a.ok).length, slow=att.filter(a=>a.ms/1000>R.per).length;
-    DB.sessions.unshift({id:Date.now(),date:R.start,kind:'sheet',label:'Manuale · '+SEC[R.sec].it+(R.label?' · '+R.label:''),parts:[{sec:R.sec,n:att.length,score,secs:Math.round((Date.now()-R.start)/1000),limit:null,att}]}); saveDB();
-    MAN.run=null;
-    side.innerHTML=`<h2>Sessione salvata</h2><p><b class="mono big2">${score}/${att.length}</b> giuste</p><p class="muted">${slow} esercizi oltre ${fmtT(R.per)}. La trovi in Statistiche → Fogli risposte.</p><div class="row"><button class="primary" id="mq-new">Nuova sessione</button></div>`;
-    $('#mq-new').onclick=()=>renderManSetup(); };
+    const it={num:R.num,ans:R.ans,key,ok:R.ans===key,ms:R.ansMs,why:''}; R.items.push(it); R.last=it; R.ans=null; R.qStart=Date.now(); R.num++; R.auto=!!R.part; R.missing=false; gotoExercise(R.num); renderManSide(); });
+  if($('#mq-next')) $('#mq-next').onclick=manNext;
+  if($('#mq-undo-last')) $('#mq-undo-last').onclick=()=>{ const x=R.items.pop(); if(x) R.num=x.num; R.last=null; R.ans=null; R.qStart=Date.now(); gotoExercise(R.num); renderManSide(); };
+  $('#mq-end').onclick=manEnd;
+}
+function manEnd(){
+  const R=MAN.run; if(!R) return; clearInterval(TIMER);
+  const att=R.items.map(x=>({sec:'sheet',id:'m'+x.num,ok:x.ok,ans:x.ans?LETTERS.indexOf(x.ans):null,key:LETTERS.indexOf(x.key),ms:x.ms,ch:0,fl:false}));
+  const score=att.filter(a=>a.ok).length, slow=att.filter(a=>a.ms/1000>R.per).length;
+  DB.sessions.unshift({id:Date.now(),date:R.start,kind:'sheet',label:'Manuale · '+SEC[R.sec].it+(R.label?' · '+R.label:''),parts:[{sec:R.sec,n:att.length,score,secs:Math.round((Date.now()-R.start)/1000),limit:null,att}]}); saveDB();
+  const wrong=R.items.filter(x=>!x.ok);
+  MAN.run=null;
+  $('#man-side').innerHTML=`<h2>Risultato</h2><p><b class="mono big2">${score}/${att.length}</b> giuste</p><p class="muted">${slow} esercizi oltre ${fmtT(R.per)}. Salvato in Statistiche → Fogli risposte.</p>
+    ${wrong.length?`<h3>Da rivedere</h3><ul class="bars">${wrong.map(x=>`<li><span>Esercizio ${x.num}: tua ${x.ans||'–'}, corretta ${x.key}</span><button class="ghost small" data-goq="${x.num}">Vai</button></li>`).join('')}</ul>`:''}
+    <div class="row"><button class="primary" id="mq-new">Nuova sessione</button></div>`;
+  const part=R.part; document.querySelectorAll('[data-goq]').forEach(b=>b.onclick=()=>{ const q=part&&part.q[+b.dataset.goq]; if(q) scrollToPageY(q.page,q.y); });
+  $('#mq-new').onclick=()=>renderManSetup();
 }
 document.addEventListener('keydown',e=>{
   const R=MAN.run; if(!R||!$('#man-side')||['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)||e.metaKey||e.ctrlKey||e.altKey) return;
   const k=e.key.toUpperCase(), L=LETTERS.slice(0,R.opt);
-  if(L.includes(k)&&k.length===1){ const sel=R.ans===null?`[data-a="${k}"]`:`[data-k="${k}"]`; const b=document.querySelector(sel); if(b){ b.click(); e.preventDefault(); } }
+  if(e.key==='Enter'){ const nb=$('#mq-next'); if(nb&&!nb.disabled){ nb.click(); e.preventDefault(); } return; }
+  if(k.length===1&&L.includes(k)){ const sel=(!R.auto&&R.ans!==null)?`[data-k="${k}"]`:`[data-a="${k}"]`; const b=document.querySelector(sel); if(b){ b.click(); e.preventDefault(); } }
 });
 
 // ---------- continuous PDF viewer (pdf.js); printed solutions are covered until clicked ----------
