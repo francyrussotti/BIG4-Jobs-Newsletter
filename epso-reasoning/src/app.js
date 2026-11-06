@@ -370,8 +370,9 @@ function reviewItem(it,a,i,pi,att){
 // ---------- statistics ----------
 function renderStats(){
   const ss=DB.sessions;
-  const all=[]; ss.forEach(s=>s.parts.forEach(p=>p.att&&p.att.forEach(a=>all.push(Object.assign({date:s.date},a)))));
-  const by=sec=>all.filter(a=>a.sec===sec);
+  const srcOf=s=>s.kind==='sheet'?(/^Manuale/.test(s.label||'')?'manuale':'foglio'):'programma';
+  const all=[]; ss.forEach(s=>s.parts.forEach(p=>p.att&&p.att.forEach(x=>all.push(Object.assign({date:s.date,src:srcOf(s),test:x.sec==='sheet'?p.sec:x.sec},x)))));
+  const by=sec=>all.filter(x=>x.test===sec);
   const acc=list=>list.length?Math.round(list.filter(a=>a.ok).length/list.length*100)+'%':'–';
   const avg=list=>list.length?fmtT(list.reduce((s,a)=>s+a.ms,0)/list.length/1000):'–';
   const traps={}; by('verbal').forEach(a=>{if(a.trap)traps[a.trap]=(traps[a.trap]||0)+1});
@@ -383,14 +384,17 @@ function renderStats(){
   app().innerHTML=header('Statistiche','Tutto resta in questo browser. Esporta un backup se cambi computer.')+`
   <main class="wrap stack">
     ${weakPanel(false)}
-    <section class="cards3">${['verbal','numerical','abstract'].map(s=>`<div class="card"><span class="eyebrow">${SEC[s].it}</span><b class="mono big2">${acc(by(s))}</b><span class="muted small">${by(s).length} risposte · tempo medio ${avg(by(s))} (budget ${fmtT(SEC[s].sec/SEC[s].n)})</span></div>`).join('')}</section>
+    <section class="stack"><h2>Riepilogo di tutte le prove</h2><p class="small muted">Test del programma, simulazioni ed esercizi sul manuale, fogli risposte: tutto insieme.</p>
+      <div class="cards3">${['verbal','numerical','abstract'].map(s=>overviewCard(s,by(s),ss.filter(x=>x.kind!=='sheet'||true),srcOf)).join('')}</div></section>
+    ${dailyTable(all)}
+    ${allTestsTable(ss,srcOf)}
+    ${manualWrongPanel()}
     <section class="panel stack"><h2>Simulazioni complete</h2>${full.length?`<div class="tblwrap"><table class="times"><thead><tr><th>Data</th><th>Verbale</th><th>Num.</th><th>Astr.</th><th>Num + astr.</th><th>Esito</th></tr></thead><tbody>${full.map(s=>{const g=k=>s.parts.find(p=>p.sec===k)||{score:0};const v=verdict(s);return `<tr><td>${fmtD(s.date)}</td><td class="mono">${g('verbal').score}/20</td><td class="mono">${g('numerical').score}/10</td><td class="mono">${g('abstract').score}/10</td><td class="mono">${g('numerical').score+g('abstract').score}/20</td><td>${v.every(x=>x.pass)?'<span class="pill ok">Superata</span>':'<span class="pill bad">Non superata</span>'}</td></tr>`}).join('')}</tbody></table></div>`:'<p class="muted">Nessuna simulazione completa salvata.</p>'}</section>
     <section class="grid2">
       <div class="panel stack"><h2>Cause degli errori (indicate da te)</h2>${Object.keys(causes).length?`<ul class="bars">${Object.entries(causes).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<li><span>${esc(CAUSES[k])}</span><b class="mono">${n}</b></li>`).join('')}</ul>`:'<p class="muted">Nei risultati, per ogni errore, indica la causa: qui vedrai quale prevale.</p>'}</div>
       <div class="panel stack"><h2>Trappole verbali più frequenti</h2>${Object.keys(traps).length?`<ul class="bars">${Object.entries(traps).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<li><span>${esc(TRAPS[k]||k)}</span><b class="mono">${n}</b></li>`).join('')}</ul>`:'<p class="muted">Ancora nessun errore verbale.</p>'}</div>
       <div class="panel stack"><h2>Numerico per tipo di calcolo</h2>${Object.keys(tpl).length?`<div class="tblwrap"><table class="times"><thead><tr><th>Tipo</th><th>Corrette</th><th>Tempo medio</th></tr></thead><tbody>${Object.entries(tpl).sort((a,b)=>a[1].ok/a[1].n-b[1].ok/b[1].n).map(([k,o])=>`<tr><td>${esc(NUM_T[k]?NUM_T[k].label:k)}</td><td class="mono">${o.ok}/${o.n}</td><td class="mono">${fmtT(o.ms/o.n/1000)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Ancora nessuna risposta.</p>'}</div>
       <div class="panel stack"><h2>Astratto per regola</h2>${Object.keys(rules).length?`<div class="tblwrap"><table class="times"><thead><tr><th>Regola</th><th>Presente</th><th>Mancata</th></tr></thead><tbody>${Object.entries(rules).map(([k,o])=>`<tr><td>${esc(AB_RULES[k].label)}</td><td class="mono">${o.n}</td><td class="mono">${o.miss}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Ancora nessuna risposta.</p>'}</div>
-      <div class="panel stack"><h2>Fogli risposte (libro)</h2>${sheets.length?`<div class="tblwrap"><table class="times"><thead><tr><th>Data</th><th>Etichetta</th><th>Punteggio</th><th>Tempo</th></tr></thead><tbody>${sheets.map(s=>`<tr><td>${fmtD(s.date)}</td><td>${esc(s.label||'')}</td><td class="mono">${s.parts[0].score}/${s.parts[0].n}</td><td class="mono">${fmtT(s.parts[0].secs)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Nessun foglio risposte salvato.</p>'}</div>
     </section>
     <section class="panel stack"><h2>Esporta e backup</h2>
       <p class="muted small">CSV: una riga per domanda, da aprire in Excel o Google Sheets. Backup JSON: per spostare lo storico su un altro computer o browser.</p>
@@ -400,11 +404,54 @@ function renderStats(){
     ${footer()}
   </main>`;
   bindNav(); bindExport(); bindFocus();
+  document.querySelectorAll('[data-retry]').forEach(b=>b.onclick=()=>{ MAN.pendingRetry=b.dataset.retry; renderManual(); });
   $('#bk').onclick=()=>download('epso-reasoning-backup.json',JSON.stringify(DB),'application/json');
   $('#imp').onchange=e=>{const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{try{const d=JSON.parse(r.result); if(!d.sessions) throw 0; DB=d; saveDB(); toast('Backup importato.'); renderStats();}catch(x){toast('File non valido: serve un backup esportato da questo programma.')}}; r.readAsText(f);};
   let armed=false; $('#reset').onclick=()=>{ if(!armed){armed=true;$('#reset').textContent='Conferma: cancella tutto';return} DB={sessions:[],seen:{},vwrong:{},plan:{}}; saveDB(); renderStats(); toast('Storico cancellato.'); };
 }
 
+function pct(list){ return list.length?Math.round(list.filter(x=>x.ok).length/list.length*100):null; }
+function sessionScores(ss,sec){ // % per session for one test, oldest first
+  const out=[]; ss.slice().reverse().forEach(s=>s.parts.forEach(p=>{ if(p.sec===sec&&p.n) out.push(Math.round(p.score/p.n*100)); })); return out; }
+function sparkline(vals){
+  if(vals.length<2) return '';
+  const w=140,h=34, pts=vals.slice(-12), step=w/(pts.length-1);
+  const d=pts.map((v,i)=>`${(i*step).toFixed(1)},${(h-3-(h-6)*v/100).toFixed(1)}`).join(' ');
+  const last=pts[pts.length-1];
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" aria-label="andamento ultime prove"><line x1="0" x2="${w}" y1="${(h-3-(h-6)*0.5).toFixed(1)}" y2="${(h-3-(h-6)*0.5).toFixed(1)}" class="sp50"/><polyline points="${d}" class="spl"/><circle cx="${((pts.length-1)*step).toFixed(1)}" cy="${(h-3-(h-6)*last/100).toFixed(1)}" r="3" class="spd"/></svg>`;
+}
+function overviewCard(sec,list,ss,srcOf){
+  const total=pct(list), prog=pct(list.filter(x=>x.src==='programma')), man=pct(list.filter(x=>x.src!=='programma'));
+  const timed=list.filter(x=>x.ms>0), avgS=timed.length?timed.reduce((s,x)=>s+x.ms,0)/timed.length/1000:null, budget=SEC[sec].sec/SEC[sec].n;
+  const sc=sessionScores(DB.sessions,sec); let trend='';
+  if(sc.length>=4){ const k=Math.min(3,Math.floor(sc.length/2)); const a0=sc.slice(0,k).reduce((a,b)=>a+b,0)/k, a1=sc.slice(-k).reduce((a,b)=>a+b,0)/k; const d=Math.round(a1-a0); trend=d>=5?`<span class="okc">in crescita (+${d} punti %)</span>`:d<=-5?`<span class="badc">in calo (${d} punti %)</span>`:'stabile'; }
+  return `<div class="card"><span class="eyebrow">${SEC[sec].it}</span>
+    <div class="row spread"><b class="mono big2">${total===null?'–':total+'%'}</b>${sparkline(sc)}</div>
+    <span class="small">${list.length} risposte${prog!==null?` · programma ${prog}%`:''}${man!==null?` · manuale/libro ${man}%`:''}</span>
+    <span class="small muted">Tempo medio ${avgS===null?'–':fmtT(avgS)} (budget ${fmtT(budget)})${avgS!==null&&avgS>budget?' · <span class="badc">oltre il budget</span>':''}</span>
+    ${trend?`<span class="small">Andamento: ${trend}</span>`:''}</div>`;
+}
+function dailyTable(all){
+  const days={}; all.forEach(x=>{ const d=new Date(x.date).toISOString().slice(0,10); days[d]=days[d]||{verbal:[],numerical:[],abstract:[]}; if(days[d][x.test]) days[d][x.test].push(x); });
+  const keys=Object.keys(days).sort().reverse(); if(!keys.length) return '';
+  const cell=l=>l.length?`${pct(l)}% <span class="muted small">(${l.length})</span>`:'<span class="muted">–</span>';
+  return `<section class="panel stack"><h2>Andamento giorno per giorno</h2><div class="tblwrap"><table class="times"><thead><tr><th>Giorno</th><th>Verbale</th><th>Numerico</th><th>Astratto</th></tr></thead><tbody>
+    ${keys.map(k=>`<tr><td>${new Date(k+'T12:00:00').toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'})}</td><td class="mono">${cell(days[k].verbal)}</td><td class="mono">${cell(days[k].numerical)}</td><td class="mono">${cell(days[k].abstract)}</td></tr>`).join('')}</tbody></table></div>
+    <p class="small muted">Percentuale di risposte giuste; tra parentesi quante domande.</p></section>`;
+}
+function allTestsTable(ss,srcOf){
+  if(!ss.length) return '';
+  const kindLabel=s=>s.kind==='sheet'?(s.label||'Foglio risposte'):({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato'}[s.kind]||s.kind);
+  const rows=[]; ss.slice(0,40).forEach(s=>s.parts.forEach(p=>rows.push({s,p})));
+  return `<section class="panel stack"><h2>Tutte le prove</h2><div class="tblwrap"><table class="times"><thead><tr><th>Data</th><th>Origine</th><th>Tipo</th><th>Prova</th><th>Punteggio</th><th>Tempo</th></tr></thead><tbody>
+    ${rows.map(({s,p})=>`<tr><td>${fmtD(s.date)}</td><td>${{programma:'Programma',manuale:'Manuale',foglio:'Foglio risposte'}[srcOf(s)]}</td><td>${esc(kindLabel(s))}</td><td>${SEC[p.sec]?SEC[p.sec].it.replace('Ragionamento ',''):esc(p.sec)}</td><td class="mono">${p.score}/${p.n} <span class="muted">(${p.n?Math.round(p.score/p.n*100):0}%)</span></td><td class="mono">${fmtT(p.secs||0)}${p.limit?' / '+fmtT(p.limit):''}</td></tr>`).join('')}</tbody></table></div></section>`;
+}
+function manualWrongPanel(){
+  const W=DB.manWrong||{}; const entries=Object.entries(W).filter(([k,v])=>v.length);
+  if(!entries.length) return `<section class="panel stack"><h2>Esercizi del manuale da rifare</h2><p class="muted">Ancora nessuno: quando sbagli un esercizio del manuale, lo trovi qui per rifarlo.</p></section>`;
+  return `<section class="panel stack"><h2>Esercizi del manuale da rifare</h2><ul class="bars">${entries.map(([k,v])=>{ const [file,sec]=k.split('|'); return `<li><span><b>${esc(sec)}</b> <span class="small muted">${esc(file)}</span><br><span class="mono small">${v.slice().sort((a,b)=>a-b).join(', ')}</span></span><button class="small" data-retry="${esc(k)}">Rifai gli errori (${v.length})</button></li>`; }).join('')}</ul>
+    <p class="small muted">Un esercizio esce dalla lista quando lo rifai giusto.</p></section>`;
+}
 function sessionCSV(list){
   const rows=[['session_date','mode','section','q','item','correct','answer','key','seconds','answer_changes','flagged','detail','cause']];
   list.forEach(s=>s.parts.forEach(p=>(p.att||[]).forEach((a,i)=>{
@@ -466,7 +513,7 @@ function renderSheet(){
 
 function footer(){ return `<footer class="foot">
   <p>Formato e soglie dal bando EPSO/AD/427/26: verbale 20 domande in 35 minuti (soglia 10/20); numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Numerico e astratto sono generati al momento con dati fittizi. Il punteggio qui non predice il risultato reale.</p>
-  <p class="mono">Versione 2026-11-06c · Manuale con simulazione d'esame</p>
+  <p class="mono">Versione 2026-11-06d · Statistiche di tutte le prove</p>
   <p>Verbale: 42 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO.</p>
 </footer>`; }
 

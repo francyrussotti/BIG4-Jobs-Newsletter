@@ -207,6 +207,7 @@ table.sheet td,table.sheet th{padding:5px 8px;border-bottom:1px solid var(--line
 .result span{color:var(--fg);font-size:.88rem}
 .inl{flex-direction:row;align-items:center;gap:6px}.inl input{width:80px;min-height:34px;padding:4px 8px}
 .primaryfile{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600;justify-content:center;align-self:start}
+.spark{width:140px;height:34px;flex:none}.spark .spl{fill:none;stroke:var(--accent);stroke-width:2}.spark .sp50{stroke:var(--line);stroke-dasharray:3 3}.spark .spd{fill:var(--accent)}
 .checks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .chk{flex-direction:row;align-items:flex-start;gap:10px;color:var(--fg);font-size:.95rem}
 .chk input{margin-top:4px;width:18px;height:18px;flex:none}
@@ -1168,6 +1169,11 @@ function weakPoints(){
   if(slowV>=4) W.push({sec:'verbal',key:'slow',score:slowV*0.6,text:`Verbale lento: ${slowV} domande oltre 2:10`,tip:'Oltre i 2 minuti su una domanda, scegli la migliore, segna e passa oltre.'});
   Object.entries(P.tpl).forEach(([k,t])=>{ const sc=t.wrong*2+t.slow*1.5; if(sc>0) W.push({sec:'numerical',key:'n:'+k,score:sc,text:`${NUM_T[k].label}: ${t.wrong?`${t.wrong} su ${t.n} sbagliate`:''}${t.wrong&&t.slow?', ':''}${t.slow?`tempo medio ${fmtT(t.ms/t.n/1000)}`:''}`,tip:NUM_TIP[k]}); });
   Object.entries(P.fam).forEach(([k,f])=>{ if(f.miss>0) W.push({sec:'abstract',key:'a:'+k,score:f.miss*2*(f.miss/f.n+0.5),text:`${FAM_LABEL[k]||k}: ${f.miss} su ${f.n} mancate`,tip:ABS_TIP[k]}); });
+  // results on the manual and answer sheets
+  const sheets=DB.sessions.filter(z=>z.kind==='sheet').slice(0,12);
+  ['verbal','numerical','abstract'].forEach(sec=>{ const att=[]; sheets.forEach(z=>z.parts.forEach(p=>{ if(p.sec===sec) (p.att||[]).forEach(a=>att.push(a)); }));
+    if(att.length>=5){ const ok=att.filter(a=>a.ok).length, r=ok/att.length; if(r<0.65) W.push({sec,key:'m:'+sec,score:(1-r)*6,text:`Esercizi del manuale: ${ok}/${att.length} giuste`,tip:'Rifai gli esercizi sbagliati (Statistiche → Esercizi del manuale da rifare) e leggi la spiegazione del manuale prima di ripartire.'});
+      const budget=SEC[sec].sec/SEC[sec].n*1000, slow=att.filter(a=>a.ms>budget*1.3).length; if(slow>=3) W.push({sec,key:'ms:'+sec,score:slow*0.7,text:`Manuale: ${slow} esercizi oltre ${fmtT(budget*1.3/1000)}`,tip:'Se dopo il tempo previsto non vedi la regola, scegli, segna e vai avanti: all\'esame il tempo è uno solo per tutte le domande.'}); } });
   return W.sort((a,b)=>b.score-a.score);
 }
 function weightedPick(weights,n,cap=3){ // weights: {key:w}; returns n keys, repeats allowed but spread
@@ -1223,7 +1229,7 @@ function weakPanel(compact){
 function bindFocus(){ document.querySelectorAll('[data-focus]').forEach(b=>b.onclick=()=>startFocus()); }
 
 // ---------- "Manuale": practise on the user's own PDF, opened locally; the file never leaves the browser ----------
-const MAN={url:null,name:'',run:null,blob:null,doc:null,page:1,hide:true,revealed:{},pages:[],obs:null,vis:null,index:null};
+const MAN={url:null,name:'',run:null,blob:null,doc:null,page:1,hide:true,revealed:{},pages:[],obs:null,vis:null,index:null,pendingRetry:null};
 const MAN_DB='epsoManualPdf';
 function manIDB(){ return new Promise((res,rej)=>{ try{ const r=indexedDB.open(MAN_DB,1); r.onupgradeneeded=()=>r.result.createObjectStore('f'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }catch(e){ rej(e) } }); }
 async function manSave(file){ try{ const db=await manIDB(); db.transaction('f','readwrite').objectStore('f').put({blob:file,name:file.name},'pdf'); }catch(e){} }
@@ -1316,7 +1322,8 @@ async function renderManSetup(mode){
     ${secs.length?`<label>Sezione del manuale<select id="ms-part">${secs.map((x,i)=>`<option value="${i}">${esc(x.name)} · ${x.count} esercizi · ${doneSet(x).size} già fatti</option>`).join('')}</select></label>`:''}
     ${mode==='sim'?`
       <div class="row wrap-gap"><label>Domande<input id="ms-n" type="number" min="1" max="40" value="10"></label><label>Minuti<input id="ms-min" type="number" min="1" max="120" value="10"></label></div>
-      <label>Quali esercizi<select id="ms-pick"><option value="new">A caso, prima quelli non ancora fatti</option><option value="order">In ordine, dall'esercizio indicato</option></select></label>
+      <label>Quali esercizi<select id="ms-pick"><option value="new">A caso, prima quelli non ancora fatti</option><option value="wrong">Solo quelli sbagliati in passato</option><option value="order">In ordine, dall'esercizio indicato</option></select></label>
+      <p class="small muted" id="ms-wrong-n"></p>
       <label id="ms-from-l" hidden>Dall'esercizio n.<input id="ms-from" type="number" min="1" value="1"></label>
       <p class="small muted">Come all'esame: un solo cronometro per tutta la prova, puoi spostarti tra le domande e segnarle, nessuna correzione fino alla consegna. Allo scadere la prova si chiude da sola.</p>
       <button class="primary" id="ms-go">Inizia la simulazione</button>`
@@ -1329,11 +1336,14 @@ async function renderManSetup(mode){
   if(mode==='sim'){
     const applyDef=()=>{ const d=SIM_DEF[$('#ms-sec').value]; $('#ms-n').value=d.n; $('#ms-min').value=d.min; };
     $('#ms-sec').onchange=applyDef;
-    $('#ms-pick').onchange=()=>{ $('#ms-from-l').hidden=$('#ms-pick').value!=='order'; };
-    if(part) part.onchange=()=>{ const x=secs[+part.value]; $('#ms-from').value=x.min; if(/^Test/.test(x.name)){ $('#ms-pick').value='order'; $('#ms-from-l').hidden=false; $('#ms-n').value=x.count; } };
+    const wrongN=()=>{ const x=secs[+part.value]; const w=((DB.manWrong||{})[MAN.name+'|'+x.name])||[]; $('#ms-wrong-n').textContent=$('#ms-pick').value==='wrong'?`${w.length} esercizi sbagliati da rifare in questa sezione.`:''; };
+    $('#ms-pick').onchange=()=>{ $('#ms-from-l').hidden=$('#ms-pick').value!=='order'; wrongN(); };
+    if(MAN.pendingRetry){ const [file,sname]=MAN.pendingRetry.split('|'); MAN.pendingRetry=null; const i=secs.findIndex(x=>x.name===sname); if(i>=0&&file===MAN.name){ part.value=i; $('#ms-pick').value='wrong'; wrongN(); } }
+    if(part) part.onchange=()=>{ const x=secs[+part.value]; $('#ms-from').value=x.min; if(/^Test/.test(x.name)){ $('#ms-pick').value='order'; $('#ms-from-l').hidden=false; $('#ms-n').value=x.count; } wrongN(); };
     $('#ms-go').onclick=()=>{ const x=secs[+part.value], n=Math.max(1,+$('#ms-n').value||10), mins=Math.max(1,+$('#ms-min').value||10), sec=$('#ms-sec').value;
       const all=Object.keys(x.keys).map(Number).sort((a,b)=>a-b); let list;
       if($('#ms-pick').value==='order'){ const from=+$('#ms-from').value||x.min; list=all.filter(k=>k>=from).slice(0,n); }
+      else if($('#ms-pick').value==='wrong'){ const w=((DB.manWrong||{})[MAN.name+'|'+x.name])||[]; list=R.shuffle(w.filter(k=>x.keys[k])).slice(0,n).sort((a,b)=>a-b); if(!list.length){ $('#ms-wrong-n').textContent='In questa sezione non hai esercizi sbagliati da rifare.'; return; } }
       else { const done=doneSet(x); const fresh=R.shuffle(all.filter(k=>!done.has(k))), old=R.shuffle(all.filter(k=>done.has(k))); list=fresh.concat(old).slice(0,n).sort((a,b)=>a-b); }
       if(!list.length) return;
       startSim(sec,x,list,mins); };
@@ -1349,6 +1359,7 @@ async function renderManSetup(mode){
 }
 
 // ---------- exam simulation on the manual: N questions, one countdown, results at the end ----------
+function manMarkWrong(key,rows){ DB.manWrong=DB.manWrong||{}; const set=new Set(DB.manWrong[key]||[]); rows.forEach(r=>{ if(r.ok) set.delete(r.num); else set.add(r.num); }); DB.manWrong[key]=Array.from(set); }
 function startSim(sec,part,list,mins){
   MAN.hideBefore=MAN.hide; MAN.hide=true; const h=$('#mv-hide'); if(h){ h.checked=true; h.disabled=true; } MAN.pages.forEach(p=>{ if(p.rendered) drawMasks(p); });
   MAN.run={sim:true,sec,part,label:part.name,list,i:0,ans:{},flag:{},ms:{},opt:SIM_DEF[sec].opt,per:SIM_DEF[sec].per,start:Date.now(),last:Date.now(),deadline:Date.now()+mins*60000,secs:mins*60};
@@ -1388,7 +1399,8 @@ function simEnd(auto){
   const score=rows.filter(r=>r.ok).length, used=Math.round((Math.min(Date.now(),R.deadline)-R.start)/1000);
   const att=rows.map(r=>({sec:'sheet',id:'m'+r.num,ok:r.ok,ans:r.ans?LETTERS.indexOf(r.ans):null,key:LETTERS.indexOf(r.key),ms:r.ms,ch:0,fl:!!R.flag[r.num]}));
   DB.sessions.unshift({id:Date.now(),date:R.start,kind:'sheet',label:'Manuale · simulazione · '+SEC[R.sec].it+' · '+R.label,parts:[{sec:R.sec,n:att.length,score,secs:used,limit:R.secs,auto:!!auto,att}]});
-  DB.man=DB.man||{}; const key=MAN.name+'|'+R.label; DB.man[key]=Array.from(new Set((DB.man[key]||[]).concat(R.list))); saveDB();
+  DB.man=DB.man||{}; const key=MAN.name+'|'+R.label; DB.man[key]=Array.from(new Set((DB.man[key]||[]).concat(R.list)));
+  manMarkWrong(key,rows); saveDB();
   MAN.hide=MAN.hideBefore!==undefined?MAN.hideBefore:true; const h=$('#mv-hide'); if(h){ h.disabled=false; h.checked=MAN.hide; }
   const passNote=R.sec==='abstract'&&R.list.length===10?`<p class="small muted">All'esame l'astratto si somma al numerico: servono almeno 10/20 in totale.</p>`:R.sec==='verbal'&&R.list.length===20?`<p class="small muted">Soglia del verbale all'esame: 10/20.</p>`:'';
   const part=R.part; MAN.run=null;
@@ -1397,9 +1409,11 @@ function simEnd(auto){
     <div class="tblwrap"><table class="times"><thead><tr><th>#</th><th>Es.</th><th>Tua</th><th>Giusta</th><th>Tempo</th><th></th></tr></thead><tbody>
     ${rows.map((r,j)=>`<tr><td class="mono">${j+1}</td><td class="mono">${r.num}</td><td class="mono">${r.ans||'–'}</td><td class="mono">${r.key}</td><td class="mono ${r.ms/1000>R.per?'badc':''}">${fmtT(r.ms/1000)}</td><td>${r.ok?'<span class="okc">✓</span>':'<span class="badc">✗</span>'}</td></tr>`).join('')}</tbody></table></div>
     <h3>Rivedi gli errori</h3>
-    ${rows.filter(r=>!r.ok).map(r=>`<details class="rev1"><summary>Esercizio ${r.num}: tua ${r.ans||'–'}, corretta ${r.key}</summary><div class="row"><button class="ghost small" data-goq="${r.num}">Vai all'esercizio e scopri la soluzione</button></div>${r.why?`<p class="small">${esc(r.why)}</p>`:''}</details>`).join('')||'<p class="muted">Nessun errore.</p>'}
+    ${rows.map((r,i)=>r.ok?'':`<details class="rev1"><summary>Esercizio ${r.num}: tua ${r.ans||'–'}, corretta ${r.key}</summary><div class="row"><button class="ghost small" data-goq="${r.num}">Vai all'esercizio e scopri la soluzione</button></div>${r.why?`<p class="small">${esc(r.why)}</p>`:''}<div class="row causes"><span class="small muted">Causa:</span>${Object.entries(CAUSES).map(([c,l])=>`<button class="small" data-mcause="${i}:${c}">${l}</button>`).join('')}</div></details>`).join('')||'<p class="muted">Nessun errore.</p>'}
     <div class="row"><button class="primary" id="mq-new">Nuova simulazione</button><button class="ghost" id="mq-free">Esercizio per esercizio</button></div>`;
   document.querySelectorAll('[data-goq]').forEach(b=>b.onclick=()=>{ const n=+b.dataset.goq; const q=part.q[n]; if(q) scrollToPageY(q.page,q.y); MAN.run={part}; revealSolution(n); MAN.run=null; });
+  const rec=DB.sessions[0];
+  document.querySelectorAll('[data-mcause]').forEach(b=>b.onclick=()=>{ const [i,c]=b.dataset.mcause.split(':'); const x=rec.parts[0].att[+i]; x.cause=x.cause===c?null:c; saveDB(); b.parentNode.querySelectorAll('button').forEach(z=>z.classList.toggle('csel',z===b&&x.cause===c)); });
   $('#mq-new').onclick=()=>renderManSetup('sim'); $('#mq-free').onclick=()=>renderManSetup('free');
 }
 
@@ -1454,6 +1468,7 @@ function manEnd(){
   const score=att.filter(a=>a.ok).length, slow=att.filter(a=>a.ms/1000>R.per).length;
   DB.sessions.unshift({id:Date.now(),date:R.start,kind:'sheet',label:'Manuale · '+SEC[R.sec].it+(R.label?' · '+R.label:''),parts:[{sec:R.sec,n:att.length,score,secs:Math.round((Date.now()-R.start)/1000),limit:null,att}]}); saveDB();
   const wrong=R.items.filter(x=>!x.ok);
+  if(R.label) { manMarkWrong(MAN.name+'|'+R.label,R.items); saveDB(); }
   MAN.run=null;
   $('#man-side').innerHTML=`<h2>Risultato</h2><p><b class="mono big2">${score}/${att.length}</b> giuste</p><p class="muted">${slow} esercizi oltre ${fmtT(R.per)}. Salvato in Statistiche → Fogli risposte.</p>
     ${wrong.length?`<h3>Da rivedere</h3><ul class="bars">${wrong.map(x=>`<li><span>Esercizio ${x.num}: tua ${x.ans||'–'}, corretta ${x.key}</span><button class="ghost small" data-goq="${x.num}">Vai</button></li>`).join('')}</ul>`:''}
@@ -1927,8 +1942,9 @@ function reviewItem(it,a,i,pi,att){
 // ---------- statistics ----------
 function renderStats(){
   const ss=DB.sessions;
-  const all=[]; ss.forEach(s=>s.parts.forEach(p=>p.att&&p.att.forEach(a=>all.push(Object.assign({date:s.date},a)))));
-  const by=sec=>all.filter(a=>a.sec===sec);
+  const srcOf=s=>s.kind==='sheet'?(/^Manuale/.test(s.label||'')?'manuale':'foglio'):'programma';
+  const all=[]; ss.forEach(s=>s.parts.forEach(p=>p.att&&p.att.forEach(x=>all.push(Object.assign({date:s.date,src:srcOf(s),test:x.sec==='sheet'?p.sec:x.sec},x)))));
+  const by=sec=>all.filter(x=>x.test===sec);
   const acc=list=>list.length?Math.round(list.filter(a=>a.ok).length/list.length*100)+'%':'–';
   const avg=list=>list.length?fmtT(list.reduce((s,a)=>s+a.ms,0)/list.length/1000):'–';
   const traps={}; by('verbal').forEach(a=>{if(a.trap)traps[a.trap]=(traps[a.trap]||0)+1});
@@ -1940,14 +1956,17 @@ function renderStats(){
   app().innerHTML=header('Statistiche','Tutto resta in questo browser. Esporta un backup se cambi computer.')+`
   <main class="wrap stack">
     ${weakPanel(false)}
-    <section class="cards3">${['verbal','numerical','abstract'].map(s=>`<div class="card"><span class="eyebrow">${SEC[s].it}</span><b class="mono big2">${acc(by(s))}</b><span class="muted small">${by(s).length} risposte · tempo medio ${avg(by(s))} (budget ${fmtT(SEC[s].sec/SEC[s].n)})</span></div>`).join('')}</section>
+    <section class="stack"><h2>Riepilogo di tutte le prove</h2><p class="small muted">Test del programma, simulazioni ed esercizi sul manuale, fogli risposte: tutto insieme.</p>
+      <div class="cards3">${['verbal','numerical','abstract'].map(s=>overviewCard(s,by(s),ss.filter(x=>x.kind!=='sheet'||true),srcOf)).join('')}</div></section>
+    ${dailyTable(all)}
+    ${allTestsTable(ss,srcOf)}
+    ${manualWrongPanel()}
     <section class="panel stack"><h2>Simulazioni complete</h2>${full.length?`<div class="tblwrap"><table class="times"><thead><tr><th>Data</th><th>Verbale</th><th>Num.</th><th>Astr.</th><th>Num + astr.</th><th>Esito</th></tr></thead><tbody>${full.map(s=>{const g=k=>s.parts.find(p=>p.sec===k)||{score:0};const v=verdict(s);return `<tr><td>${fmtD(s.date)}</td><td class="mono">${g('verbal').score}/20</td><td class="mono">${g('numerical').score}/10</td><td class="mono">${g('abstract').score}/10</td><td class="mono">${g('numerical').score+g('abstract').score}/20</td><td>${v.every(x=>x.pass)?'<span class="pill ok">Superata</span>':'<span class="pill bad">Non superata</span>'}</td></tr>`}).join('')}</tbody></table></div>`:'<p class="muted">Nessuna simulazione completa salvata.</p>'}</section>
     <section class="grid2">
       <div class="panel stack"><h2>Cause degli errori (indicate da te)</h2>${Object.keys(causes).length?`<ul class="bars">${Object.entries(causes).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<li><span>${esc(CAUSES[k])}</span><b class="mono">${n}</b></li>`).join('')}</ul>`:'<p class="muted">Nei risultati, per ogni errore, indica la causa: qui vedrai quale prevale.</p>'}</div>
       <div class="panel stack"><h2>Trappole verbali più frequenti</h2>${Object.keys(traps).length?`<ul class="bars">${Object.entries(traps).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<li><span>${esc(TRAPS[k]||k)}</span><b class="mono">${n}</b></li>`).join('')}</ul>`:'<p class="muted">Ancora nessun errore verbale.</p>'}</div>
       <div class="panel stack"><h2>Numerico per tipo di calcolo</h2>${Object.keys(tpl).length?`<div class="tblwrap"><table class="times"><thead><tr><th>Tipo</th><th>Corrette</th><th>Tempo medio</th></tr></thead><tbody>${Object.entries(tpl).sort((a,b)=>a[1].ok/a[1].n-b[1].ok/b[1].n).map(([k,o])=>`<tr><td>${esc(NUM_T[k]?NUM_T[k].label:k)}</td><td class="mono">${o.ok}/${o.n}</td><td class="mono">${fmtT(o.ms/o.n/1000)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Ancora nessuna risposta.</p>'}</div>
       <div class="panel stack"><h2>Astratto per regola</h2>${Object.keys(rules).length?`<div class="tblwrap"><table class="times"><thead><tr><th>Regola</th><th>Presente</th><th>Mancata</th></tr></thead><tbody>${Object.entries(rules).map(([k,o])=>`<tr><td>${esc(AB_RULES[k].label)}</td><td class="mono">${o.n}</td><td class="mono">${o.miss}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Ancora nessuna risposta.</p>'}</div>
-      <div class="panel stack"><h2>Fogli risposte (libro)</h2>${sheets.length?`<div class="tblwrap"><table class="times"><thead><tr><th>Data</th><th>Etichetta</th><th>Punteggio</th><th>Tempo</th></tr></thead><tbody>${sheets.map(s=>`<tr><td>${fmtD(s.date)}</td><td>${esc(s.label||'')}</td><td class="mono">${s.parts[0].score}/${s.parts[0].n}</td><td class="mono">${fmtT(s.parts[0].secs)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Nessun foglio risposte salvato.</p>'}</div>
     </section>
     <section class="panel stack"><h2>Esporta e backup</h2>
       <p class="muted small">CSV: una riga per domanda, da aprire in Excel o Google Sheets. Backup JSON: per spostare lo storico su un altro computer o browser.</p>
@@ -1957,11 +1976,54 @@ function renderStats(){
     ${footer()}
   </main>`;
   bindNav(); bindExport(); bindFocus();
+  document.querySelectorAll('[data-retry]').forEach(b=>b.onclick=()=>{ MAN.pendingRetry=b.dataset.retry; renderManual(); });
   $('#bk').onclick=()=>download('epso-reasoning-backup.json',JSON.stringify(DB),'application/json');
   $('#imp').onchange=e=>{const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{try{const d=JSON.parse(r.result); if(!d.sessions) throw 0; DB=d; saveDB(); toast('Backup importato.'); renderStats();}catch(x){toast('File non valido: serve un backup esportato da questo programma.')}}; r.readAsText(f);};
   let armed=false; $('#reset').onclick=()=>{ if(!armed){armed=true;$('#reset').textContent='Conferma: cancella tutto';return} DB={sessions:[],seen:{},vwrong:{},plan:{}}; saveDB(); renderStats(); toast('Storico cancellato.'); };
 }
 
+function pct(list){ return list.length?Math.round(list.filter(x=>x.ok).length/list.length*100):null; }
+function sessionScores(ss,sec){ // % per session for one test, oldest first
+  const out=[]; ss.slice().reverse().forEach(s=>s.parts.forEach(p=>{ if(p.sec===sec&&p.n) out.push(Math.round(p.score/p.n*100)); })); return out; }
+function sparkline(vals){
+  if(vals.length<2) return '';
+  const w=140,h=34, pts=vals.slice(-12), step=w/(pts.length-1);
+  const d=pts.map((v,i)=>`${(i*step).toFixed(1)},${(h-3-(h-6)*v/100).toFixed(1)}`).join(' ');
+  const last=pts[pts.length-1];
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" aria-label="andamento ultime prove"><line x1="0" x2="${w}" y1="${(h-3-(h-6)*0.5).toFixed(1)}" y2="${(h-3-(h-6)*0.5).toFixed(1)}" class="sp50"/><polyline points="${d}" class="spl"/><circle cx="${((pts.length-1)*step).toFixed(1)}" cy="${(h-3-(h-6)*last/100).toFixed(1)}" r="3" class="spd"/></svg>`;
+}
+function overviewCard(sec,list,ss,srcOf){
+  const total=pct(list), prog=pct(list.filter(x=>x.src==='programma')), man=pct(list.filter(x=>x.src!=='programma'));
+  const timed=list.filter(x=>x.ms>0), avgS=timed.length?timed.reduce((s,x)=>s+x.ms,0)/timed.length/1000:null, budget=SEC[sec].sec/SEC[sec].n;
+  const sc=sessionScores(DB.sessions,sec); let trend='';
+  if(sc.length>=4){ const k=Math.min(3,Math.floor(sc.length/2)); const a0=sc.slice(0,k).reduce((a,b)=>a+b,0)/k, a1=sc.slice(-k).reduce((a,b)=>a+b,0)/k; const d=Math.round(a1-a0); trend=d>=5?`<span class="okc">in crescita (+${d} punti %)</span>`:d<=-5?`<span class="badc">in calo (${d} punti %)</span>`:'stabile'; }
+  return `<div class="card"><span class="eyebrow">${SEC[sec].it}</span>
+    <div class="row spread"><b class="mono big2">${total===null?'–':total+'%'}</b>${sparkline(sc)}</div>
+    <span class="small">${list.length} risposte${prog!==null?` · programma ${prog}%`:''}${man!==null?` · manuale/libro ${man}%`:''}</span>
+    <span class="small muted">Tempo medio ${avgS===null?'–':fmtT(avgS)} (budget ${fmtT(budget)})${avgS!==null&&avgS>budget?' · <span class="badc">oltre il budget</span>':''}</span>
+    ${trend?`<span class="small">Andamento: ${trend}</span>`:''}</div>`;
+}
+function dailyTable(all){
+  const days={}; all.forEach(x=>{ const d=new Date(x.date).toISOString().slice(0,10); days[d]=days[d]||{verbal:[],numerical:[],abstract:[]}; if(days[d][x.test]) days[d][x.test].push(x); });
+  const keys=Object.keys(days).sort().reverse(); if(!keys.length) return '';
+  const cell=l=>l.length?`${pct(l)}% <span class="muted small">(${l.length})</span>`:'<span class="muted">–</span>';
+  return `<section class="panel stack"><h2>Andamento giorno per giorno</h2><div class="tblwrap"><table class="times"><thead><tr><th>Giorno</th><th>Verbale</th><th>Numerico</th><th>Astratto</th></tr></thead><tbody>
+    ${keys.map(k=>`<tr><td>${new Date(k+'T12:00:00').toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'})}</td><td class="mono">${cell(days[k].verbal)}</td><td class="mono">${cell(days[k].numerical)}</td><td class="mono">${cell(days[k].abstract)}</td></tr>`).join('')}</tbody></table></div>
+    <p class="small muted">Percentuale di risposte giuste; tra parentesi quante domande.</p></section>`;
+}
+function allTestsTable(ss,srcOf){
+  if(!ss.length) return '';
+  const kindLabel=s=>s.kind==='sheet'?(s.label||'Foglio risposte'):({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato'}[s.kind]||s.kind);
+  const rows=[]; ss.slice(0,40).forEach(s=>s.parts.forEach(p=>rows.push({s,p})));
+  return `<section class="panel stack"><h2>Tutte le prove</h2><div class="tblwrap"><table class="times"><thead><tr><th>Data</th><th>Origine</th><th>Tipo</th><th>Prova</th><th>Punteggio</th><th>Tempo</th></tr></thead><tbody>
+    ${rows.map(({s,p})=>`<tr><td>${fmtD(s.date)}</td><td>${{programma:'Programma',manuale:'Manuale',foglio:'Foglio risposte'}[srcOf(s)]}</td><td>${esc(kindLabel(s))}</td><td>${SEC[p.sec]?SEC[p.sec].it.replace('Ragionamento ',''):esc(p.sec)}</td><td class="mono">${p.score}/${p.n} <span class="muted">(${p.n?Math.round(p.score/p.n*100):0}%)</span></td><td class="mono">${fmtT(p.secs||0)}${p.limit?' / '+fmtT(p.limit):''}</td></tr>`).join('')}</tbody></table></div></section>`;
+}
+function manualWrongPanel(){
+  const W=DB.manWrong||{}; const entries=Object.entries(W).filter(([k,v])=>v.length);
+  if(!entries.length) return `<section class="panel stack"><h2>Esercizi del manuale da rifare</h2><p class="muted">Ancora nessuno: quando sbagli un esercizio del manuale, lo trovi qui per rifarlo.</p></section>`;
+  return `<section class="panel stack"><h2>Esercizi del manuale da rifare</h2><ul class="bars">${entries.map(([k,v])=>{ const [file,sec]=k.split('|'); return `<li><span><b>${esc(sec)}</b> <span class="small muted">${esc(file)}</span><br><span class="mono small">${v.slice().sort((a,b)=>a-b).join(', ')}</span></span><button class="small" data-retry="${esc(k)}">Rifai gli errori (${v.length})</button></li>`; }).join('')}</ul>
+    <p class="small muted">Un esercizio esce dalla lista quando lo rifai giusto.</p></section>`;
+}
 function sessionCSV(list){
   const rows=[['session_date','mode','section','q','item','correct','answer','key','seconds','answer_changes','flagged','detail','cause']];
   list.forEach(s=>s.parts.forEach(p=>(p.att||[]).forEach((a,i)=>{
@@ -2023,7 +2085,7 @@ function renderSheet(){
 
 function footer(){ return `<footer class="foot">
   <p>Formato e soglie dal bando EPSO/AD/427/26: verbale 20 domande in 35 minuti (soglia 10/20); numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Numerico e astratto sono generati al momento con dati fittizi. Il punteggio qui non predice il risultato reale.</p>
-  <p class="mono">Versione 2026-11-06c · Manuale con simulazione d'esame</p>
+  <p class="mono">Versione 2026-11-06d · Statistiche di tutte le prove</p>
   <p>Verbale: 42 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO.</p>
 </footer>`; }
 

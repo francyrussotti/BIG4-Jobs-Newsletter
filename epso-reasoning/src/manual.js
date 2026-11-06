@@ -1,5 +1,5 @@
 // ---------- "Manuale": practise on the user's own PDF, opened locally; the file never leaves the browser ----------
-const MAN={url:null,name:'',run:null,blob:null,doc:null,page:1,hide:true,revealed:{},pages:[],obs:null,vis:null,index:null};
+const MAN={url:null,name:'',run:null,blob:null,doc:null,page:1,hide:true,revealed:{},pages:[],obs:null,vis:null,index:null,pendingRetry:null};
 const MAN_DB='epsoManualPdf';
 function manIDB(){ return new Promise((res,rej)=>{ try{ const r=indexedDB.open(MAN_DB,1); r.onupgradeneeded=()=>r.result.createObjectStore('f'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }catch(e){ rej(e) } }); }
 async function manSave(file){ try{ const db=await manIDB(); db.transaction('f','readwrite').objectStore('f').put({blob:file,name:file.name},'pdf'); }catch(e){} }
@@ -92,7 +92,8 @@ async function renderManSetup(mode){
     ${secs.length?`<label>Sezione del manuale<select id="ms-part">${secs.map((x,i)=>`<option value="${i}">${esc(x.name)} · ${x.count} esercizi · ${doneSet(x).size} già fatti</option>`).join('')}</select></label>`:''}
     ${mode==='sim'?`
       <div class="row wrap-gap"><label>Domande<input id="ms-n" type="number" min="1" max="40" value="10"></label><label>Minuti<input id="ms-min" type="number" min="1" max="120" value="10"></label></div>
-      <label>Quali esercizi<select id="ms-pick"><option value="new">A caso, prima quelli non ancora fatti</option><option value="order">In ordine, dall'esercizio indicato</option></select></label>
+      <label>Quali esercizi<select id="ms-pick"><option value="new">A caso, prima quelli non ancora fatti</option><option value="wrong">Solo quelli sbagliati in passato</option><option value="order">In ordine, dall'esercizio indicato</option></select></label>
+      <p class="small muted" id="ms-wrong-n"></p>
       <label id="ms-from-l" hidden>Dall'esercizio n.<input id="ms-from" type="number" min="1" value="1"></label>
       <p class="small muted">Come all'esame: un solo cronometro per tutta la prova, puoi spostarti tra le domande e segnarle, nessuna correzione fino alla consegna. Allo scadere la prova si chiude da sola.</p>
       <button class="primary" id="ms-go">Inizia la simulazione</button>`
@@ -105,11 +106,14 @@ async function renderManSetup(mode){
   if(mode==='sim'){
     const applyDef=()=>{ const d=SIM_DEF[$('#ms-sec').value]; $('#ms-n').value=d.n; $('#ms-min').value=d.min; };
     $('#ms-sec').onchange=applyDef;
-    $('#ms-pick').onchange=()=>{ $('#ms-from-l').hidden=$('#ms-pick').value!=='order'; };
-    if(part) part.onchange=()=>{ const x=secs[+part.value]; $('#ms-from').value=x.min; if(/^Test/.test(x.name)){ $('#ms-pick').value='order'; $('#ms-from-l').hidden=false; $('#ms-n').value=x.count; } };
+    const wrongN=()=>{ const x=secs[+part.value]; const w=((DB.manWrong||{})[MAN.name+'|'+x.name])||[]; $('#ms-wrong-n').textContent=$('#ms-pick').value==='wrong'?`${w.length} esercizi sbagliati da rifare in questa sezione.`:''; };
+    $('#ms-pick').onchange=()=>{ $('#ms-from-l').hidden=$('#ms-pick').value!=='order'; wrongN(); };
+    if(MAN.pendingRetry){ const [file,sname]=MAN.pendingRetry.split('|'); MAN.pendingRetry=null; const i=secs.findIndex(x=>x.name===sname); if(i>=0&&file===MAN.name){ part.value=i; $('#ms-pick').value='wrong'; wrongN(); } }
+    if(part) part.onchange=()=>{ const x=secs[+part.value]; $('#ms-from').value=x.min; if(/^Test/.test(x.name)){ $('#ms-pick').value='order'; $('#ms-from-l').hidden=false; $('#ms-n').value=x.count; } wrongN(); };
     $('#ms-go').onclick=()=>{ const x=secs[+part.value], n=Math.max(1,+$('#ms-n').value||10), mins=Math.max(1,+$('#ms-min').value||10), sec=$('#ms-sec').value;
       const all=Object.keys(x.keys).map(Number).sort((a,b)=>a-b); let list;
       if($('#ms-pick').value==='order'){ const from=+$('#ms-from').value||x.min; list=all.filter(k=>k>=from).slice(0,n); }
+      else if($('#ms-pick').value==='wrong'){ const w=((DB.manWrong||{})[MAN.name+'|'+x.name])||[]; list=R.shuffle(w.filter(k=>x.keys[k])).slice(0,n).sort((a,b)=>a-b); if(!list.length){ $('#ms-wrong-n').textContent='In questa sezione non hai esercizi sbagliati da rifare.'; return; } }
       else { const done=doneSet(x); const fresh=R.shuffle(all.filter(k=>!done.has(k))), old=R.shuffle(all.filter(k=>done.has(k))); list=fresh.concat(old).slice(0,n).sort((a,b)=>a-b); }
       if(!list.length) return;
       startSim(sec,x,list,mins); };
@@ -125,6 +129,7 @@ async function renderManSetup(mode){
 }
 
 // ---------- exam simulation on the manual: N questions, one countdown, results at the end ----------
+function manMarkWrong(key,rows){ DB.manWrong=DB.manWrong||{}; const set=new Set(DB.manWrong[key]||[]); rows.forEach(r=>{ if(r.ok) set.delete(r.num); else set.add(r.num); }); DB.manWrong[key]=Array.from(set); }
 function startSim(sec,part,list,mins){
   MAN.hideBefore=MAN.hide; MAN.hide=true; const h=$('#mv-hide'); if(h){ h.checked=true; h.disabled=true; } MAN.pages.forEach(p=>{ if(p.rendered) drawMasks(p); });
   MAN.run={sim:true,sec,part,label:part.name,list,i:0,ans:{},flag:{},ms:{},opt:SIM_DEF[sec].opt,per:SIM_DEF[sec].per,start:Date.now(),last:Date.now(),deadline:Date.now()+mins*60000,secs:mins*60};
@@ -164,7 +169,8 @@ function simEnd(auto){
   const score=rows.filter(r=>r.ok).length, used=Math.round((Math.min(Date.now(),R.deadline)-R.start)/1000);
   const att=rows.map(r=>({sec:'sheet',id:'m'+r.num,ok:r.ok,ans:r.ans?LETTERS.indexOf(r.ans):null,key:LETTERS.indexOf(r.key),ms:r.ms,ch:0,fl:!!R.flag[r.num]}));
   DB.sessions.unshift({id:Date.now(),date:R.start,kind:'sheet',label:'Manuale · simulazione · '+SEC[R.sec].it+' · '+R.label,parts:[{sec:R.sec,n:att.length,score,secs:used,limit:R.secs,auto:!!auto,att}]});
-  DB.man=DB.man||{}; const key=MAN.name+'|'+R.label; DB.man[key]=Array.from(new Set((DB.man[key]||[]).concat(R.list))); saveDB();
+  DB.man=DB.man||{}; const key=MAN.name+'|'+R.label; DB.man[key]=Array.from(new Set((DB.man[key]||[]).concat(R.list)));
+  manMarkWrong(key,rows); saveDB();
   MAN.hide=MAN.hideBefore!==undefined?MAN.hideBefore:true; const h=$('#mv-hide'); if(h){ h.disabled=false; h.checked=MAN.hide; }
   const passNote=R.sec==='abstract'&&R.list.length===10?`<p class="small muted">All'esame l'astratto si somma al numerico: servono almeno 10/20 in totale.</p>`:R.sec==='verbal'&&R.list.length===20?`<p class="small muted">Soglia del verbale all'esame: 10/20.</p>`:'';
   const part=R.part; MAN.run=null;
@@ -173,9 +179,11 @@ function simEnd(auto){
     <div class="tblwrap"><table class="times"><thead><tr><th>#</th><th>Es.</th><th>Tua</th><th>Giusta</th><th>Tempo</th><th></th></tr></thead><tbody>
     ${rows.map((r,j)=>`<tr><td class="mono">${j+1}</td><td class="mono">${r.num}</td><td class="mono">${r.ans||'–'}</td><td class="mono">${r.key}</td><td class="mono ${r.ms/1000>R.per?'badc':''}">${fmtT(r.ms/1000)}</td><td>${r.ok?'<span class="okc">✓</span>':'<span class="badc">✗</span>'}</td></tr>`).join('')}</tbody></table></div>
     <h3>Rivedi gli errori</h3>
-    ${rows.filter(r=>!r.ok).map(r=>`<details class="rev1"><summary>Esercizio ${r.num}: tua ${r.ans||'–'}, corretta ${r.key}</summary><div class="row"><button class="ghost small" data-goq="${r.num}">Vai all'esercizio e scopri la soluzione</button></div>${r.why?`<p class="small">${esc(r.why)}</p>`:''}</details>`).join('')||'<p class="muted">Nessun errore.</p>'}
+    ${rows.map((r,i)=>r.ok?'':`<details class="rev1"><summary>Esercizio ${r.num}: tua ${r.ans||'–'}, corretta ${r.key}</summary><div class="row"><button class="ghost small" data-goq="${r.num}">Vai all'esercizio e scopri la soluzione</button></div>${r.why?`<p class="small">${esc(r.why)}</p>`:''}<div class="row causes"><span class="small muted">Causa:</span>${Object.entries(CAUSES).map(([c,l])=>`<button class="small" data-mcause="${i}:${c}">${l}</button>`).join('')}</div></details>`).join('')||'<p class="muted">Nessun errore.</p>'}
     <div class="row"><button class="primary" id="mq-new">Nuova simulazione</button><button class="ghost" id="mq-free">Esercizio per esercizio</button></div>`;
   document.querySelectorAll('[data-goq]').forEach(b=>b.onclick=()=>{ const n=+b.dataset.goq; const q=part.q[n]; if(q) scrollToPageY(q.page,q.y); MAN.run={part}; revealSolution(n); MAN.run=null; });
+  const rec=DB.sessions[0];
+  document.querySelectorAll('[data-mcause]').forEach(b=>b.onclick=()=>{ const [i,c]=b.dataset.mcause.split(':'); const x=rec.parts[0].att[+i]; x.cause=x.cause===c?null:c; saveDB(); b.parentNode.querySelectorAll('button').forEach(z=>z.classList.toggle('csel',z===b&&x.cause===c)); });
   $('#mq-new').onclick=()=>renderManSetup('sim'); $('#mq-free').onclick=()=>renderManSetup('free');
 }
 
@@ -230,6 +238,7 @@ function manEnd(){
   const score=att.filter(a=>a.ok).length, slow=att.filter(a=>a.ms/1000>R.per).length;
   DB.sessions.unshift({id:Date.now(),date:R.start,kind:'sheet',label:'Manuale · '+SEC[R.sec].it+(R.label?' · '+R.label:''),parts:[{sec:R.sec,n:att.length,score,secs:Math.round((Date.now()-R.start)/1000),limit:null,att}]}); saveDB();
   const wrong=R.items.filter(x=>!x.ok);
+  if(R.label) { manMarkWrong(MAN.name+'|'+R.label,R.items); saveDB(); }
   MAN.run=null;
   $('#man-side').innerHTML=`<h2>Risultato</h2><p><b class="mono big2">${score}/${att.length}</b> giuste</p><p class="muted">${slow} esercizi oltre ${fmtT(R.per)}. Salvato in Statistiche → Fogli risposte.</p>
     ${wrong.length?`<h3>Da rivedere</h3><ul class="bars">${wrong.map(x=>`<li><span>Esercizio ${x.num}: tua ${x.ans||'–'}, corretta ${x.key}</span><button class="ghost small" data-goq="${x.num}">Vai</button></li>`).join('')}</ul>`:''}

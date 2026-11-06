@@ -69,6 +69,11 @@ function weakPoints(){
   if(slowV>=4) W.push({sec:'verbal',key:'slow',score:slowV*0.6,text:`Verbale lento: ${slowV} domande oltre 2:10`,tip:'Oltre i 2 minuti su una domanda, scegli la migliore, segna e passa oltre.'});
   Object.entries(P.tpl).forEach(([k,t])=>{ const sc=t.wrong*2+t.slow*1.5; if(sc>0) W.push({sec:'numerical',key:'n:'+k,score:sc,text:`${NUM_T[k].label}: ${t.wrong?`${t.wrong} su ${t.n} sbagliate`:''}${t.wrong&&t.slow?', ':''}${t.slow?`tempo medio ${fmtT(t.ms/t.n/1000)}`:''}`,tip:NUM_TIP[k]}); });
   Object.entries(P.fam).forEach(([k,f])=>{ if(f.miss>0) W.push({sec:'abstract',key:'a:'+k,score:f.miss*2*(f.miss/f.n+0.5),text:`${FAM_LABEL[k]||k}: ${f.miss} su ${f.n} mancate`,tip:ABS_TIP[k]}); });
+  // results on the manual and answer sheets
+  const sheets=DB.sessions.filter(z=>z.kind==='sheet').slice(0,12);
+  ['verbal','numerical','abstract'].forEach(sec=>{ const att=[]; sheets.forEach(z=>z.parts.forEach(p=>{ if(p.sec===sec) (p.att||[]).forEach(a=>att.push(a)); }));
+    if(att.length>=5){ const ok=att.filter(a=>a.ok).length, r=ok/att.length; if(r<0.65) W.push({sec,key:'m:'+sec,score:(1-r)*6,text:`Esercizi del manuale: ${ok}/${att.length} giuste`,tip:'Rifai gli esercizi sbagliati (Statistiche → Esercizi del manuale da rifare) e leggi la spiegazione del manuale prima di ripartire.'});
+      const budget=SEC[sec].sec/SEC[sec].n*1000, slow=att.filter(a=>a.ms>budget*1.3).length; if(slow>=3) W.push({sec,key:'ms:'+sec,score:slow*0.7,text:`Manuale: ${slow} esercizi oltre ${fmtT(budget*1.3/1000)}`,tip:'Se dopo il tempo previsto non vedi la regola, scegli, segna e vai avanti: all\'esame il tempo è uno solo per tutte le domande.'}); } });
   return W.sort((a,b)=>b.score-a.score);
 }
 function weightedPick(weights,n,cap=3){ // weights: {key:w}; returns n keys, repeats allowed but spread
