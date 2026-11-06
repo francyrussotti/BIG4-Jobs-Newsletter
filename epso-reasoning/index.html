@@ -199,6 +199,11 @@ table.sheet td,table.sheet th{padding:5px 8px;border-bottom:1px solid var(--line
 .result details{color:var(--fg)}
 .result details p{margin-top:6px;max-height:220px;overflow:auto}
 .nextbtn{width:100%;min-height:52px;font-size:1.1rem}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--bg);padding:4px;border-radius:6px}
+.tabs button{border:0;background:transparent;min-height:36px}
+.tabs button.on{background:var(--panel);box-shadow:0 1px 3px rgba(0,0,0,.12);font-weight:600}
+.mansheet .qgrid .cell{min-width:36px;min-height:36px}
+.rev1{border-left:3px solid var(--bad);padding-left:10px}
 .result span{color:var(--fg);font-size:.88rem}
 .inl{flex-direction:row;align-items:center;gap:6px}.inl input{width:80px;min-height:34px;padding:4px 8px}
 .primaryfile{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600;justify-content:center;align-self:start}
@@ -1259,7 +1264,7 @@ function renderManualWork(){
     <aside class="panel stack mansheet" id="man-side"></aside>
   </main>`;
   bindNav();
-  $('#man-change').onclick=()=>{ manForget(); if(MAN.url) URL.revokeObjectURL(MAN.url); MAN.url=null; MAN.run=null; MAN.doc=null; clearInterval(TIMER); renderManualPick(); };
+  $('#man-change').onclick=()=>{ clearInterval(TIMER); manForget(); if(MAN.url) URL.revokeObjectURL(MAN.url); MAN.url=null; MAN.run=null; MAN.doc=null; clearInterval(TIMER); renderManualPick(); };
   $('#mv-go').onclick=()=>scrollToPage(+$('#mv-goto').value||1);
   $('#mv-goto').onkeydown=e=>{ if(e.key==='Enter') scrollToPage(+e.target.value||1); };
   $('#mv-hide').onchange=e=>{ MAN.hide=e.target.checked; MAN.pages.forEach(p=>{ if(p.rendered) drawMasks(p); }); };
@@ -1296,27 +1301,108 @@ async function buildKeyIndex(){
 }
 
 // ---------- answer sheet ----------
-async function renderManSetup(){
+const SIM_DEF={abstract:{n:10,min:10,opt:5,per:60},numerical:{n:10,min:20,opt:5,per:120},verbal:{n:20,min:35,opt:4,per:105}};
+async function renderManSetup(mode){
   const side=$('#man-side');
   side.innerHTML=`<h2>Nuova sessione</h2><p class="small muted">Lettura delle soluzioni dal PDF…</p>`;
   let idx=null; try{ await waitDoc(); idx=await buildKeyIndex(); }catch(e){ idx=null; }
   const secs=idx?idx.sections:[];
+  mode=secs.length?(mode||'sim'):'free';
+  const doneSet=x=>new Set(((DB.man||{})[MAN.name+'|'+x.name])||[]);
   side.innerHTML=`<h2>Nuova sessione</h2>
-    ${secs.length?`<label>Sezione del manuale<select id="ms-part">${secs.map((x,i)=>`<option value="${i}">${esc(x.name)} · ${x.count} esercizi</option>`).join('')}</select></label>
-      <p class="small muted">Correzione automatica: ho letto ${secs.reduce((a,x)=>a+x.count,0)} soluzioni dal PDF.</p>`
+    ${secs.length?`<div class="tabs"><button class="${mode==='sim'?'on':''}" data-mode="sim">Simulazione d'esame</button><button class="${mode==='free'?'on':''}" data-mode="free">Esercizio per esercizio</button></div>`
       :`<p class="alert small">Non riesco a leggere le soluzioni da questo PDF: inserirai tu la risposta corretta dopo ogni esercizio.</p>`}
     <label>Prova<select id="ms-sec"><option value="abstract">Astratto</option><option value="numerical">Numerico</option><option value="verbal">Verbale</option></select></label>
-    <div class="row wrap-gap"><label>Dall'esercizio n.<input id="ms-first" type="number" min="1" value="1"></label><label>Secondi per domanda<input id="ms-sec-q" type="number" min="10" max="600" value="50"></label><label>Opzioni<select id="ms-opt"><option>5</option><option>4</option></select></label></div>
-    ${secs.length?`<label class="chk"><input type="checkbox" id="ms-now" checked><span>Mostra subito se è giusta (togli la spunta per simulare un test: esito solo alla fine)</span></label>`:''}
-    <button class="primary" id="ms-go">Inizia</button>`;
-  const dflt={abstract:[50,5],numerical:[120,5],verbal:[105,4]};
-  $('#ms-sec').onchange=()=>{ const d=dflt[$('#ms-sec').value]; $('#ms-sec-q').value=d[0]; $('#ms-opt').value=d[1]; };
-  const part=$('#ms-part'); if(part){ const upd=()=>{ const x=secs[+part.value]; $('#ms-first').value=x.min; if(/^Test/.test(x.name)) $('#ms-now').checked=false; else $('#ms-now').checked=true; }; part.onchange=upd; }
-  $('#ms-go').onclick=()=>{
-    const x=part?secs[+part.value]:null, first=Math.max(1,+$('#ms-first').value||1);
-    MAN.run={sec:$('#ms-sec').value,label:x?x.name:'',part:x,auto:!!x,now:x?$('#ms-now').checked:true,first,num:first,per:Math.max(10,+$('#ms-sec-q').value||50),opt:+$('#ms-opt').value,start:Date.now(),qStart:Date.now(),items:[],ans:null,ansMs:0,last:null};
-    clearInterval(TIMER); TIMER=setInterval(manTick,250); gotoExercise(first); renderManSide(); };
+    ${secs.length?`<label>Sezione del manuale<select id="ms-part">${secs.map((x,i)=>`<option value="${i}">${esc(x.name)} · ${x.count} esercizi · ${doneSet(x).size} già fatti</option>`).join('')}</select></label>`:''}
+    ${mode==='sim'?`
+      <div class="row wrap-gap"><label>Domande<input id="ms-n" type="number" min="1" max="40" value="10"></label><label>Minuti<input id="ms-min" type="number" min="1" max="120" value="10"></label></div>
+      <label>Quali esercizi<select id="ms-pick"><option value="new">A caso, prima quelli non ancora fatti</option><option value="order">In ordine, dall'esercizio indicato</option></select></label>
+      <label id="ms-from-l" hidden>Dall'esercizio n.<input id="ms-from" type="number" min="1" value="1"></label>
+      <p class="small muted">Come all'esame: un solo cronometro per tutta la prova, puoi spostarti tra le domande e segnarle, nessuna correzione fino alla consegna. Allo scadere la prova si chiude da sola.</p>
+      <button class="primary" id="ms-go">Inizia la simulazione</button>`
+    :`
+      <div class="row wrap-gap"><label>Dall'esercizio n.<input id="ms-first" type="number" min="1" value="1"></label><label>Secondi per domanda<input id="ms-sec-q" type="number" min="10" max="600" value="50"></label><label>Opzioni<select id="ms-opt"><option>5</option><option>4</option></select></label></div>
+      ${secs.length?`<label class="chk"><input type="checkbox" id="ms-now" checked><span>Mostra subito se è giusta</span></label>`:''}
+      <button class="primary" id="ms-go">Inizia</button>`}`;
+  side.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>renderManSetup(b.dataset.mode));
+  const part=$('#ms-part');
+  if(mode==='sim'){
+    const applyDef=()=>{ const d=SIM_DEF[$('#ms-sec').value]; $('#ms-n').value=d.n; $('#ms-min').value=d.min; };
+    $('#ms-sec').onchange=applyDef;
+    $('#ms-pick').onchange=()=>{ $('#ms-from-l').hidden=$('#ms-pick').value!=='order'; };
+    if(part) part.onchange=()=>{ const x=secs[+part.value]; $('#ms-from').value=x.min; if(/^Test/.test(x.name)){ $('#ms-pick').value='order'; $('#ms-from-l').hidden=false; $('#ms-n').value=x.count; } };
+    $('#ms-go').onclick=()=>{ const x=secs[+part.value], n=Math.max(1,+$('#ms-n').value||10), mins=Math.max(1,+$('#ms-min').value||10), sec=$('#ms-sec').value;
+      const all=Object.keys(x.keys).map(Number).sort((a,b)=>a-b); let list;
+      if($('#ms-pick').value==='order'){ const from=+$('#ms-from').value||x.min; list=all.filter(k=>k>=from).slice(0,n); }
+      else { const done=doneSet(x); const fresh=R.shuffle(all.filter(k=>!done.has(k))), old=R.shuffle(all.filter(k=>done.has(k))); list=fresh.concat(old).slice(0,n).sort((a,b)=>a-b); }
+      if(!list.length) return;
+      startSim(sec,x,list,mins); };
+  } else {
+    const dflt={abstract:[50,5],numerical:[120,5],verbal:[105,4]};
+    $('#ms-sec').onchange=()=>{ const d=dflt[$('#ms-sec').value]; $('#ms-sec-q').value=d[0]; $('#ms-opt').value=d[1]; };
+    if(part){ const upd=()=>{ const x=secs[+part.value]; $('#ms-first').value=x.min; }; part.onchange=upd; upd(); }
+    $('#ms-go').onclick=()=>{
+      const x=part?secs[+part.value]:null, first=Math.max(1,+$('#ms-first').value||1);
+      MAN.run={sec:$('#ms-sec').value,label:x?x.name:'',part:x,auto:!!x,now:x?$('#ms-now').checked:true,first,num:first,per:Math.max(10,+$('#ms-sec-q').value||50),opt:+$('#ms-opt').value,start:Date.now(),qStart:Date.now(),items:[],ans:null,ansMs:0,last:null};
+      clearInterval(TIMER); TIMER=setInterval(manTick,250); gotoExercise(first); renderManSide(); };
+  }
 }
+
+// ---------- exam simulation on the manual: N questions, one countdown, results at the end ----------
+function startSim(sec,part,list,mins){
+  MAN.hideBefore=MAN.hide; MAN.hide=true; const h=$('#mv-hide'); if(h){ h.checked=true; h.disabled=true; } MAN.pages.forEach(p=>{ if(p.rendered) drawMasks(p); });
+  MAN.run={sim:true,sec,part,label:part.name,list,i:0,ans:{},flag:{},ms:{},opt:SIM_DEF[sec].opt,per:SIM_DEF[sec].per,start:Date.now(),last:Date.now(),deadline:Date.now()+mins*60000,secs:mins*60};
+  clearInterval(TIMER); TIMER=setInterval(simTick,250); gotoExercise(list[0]); renderSimSide();
+}
+function simAccount(){ const R=MAN.run; if(!R||!R.sim) return; const now=Date.now(), k=R.list[R.i]; R.ms[k]=(R.ms[k]||0)+(now-R.last); R.last=now; }
+function simTick(){ const R=MAN.run; if(!R||!R.sim) return; simAccount(); const left=(R.deadline-Date.now())/1000; const el=$('#sim-clock'); if(el){ el.textContent=fmtT(left); el.classList.toggle('low',left<=Math.min(120,R.secs*0.15)); } if(left<=0) simEnd(true); }
+function simGo(i){ const R=MAN.run; if(i<0||i>=R.list.length) return; simAccount(); R.i=i; gotoExercise(R.list[i]); renderSimSide(); }
+function renderSimSide(){
+  const R=MAN.run, side=$('#man-side'); if(!side) return; const k=R.list[R.i], L=LETTERS.slice(0,R.opt).split(''), a=R.ans[k];
+  const answered=R.list.filter(x=>R.ans[x]).length;
+  side.innerHTML=`<div class="row spread"><span class="eyebrow">Simulazione · ${esc(SEC[R.sec].it)} · ${esc(R.label)}</span></div>
+    <div class="row spread"><span class="clock mono big2" id="sim-clock">--:--</span><span class="small muted">${answered}/${R.list.length} risposte</span></div>
+    <div class="qgrid">${R.list.map((x,j)=>`<button class="cell ${j===R.i?'cur':''} ${R.ans[x]?'ans':''} ${R.flag[x]?'flag':''}" data-j="${j}" title="Esercizio ${x}">${j+1}</button>`).join('')}</div>
+    <div class="row spread"><h2>Domanda ${R.i+1} di ${R.list.length}</h2><button class="ghost small" id="sim-flag">${R.flag[k]?'Togli segno':'Segna'}</button></div>
+    <p class="small muted">Nel manuale: <b>esercizio ${k}</b> · <a href="#" id="sim-find">mostralo</a></p>
+    <div class="step active"><div class="stephead"><span class="stepn">?</span><span>La tua risposta</span>${a?`<span class="chosen">${a}</span>`:''}</div>
+      <div class="seg big">${L.map(l=>`<button data-a="${l}" class="${a===l?'sel':''}" aria-pressed="${a===l}">${l}</button>`).join('')}</div></div>
+    <div class="row spread"><button id="sim-prev" ${R.i===0?'disabled':''}>← Precedente</button>${R.i<R.list.length-1?'<button class="primary" id="mq-next">Successiva →</button>':'<button class="primary" id="sim-end2">Consegna</button>'}</div>
+    <div class="row"><button class="ghost" id="sim-end">Consegna adesso</button></div>
+    <div id="sim-confirm" class="stack" hidden><p><b>Consegnare?</b> <span id="sim-cmsg"></span></p><div class="row"><button class="primary" id="sim-yes">Consegna</button><button id="sim-no">Continua</button></div></div>
+    <p class="small muted">Tastiera: A–E per rispondere, Invio per la successiva.</p>`;
+  simTick();
+  side.querySelectorAll('[data-j]').forEach(b=>b.onclick=()=>simGo(+b.dataset.j));
+  side.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{ R.ans[k]=b.dataset.a; renderSimSide(); });
+  $('#sim-flag').onclick=()=>{ R.flag[k]=!R.flag[k]; renderSimSide(); };
+  $('#sim-find').onclick=e=>{ e.preventDefault(); gotoExercise(k); };
+  if($('#sim-prev')) $('#sim-prev').onclick=()=>simGo(R.i-1);
+  if($('#mq-next')) $('#mq-next').onclick=()=>simGo(R.i+1);
+  const ask=()=>{ const blank=R.list.length-answered, fl=R.list.filter(x=>R.flag[x]).length; $('#sim-cmsg').textContent=(blank?blank+' senza risposta. ':'Tutte risposte. ')+(fl?fl+' segnate.':''); $('#sim-confirm').hidden=false; };
+  $('#sim-end').onclick=ask; if($('#sim-end2')) $('#sim-end2').onclick=ask;
+  $('#sim-yes').onclick=()=>simEnd(false); $('#sim-no').onclick=()=>{ $('#sim-confirm').hidden=true; };
+}
+function simEnd(auto){
+  const R=MAN.run; if(!R||!R.sim||R.done) return; simAccount(); R.done=true; clearInterval(TIMER);
+  const rows=R.list.map(k=>({num:k,ans:R.ans[k]||'',key:R.part.keys[k],ms:R.ms[k]||0,why:R.part.why[k]||''})); rows.forEach(r=>r.ok=r.ans===r.key);
+  const score=rows.filter(r=>r.ok).length, used=Math.round((Math.min(Date.now(),R.deadline)-R.start)/1000);
+  const att=rows.map(r=>({sec:'sheet',id:'m'+r.num,ok:r.ok,ans:r.ans?LETTERS.indexOf(r.ans):null,key:LETTERS.indexOf(r.key),ms:r.ms,ch:0,fl:!!R.flag[r.num]}));
+  DB.sessions.unshift({id:Date.now(),date:R.start,kind:'sheet',label:'Manuale · simulazione · '+SEC[R.sec].it+' · '+R.label,parts:[{sec:R.sec,n:att.length,score,secs:used,limit:R.secs,auto:!!auto,att}]});
+  DB.man=DB.man||{}; const key=MAN.name+'|'+R.label; DB.man[key]=Array.from(new Set((DB.man[key]||[]).concat(R.list))); saveDB();
+  MAN.hide=MAN.hideBefore!==undefined?MAN.hideBefore:true; const h=$('#mv-hide'); if(h){ h.disabled=false; h.checked=MAN.hide; }
+  const passNote=R.sec==='abstract'&&R.list.length===10?`<p class="small muted">All'esame l'astratto si somma al numerico: servono almeno 10/20 in totale.</p>`:R.sec==='verbal'&&R.list.length===20?`<p class="small muted">Soglia del verbale all'esame: 10/20.</p>`:'';
+  const part=R.part; MAN.run=null;
+  $('#man-side').innerHTML=`<h2>Risultato della simulazione</h2>
+    <p><b class="mono big2">${score}/${rows.length}</b> giuste · tempo usato <span class="mono">${fmtT(used)}</span> su ${fmtT(R.secs)}${auto?' · consegna automatica allo scadere':''}</p>${passNote}
+    <div class="tblwrap"><table class="times"><thead><tr><th>#</th><th>Es.</th><th>Tua</th><th>Giusta</th><th>Tempo</th><th></th></tr></thead><tbody>
+    ${rows.map((r,j)=>`<tr><td class="mono">${j+1}</td><td class="mono">${r.num}</td><td class="mono">${r.ans||'–'}</td><td class="mono">${r.key}</td><td class="mono ${r.ms/1000>R.per?'badc':''}">${fmtT(r.ms/1000)}</td><td>${r.ok?'<span class="okc">✓</span>':'<span class="badc">✗</span>'}</td></tr>`).join('')}</tbody></table></div>
+    <h3>Rivedi gli errori</h3>
+    ${rows.filter(r=>!r.ok).map(r=>`<details class="rev1"><summary>Esercizio ${r.num}: tua ${r.ans||'–'}, corretta ${r.key}</summary><div class="row"><button class="ghost small" data-goq="${r.num}">Vai all'esercizio e scopri la soluzione</button></div>${r.why?`<p class="small">${esc(r.why)}</p>`:''}</details>`).join('')||'<p class="muted">Nessun errore.</p>'}
+    <div class="row"><button class="primary" id="mq-new">Nuova simulazione</button><button class="ghost" id="mq-free">Esercizio per esercizio</button></div>`;
+  document.querySelectorAll('[data-goq]').forEach(b=>b.onclick=()=>{ const n=+b.dataset.goq; const q=part.q[n]; if(q) scrollToPageY(q.page,q.y); MAN.run={part}; revealSolution(n); MAN.run=null; });
+  $('#mq-new').onclick=()=>renderManSetup('sim'); $('#mq-free').onclick=()=>renderManSetup('free');
+}
+
 function waitDoc(){ return new Promise((res,rej)=>{ let t=0; const iv=setInterval(()=>{ if(MAN.doc){clearInterval(iv);res()} else if(++t>120){clearInterval(iv);rej()} },250); }); }
 function gotoExercise(num){ const R=MAN.run; if(!R||!R.part) return; const q=R.part.q[num]; if(q) scrollToPageY(q.page,q.y); }
 function scrollToPageY(n,y){ if(!MAN.pages.length) return; const p=MAN.pages[n-1]; if(!p) return; const sc=p.scale||1; const top=p.el.getBoundingClientRect().top+window.scrollY+y*sc-150; window.scrollTo({top:Math.max(0,top),behavior:'smooth'}); }
@@ -1379,6 +1465,7 @@ document.addEventListener('keydown',e=>{
   const R=MAN.run; if(!R||!$('#man-side')||['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)||e.metaKey||e.ctrlKey||e.altKey) return;
   const k=e.key.toUpperCase(), L=LETTERS.slice(0,R.opt);
   if(e.key==='Enter'){ const nb=$('#mq-next'); if(nb&&!nb.disabled){ nb.click(); e.preventDefault(); } return; }
+  if(R.sim){ if(k.length===1&&LETTERS.slice(0,R.opt).includes(k)){ const b=document.querySelector(`[data-a="${k}"]`); if(b){ b.click(); e.preventDefault(); } } return; }
   if(k.length===1&&L.includes(k)){ const sel=(!R.auto&&R.ans!==null)?`[data-k="${k}"]`:`[data-a="${k}"]`; const b=document.querySelector(sel); if(b){ b.click(); e.preventDefault(); } }
 });
 
@@ -1936,7 +2023,7 @@ function renderSheet(){
 
 function footer(){ return `<footer class="foot">
   <p>Formato e soglie dal bando EPSO/AD/427/26: verbale 20 domande in 35 minuti (soglia 10/20); numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Numerico e astratto sono generati al momento con dati fittizi. Il punteggio qui non predice il risultato reale.</p>
-  <p class="mono">Versione 2026-11-06b · Manuale con correzione automatica</p>
+  <p class="mono">Versione 2026-11-06c · Manuale con simulazione d'esame</p>
   <p>Verbale: 42 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO.</p>
 </footer>`; }
 
