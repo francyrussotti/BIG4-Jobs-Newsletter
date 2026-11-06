@@ -87,7 +87,7 @@ function finishSession(){
     const att=P.items.map((it,i)=>{
       const a=P.ans[i], ok=a===it.key;
       const r={sec:it.sec,id:it.id,ok,ans:a===undefined?null:a,key:it.key,ms:Math.round(P.ms[i]||0),ch:P.changes[i]||0,fl:!!P.flag[i]};
-      r.snap=it.sec==='verbal'?{q:it.question,o:it.options.map(o=>o.text),k:it.options.map(o=>o.kind)}:it.sec==='numerical'?{q:it.question,stim:it.stim,o:it.options.map(o=>o.label),ex:it.explain}:{s:it.series,o:it.options.map(o=>o.frame),ex:it.explain};
+      r.snap=it.sec==='verbal'?{q:it.question,o:it.options.map(o=>o.text),k:it.options.map(o=>o.kind),w:it.options.map(o=>o.why),qt:it.q}:it.sec==='numerical'?{q:it.question,stim:it.stim,o:it.options.map(o=>o.label),ex:it.explain}:{s:it.series,o:it.options.map(o=>o.frame),ex:it.explain};
       if(it.sec==='verbal'){ r.q=it.q; r.trap=ok||a===undefined?null:verbalTrap(it,a); r.kind=a===undefined?null:it.options[a].kind;
         DB.seen[it.id]=(DB.seen[it.id]||0)+1; if(ok) delete DB.vwrong[it.id]; else DB.vwrong[it.id]=1; }
       if(it.sec==='numerical'){ r.tpl=it.tpl; r.slip=ok||a===undefined?null:(it.options[a].why||''); }
@@ -160,8 +160,8 @@ function bindPlan(){
 }
 
 // ---------- rendering ----------
-function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="method">Metodo</button><button class="ghost" data-nav="manual">Manuale</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button></nav></div></header>`; }
-function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; if(MAN&&MAN.run&&b.dataset.nav!=='manual'){ MAN.run=null; } ({home:renderHome,stats:renderStats,sheet:renderSheetSetup,method:renderMethod,manual:renderManual})[b.dataset.nav](); }); }
+function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="method">Metodo</button><button class="ghost" data-nav="manual">Manuale</button><button class="ghost" data-nav="errors">Errori</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button></nav></div></header>`; }
+function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; if(MAN&&MAN.run&&b.dataset.nav!=='manual'){ MAN.run=null; } ({home:renderHome,stats:renderStats,sheet:renderSheetSetup,method:renderMethod,manual:renderManual,errors:renderErrors})[b.dataset.nav](); }); }
 let leaveArmed=false;
 function confirmLeave(){ if(leaveArmed){leaveArmed=false;return true} leaveArmed=true; toast('Prova in corso: premi di nuovo per uscire senza salvare.'); setTimeout(()=>leaveArmed=false,4000); return false; }
 function toast(t){ let el=$('#toast'); if(!el){el=document.createElement('div');el.id='toast';document.body.appendChild(el)} el.textContent=t; el.className='show'; clearTimeout(el._t); el._t=setTimeout(()=>el.className='',3500); }
@@ -322,6 +322,7 @@ function renderResults(){
     ${v.length?`<section class="verdicts big">${v.map(x=>`<div class="vd ${x.pass?'ok':'bad'}"><span>${x.label}</span><b class="mono">${x.score}</b><span class="pill ${x.pass?'ok':'bad'}">${x.pass?'Superata':'Non superata'}</span><span class="muted small">${x.rule}</span></div>`).join('')}</section>`:''}
     ${rec.parts.map((p,pi)=>partResult(p,S.parts[pi],pi)).join('')}
     ${weakPanel(false)}
+    <div class="row"><button class="primary" data-nav="errors">Rivedi la spiegazione di tutti i tuoi errori</button></div>
     <section class="panel stack"><h2>Esporta questa sessione</h2>${exportBlock(sessionCSV([rec]),'sessione')}</section>
     <div class="row"><button class="primary" data-nav="home">Torna all'inizio</button><button data-nav="stats">Statistiche</button></div>
     ${footer()}
@@ -389,6 +390,7 @@ function renderStats(){
     ${dailyTable(all)}
     ${allTestsTable(ss,srcOf)}
     ${manualWrongPanel()}
+    <div class="row"><button class="primary" data-nav="errors">Spiegazione di tutti gli errori</button></div>
     <section class="panel stack"><h2>Simulazioni complete</h2>${full.length?`<div class="tblwrap"><table class="times"><thead><tr><th>Data</th><th>Verbale</th><th>Num.</th><th>Astr.</th><th>Num + astr.</th><th>Esito</th></tr></thead><tbody>${full.map(s=>{const g=k=>s.parts.find(p=>p.sec===k)||{score:0};const v=verdict(s);return `<tr><td>${fmtD(s.date)}</td><td class="mono">${g('verbal').score}/20</td><td class="mono">${g('numerical').score}/10</td><td class="mono">${g('abstract').score}/10</td><td class="mono">${g('numerical').score+g('abstract').score}/20</td><td>${v.every(x=>x.pass)?'<span class="pill ok">Superata</span>':'<span class="pill bad">Non superata</span>'}</td></tr>`}).join('')}</tbody></table></div>`:'<p class="muted">Nessuna simulazione completa salvata.</p>'}</section>
     <section class="grid2">
       <div class="panel stack"><h2>Cause degli errori (indicate da te)</h2>${Object.keys(causes).length?`<ul class="bars">${Object.entries(causes).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<li><span>${esc(CAUSES[k])}</span><b class="mono">${n}</b></li>`).join('')}</ul>`:'<p class="muted">Nei risultati, per ogni errore, indica la causa: qui vedrai quale prevale.</p>'}</div>
@@ -513,7 +515,7 @@ function renderSheet(){
 
 function footer(){ return `<footer class="foot">
   <p>Formato e soglie dal bando EPSO/AD/427/26: verbale 20 domande in 35 minuti (soglia 10/20); numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Numerico e astratto sono generati al momento con dati fittizi. Il punteggio qui non predice il risultato reale.</p>
-  <p class="mono">Versione 2026-11-06d · Statistiche di tutte le prove</p>
+  <p class="mono">Versione 2026-11-06e · Pagina Errori con spiegazioni</p>
   <p>Verbale: 42 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO.</p>
 </footer>`; }
 

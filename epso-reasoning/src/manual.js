@@ -29,7 +29,7 @@ function renderManualPick(msg){
 // ---------- layout ----------
 function renderManualWork(){
   app().innerHTML=`<div class="bar"><div class="in"><div class="row"><span class="secname">Manuale</span><span class="small muted">${esc(MAN.name)}</span></div>
-    <div class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" id="man-change">Cambia PDF</button></div></div></div>
+    <div class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="errors">Errori</button><button class="ghost" id="man-change">Cambia PDF</button></div></div></div>
   <div class="mantools"><div class="in row wrap-gap">
     <span class="mono" id="mv-pg">Pagina – / –</span>
     <label class="inl">Vai a pagina<input id="mv-goto" type="number" min="1" value="${MAN.page}"></label><button class="small" id="mv-go">Vai</button>
@@ -167,7 +167,7 @@ function simEnd(auto){
   const R=MAN.run; if(!R||!R.sim||R.done) return; simAccount(); R.done=true; clearInterval(TIMER);
   const rows=R.list.map(k=>({num:k,ans:R.ans[k]||'',key:R.part.keys[k],ms:R.ms[k]||0,why:R.part.why[k]||''})); rows.forEach(r=>r.ok=r.ans===r.key);
   const score=rows.filter(r=>r.ok).length, used=Math.round((Math.min(Date.now(),R.deadline)-R.start)/1000);
-  const att=rows.map(r=>({sec:'sheet',id:'m'+r.num,ok:r.ok,ans:r.ans?LETTERS.indexOf(r.ans):null,key:LETTERS.indexOf(r.key),ms:r.ms,ch:0,fl:!!R.flag[r.num]}));
+  const att=rows.map(r=>({sec:'sheet',id:'m'+r.num,ok:r.ok,ans:r.ans?LETTERS.indexOf(r.ans):null,key:LETTERS.indexOf(r.key),ms:r.ms,ch:0,fl:!!R.flag[r.num],man:{file:MAN.name,part:R.label,num:r.num,why:r.ok?'':(r.why||'').slice(0,1500)}}));
   DB.sessions.unshift({id:Date.now(),date:R.start,kind:'sheet',label:'Manuale · simulazione · '+SEC[R.sec].it+' · '+R.label,parts:[{sec:R.sec,n:att.length,score,secs:used,limit:R.secs,auto:!!auto,att}]});
   DB.man=DB.man||{}; const key=MAN.name+'|'+R.label; DB.man[key]=Array.from(new Set((DB.man[key]||[]).concat(R.list)));
   manMarkWrong(key,rows); saveDB();
@@ -180,8 +180,10 @@ function simEnd(auto){
     ${rows.map((r,j)=>`<tr><td class="mono">${j+1}</td><td class="mono">${r.num}</td><td class="mono">${r.ans||'–'}</td><td class="mono">${r.key}</td><td class="mono ${r.ms/1000>R.per?'badc':''}">${fmtT(r.ms/1000)}</td><td>${r.ok?'<span class="okc">✓</span>':'<span class="badc">✗</span>'}</td></tr>`).join('')}</tbody></table></div>
     <h3>Rivedi gli errori</h3>
     ${rows.map((r,i)=>r.ok?'':`<details class="rev1"><summary>Esercizio ${r.num}: tua ${r.ans||'–'}, corretta ${r.key}</summary><div class="row"><button class="ghost small" data-goq="${r.num}">Vai all'esercizio e scopri la soluzione</button></div>${r.why?`<p class="small">${esc(r.why)}</p>`:''}<div class="row causes"><span class="small muted">Causa:</span>${Object.entries(CAUSES).map(([c,l])=>`<button class="small" data-mcause="${i}:${c}">${l}</button>`).join('')}</div></details>`).join('')||'<p class="muted">Nessun errore.</p>'}
+    <div class="row"><button class="ghost" data-nav="errors">Tutti i tuoi errori</button></div>
     <div class="row"><button class="primary" id="mq-new">Nuova simulazione</button><button class="ghost" id="mq-free">Esercizio per esercizio</button></div>`;
   document.querySelectorAll('[data-goq]').forEach(b=>b.onclick=()=>{ const n=+b.dataset.goq; const q=part.q[n]; if(q) scrollToPageY(q.page,q.y); MAN.run={part}; revealSolution(n); MAN.run=null; });
+  bindNav();
   const rec=DB.sessions[0];
   document.querySelectorAll('[data-mcause]').forEach(b=>b.onclick=()=>{ const [i,c]=b.dataset.mcause.split(':'); const x=rec.parts[0].att[+i]; x.cause=x.cause===c?null:c; saveDB(); b.parentNode.querySelectorAll('button').forEach(z=>z.classList.toggle('csel',z===b&&x.cause===c)); });
   $('#mq-new').onclick=()=>renderManSetup('sim'); $('#mq-free').onclick=()=>renderManSetup('free');
@@ -234,7 +236,7 @@ function renderManSide(ended){
 }
 function manEnd(){
   const R=MAN.run; if(!R) return; clearInterval(TIMER);
-  const att=R.items.map(x=>({sec:'sheet',id:'m'+x.num,ok:x.ok,ans:x.ans?LETTERS.indexOf(x.ans):null,key:LETTERS.indexOf(x.key),ms:x.ms,ch:0,fl:false}));
+  const att=R.items.map(x=>({sec:'sheet',id:'m'+x.num,ok:x.ok,ans:x.ans?LETTERS.indexOf(x.ans):null,key:LETTERS.indexOf(x.key),ms:x.ms,ch:0,fl:false,man:R.label?{file:MAN.name,part:R.label,num:x.num,why:x.ok?'':(x.why||'').slice(0,1500)}:null}));
   const score=att.filter(a=>a.ok).length, slow=att.filter(a=>a.ms/1000>R.per).length;
   DB.sessions.unshift({id:Date.now(),date:R.start,kind:'sheet',label:'Manuale · '+SEC[R.sec].it+(R.label?' · '+R.label:''),parts:[{sec:R.sec,n:att.length,score,secs:Math.round((Date.now()-R.start)/1000),limit:null,att}]}); saveDB();
   const wrong=R.items.filter(x=>!x.ok);

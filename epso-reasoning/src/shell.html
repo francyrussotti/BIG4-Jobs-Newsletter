@@ -208,6 +208,13 @@ table.sheet td,table.sheet th{padding:5px 8px;border-bottom:1px solid var(--line
 .inl{flex-direction:row;align-items:center;gap:6px}.inl input{width:80px;min-height:34px;padding:4px 8px}
 .primaryfile{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600;justify-content:center;align-self:start}
 .spark{width:140px;height:34px;flex:none}.spark .spl{fill:none;stroke:var(--accent);stroke-width:2}.spark .sp50{stroke:var(--line);stroke-dasharray:3 3}.spark .spd{fill:var(--accent)}
+.tabs.four{grid-template-columns:repeat(4,1fr)}
+@media (max-width:560px){.tabs.four{grid-template-columns:1fr 1fr}}
+.ecard.edone{opacity:.6}
+.eopt{display:flex;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:5px}
+.eopt p{margin:4px 0 0}
+.eopt.right{border-color:var(--ok);background:var(--ok-soft)}
+.eopt.mine:not(.right){border-color:var(--bad);background:var(--bad-soft)}
 .checks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .chk{flex-direction:row;align-items:flex-start;gap:10px;color:var(--fg);font-size:.95rem}
 .chk input{margin-top:4px;width:18px;height:18px;flex:none}

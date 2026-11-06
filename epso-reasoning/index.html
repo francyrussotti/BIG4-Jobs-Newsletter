@@ -208,6 +208,13 @@ table.sheet td,table.sheet th{padding:5px 8px;border-bottom:1px solid var(--line
 .inl{flex-direction:row;align-items:center;gap:6px}.inl input{width:80px;min-height:34px;padding:4px 8px}
 .primaryfile{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600;justify-content:center;align-self:start}
 .spark{width:140px;height:34px;flex:none}.spark .spl{fill:none;stroke:var(--accent);stroke-width:2}.spark .sp50{stroke:var(--line);stroke-dasharray:3 3}.spark .spd{fill:var(--accent)}
+.tabs.four{grid-template-columns:repeat(4,1fr)}
+@media (max-width:560px){.tabs.four{grid-template-columns:1fr 1fr}}
+.ecard.edone{opacity:.6}
+.eopt{display:flex;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:5px}
+.eopt p{margin:4px 0 0}
+.eopt.right{border-color:var(--ok);background:var(--ok-soft)}
+.eopt.mine:not(.right){border-color:var(--bad);background:var(--bad-soft)}
 .checks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .chk{flex-direction:row;align-items:flex-start;gap:10px;color:var(--fg);font-size:.95rem}
 .chk input{margin-top:4px;width:18px;height:18px;flex:none}
@@ -1259,7 +1266,7 @@ function renderManualPick(msg){
 // ---------- layout ----------
 function renderManualWork(){
   app().innerHTML=`<div class="bar"><div class="in"><div class="row"><span class="secname">Manuale</span><span class="small muted">${esc(MAN.name)}</span></div>
-    <div class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" id="man-change">Cambia PDF</button></div></div></div>
+    <div class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="errors">Errori</button><button class="ghost" id="man-change">Cambia PDF</button></div></div></div>
   <div class="mantools"><div class="in row wrap-gap">
     <span class="mono" id="mv-pg">Pagina – / –</span>
     <label class="inl">Vai a pagina<input id="mv-goto" type="number" min="1" value="${MAN.page}"></label><button class="small" id="mv-go">Vai</button>
@@ -1397,7 +1404,7 @@ function simEnd(auto){
   const R=MAN.run; if(!R||!R.sim||R.done) return; simAccount(); R.done=true; clearInterval(TIMER);
   const rows=R.list.map(k=>({num:k,ans:R.ans[k]||'',key:R.part.keys[k],ms:R.ms[k]||0,why:R.part.why[k]||''})); rows.forEach(r=>r.ok=r.ans===r.key);
   const score=rows.filter(r=>r.ok).length, used=Math.round((Math.min(Date.now(),R.deadline)-R.start)/1000);
-  const att=rows.map(r=>({sec:'sheet',id:'m'+r.num,ok:r.ok,ans:r.ans?LETTERS.indexOf(r.ans):null,key:LETTERS.indexOf(r.key),ms:r.ms,ch:0,fl:!!R.flag[r.num]}));
+  const att=rows.map(r=>({sec:'sheet',id:'m'+r.num,ok:r.ok,ans:r.ans?LETTERS.indexOf(r.ans):null,key:LETTERS.indexOf(r.key),ms:r.ms,ch:0,fl:!!R.flag[r.num],man:{file:MAN.name,part:R.label,num:r.num,why:r.ok?'':(r.why||'').slice(0,1500)}}));
   DB.sessions.unshift({id:Date.now(),date:R.start,kind:'sheet',label:'Manuale · simulazione · '+SEC[R.sec].it+' · '+R.label,parts:[{sec:R.sec,n:att.length,score,secs:used,limit:R.secs,auto:!!auto,att}]});
   DB.man=DB.man||{}; const key=MAN.name+'|'+R.label; DB.man[key]=Array.from(new Set((DB.man[key]||[]).concat(R.list)));
   manMarkWrong(key,rows); saveDB();
@@ -1410,8 +1417,10 @@ function simEnd(auto){
     ${rows.map((r,j)=>`<tr><td class="mono">${j+1}</td><td class="mono">${r.num}</td><td class="mono">${r.ans||'–'}</td><td class="mono">${r.key}</td><td class="mono ${r.ms/1000>R.per?'badc':''}">${fmtT(r.ms/1000)}</td><td>${r.ok?'<span class="okc">✓</span>':'<span class="badc">✗</span>'}</td></tr>`).join('')}</tbody></table></div>
     <h3>Rivedi gli errori</h3>
     ${rows.map((r,i)=>r.ok?'':`<details class="rev1"><summary>Esercizio ${r.num}: tua ${r.ans||'–'}, corretta ${r.key}</summary><div class="row"><button class="ghost small" data-goq="${r.num}">Vai all'esercizio e scopri la soluzione</button></div>${r.why?`<p class="small">${esc(r.why)}</p>`:''}<div class="row causes"><span class="small muted">Causa:</span>${Object.entries(CAUSES).map(([c,l])=>`<button class="small" data-mcause="${i}:${c}">${l}</button>`).join('')}</div></details>`).join('')||'<p class="muted">Nessun errore.</p>'}
+    <div class="row"><button class="ghost" data-nav="errors">Tutti i tuoi errori</button></div>
     <div class="row"><button class="primary" id="mq-new">Nuova simulazione</button><button class="ghost" id="mq-free">Esercizio per esercizio</button></div>`;
   document.querySelectorAll('[data-goq]').forEach(b=>b.onclick=()=>{ const n=+b.dataset.goq; const q=part.q[n]; if(q) scrollToPageY(q.page,q.y); MAN.run={part}; revealSolution(n); MAN.run=null; });
+  bindNav();
   const rec=DB.sessions[0];
   document.querySelectorAll('[data-mcause]').forEach(b=>b.onclick=()=>{ const [i,c]=b.dataset.mcause.split(':'); const x=rec.parts[0].att[+i]; x.cause=x.cause===c?null:c; saveDB(); b.parentNode.querySelectorAll('button').forEach(z=>z.classList.toggle('csel',z===b&&x.cause===c)); });
   $('#mq-new').onclick=()=>renderManSetup('sim'); $('#mq-free').onclick=()=>renderManSetup('free');
@@ -1464,7 +1473,7 @@ function renderManSide(ended){
 }
 function manEnd(){
   const R=MAN.run; if(!R) return; clearInterval(TIMER);
-  const att=R.items.map(x=>({sec:'sheet',id:'m'+x.num,ok:x.ok,ans:x.ans?LETTERS.indexOf(x.ans):null,key:LETTERS.indexOf(x.key),ms:x.ms,ch:0,fl:false}));
+  const att=R.items.map(x=>({sec:'sheet',id:'m'+x.num,ok:x.ok,ans:x.ans?LETTERS.indexOf(x.ans):null,key:LETTERS.indexOf(x.key),ms:x.ms,ch:0,fl:false,man:R.label?{file:MAN.name,part:R.label,num:x.num,why:x.ok?'':(x.why||'').slice(0,1500)}:null}));
   const score=att.filter(a=>a.ok).length, slow=att.filter(a=>a.ms/1000>R.per).length;
   DB.sessions.unshift({id:Date.now(),date:R.start,kind:'sheet',label:'Manuale · '+SEC[R.sec].it+(R.label?' · '+R.label:''),parts:[{sec:R.sec,n:att.length,score,secs:Math.round((Date.now()-R.start)/1000),limit:null,att}]}); saveDB();
   const wrong=R.items.filter(x=>!x.ok);
@@ -1570,6 +1579,75 @@ async function blocksForPage(n,vp){
   return solutionBlocks(lines,v,openTop);
 }
 
+// ---------- "Errori": every wrong answer with its explanation ----------
+const ERRV={filter:'all',showDone:false};
+function passageOf(id){ const o=VERBAL_ORIGINAL.find(x=>x.id===id); if(o) return {title:o.title||'',text:o.text}; const k=VERBAL_KVIZ.find(x=>x.id===id); return k?{title:'',text:k.text,src:k.topic}:null; }
+function collectErrors(){
+  const out=[];
+  DB.sessions.forEach(s=>s.parts.forEach((p,pi)=>(p.att||[]).forEach((a,ai)=>{
+    if(a.ok) return; const test=a.sec==='sheet'?p.sec:a.sec; if(!SEC[test]) return;
+    out.push({s,p,a,test,uid:s.id+':'+pi+':'+ai,src:a.sec==='sheet'?(a.man?'manuale':'foglio'):'programma'});
+  })));
+  return out;
+}
+function renderErrors(){
+  const all=collectErrors(); DB.understood=DB.understood||{};
+  const list=all.filter(e=>(ERRV.filter==='all'||e.test===ERRV.filter)&&(ERRV.showDone||!DB.understood[e.uid]));
+  const count=t=>all.filter(e=>(t==='all'||e.test===t)&&!DB.understood[e.uid]).length;
+  app().innerHTML=header('Errori','Ogni risposta sbagliata con la spiegazione e il modo per non ripeterla.')+`
+  <main class="wrap stack narrow">
+    <div class="tabs four">${[['all','Tutti'],['verbal','Verbale'],['numerical','Numerico'],['abstract','Astratto']].map(([k,l])=>`<button class="${ERRV.filter===k?'on':''}" data-ef="${k}">${l} (${count(k)})</button>`).join('')}</div>
+    <label class="chk small"><input type="checkbox" id="ev-done" ${ERRV.showDone?'checked':''}><span>Mostra anche gli errori già segnati come capiti</span></label>
+    ${list.length?list.slice(0,80).map(errorCard).join(''):`<div class="panel"><p class="muted">${all.length?'Nessun errore da rivedere in questa categoria.':'Ancora nessun errore salvato: fai una prova e torna qui.'}</p></div>`}
+    ${list.length>80?`<p class="small muted">Mostro i primi 80 di ${list.length}.</p>`:''}
+    ${footer()}
+  </main>`;
+  bindNav();
+  document.querySelectorAll('[data-ef]').forEach(b=>b.onclick=()=>{ ERRV.filter=b.dataset.ef; renderErrors(); });
+  $('#ev-done').onchange=e=>{ ERRV.showDone=e.target.checked; renderErrors(); };
+  document.querySelectorAll('[data-und]').forEach(b=>b.onclick=()=>{ const u=b.dataset.und; DB.understood[u]=!DB.understood[u]; if(!DB.understood[u]) delete DB.understood[u]; saveDB(); renderErrors(); });
+  document.querySelectorAll('[data-ecause]').forEach(b=>b.onclick=()=>{ const [u,c]=b.dataset.ecause.split('|'); const e=all.find(x=>x.uid===u); if(!e) return; e.a.cause=e.a.cause===c?null:c; saveDB(); b.parentNode.querySelectorAll('button').forEach(z=>z.classList.toggle('csel',z===b&&e.a.cause===c)); });
+  document.querySelectorAll('[data-eman]').forEach(b=>b.onclick=()=>{ MAN.pendingRetry=b.dataset.eman; renderManual(); });
+}
+function errorCard(e){
+  const a=e.a, L=i=>i===null||i===undefined||i<0?'–':LETTERS[i];
+  const when=fmtD(e.s.date), kind=e.src==='programma'?({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso',focus:'Allenamento mirato'}[e.s.kind]||''):(e.s.label||'Foglio risposte');
+  let body='', tip='';
+  if(e.test==='verbal'&&a.snap){
+    const pz=passageOf(a.id), sn=a.snap;
+    body=`${pz?`<details><summary>Brano${pz.title?': '+esc(pz.title):''}</summary><p class="passage small2">${esc(pz.text)}</p></details>`:''}
+      <p class="qtext">${esc(sn.q)}</p>
+      ${sn.o.map((t,i)=>`<div class="eopt ${i===a.key?'right':''} ${i===a.ans?'mine':''}"><span class="mono">${LETTERS[i]}</span><div><span class="kind k-${sn.k[i]}">${{true:'Vera',false:'Falsa',cannot:'Non deducibile'}[sn.k[i]]}</span>${i===a.key?' <b>risposta giusta</b>':''}${i===a.ans?' <b class="badc">la tua</b>':''}<p>${esc(t)}</p>${sn.w&&sn.w[i]?`<p class="small muted">${esc(sn.w[i])}</p>`:''}</div></div>`).join('')}`;
+    tip=TRAP_TIP[a.trap]||'';
+  } else if(e.test==='numerical'&&a.snap){
+    const sn=a.snap; body=`<details><summary>Dati della domanda</summary>${sn.stim}</details><p class="qtext">${esc(sn.q)}</p>
+      <p class="mono small">${sn.o.map((o,i)=>`<span class="${i===a.key?'okc':(i===a.ans?'badc':'')}">${LETTERS[i]}. ${esc(o)}</span>`).join(' · ')}</p>
+      <p><b>Soluzione:</b> ${esc(sn.ex)}</p>${a.slip?`<p class="small">La tua risposta corrisponde a: <b>${esc(a.slip)}</b>.</p>`:''}`;
+    tip=NUM_TIP[a.tpl]||'';
+  } else if(e.test==='abstract'&&a.snap){
+    const sn=a.snap; body=`<div class="series sm">${sn.s.map(f=>frameSVG(f)).join('')}<div class="qmark">?</div></div>
+      <div class="series sm">${sn.o.map((f,i)=>`<div class="optmini ${i===a.key?'k':''} ${i===a.ans?'w':''}"><span class="mono">${LETTERS[i]}</span>${frameSVG(f)}</div>`).join('')}</div>
+      <p><b>Regola:</b> ${esc(sn.ex)}</p>${a.broken&&a.broken.length?`<p class="small">La tua opzione viola: <b>${a.broken.map(r=>AB_RULES[r]?AB_RULES[r].label.toLowerCase():r).join(', ')}</b>.</p>`:''}`;
+    tip=(a.broken||[]).map(r=>ABS_TIP[r]).filter(Boolean)[0]||(a.rules?ABS_TIP[a.rules[0]]:'')||'';
+  } else if(a.man){
+    body=`<p>Manuale · <b>${esc(a.man.part)}</b> · esercizio <b>${a.man.num}</b></p>${a.man.why?`<p><b>Spiegazione del manuale:</b> ${esc(a.man.why)}</p>`:'<p class="small muted">Spiegazione non salvata per questa sessione.</p>'}
+      <div class="row"><button class="small" data-eman="${esc(a.man.file+'|'+a.man.part)}">Rifai gli errori di questa sezione</button></div>`;
+    tip=ABS_TIP && e.test==='abstract'?'Rileggi la spiegazione, poi rifai l\'esercizio senza guardarla: se trovi la regola in meno di un minuto, l\'hai capita.':'';
+  } else {
+    body=`<p class="small muted">${e.src==='foglio'?'Foglio risposte: la domanda è sul tuo libro.':'Domanda di una sessione precedente all\'aggiornamento: il testo non è stato salvato.'}</p>`;
+    tip=a.trap?TRAP_TIP[a.trap]||'':a.tpl?NUM_TIP[a.tpl]||'':'';
+  }
+  const done=DB.understood&&DB.understood[e.uid];
+  return `<article class="panel stack ecard ${done?'edone':''}">
+    <div class="row spread"><span class="eyebrow">${SEC[e.test].it} · ${esc(kind)} · ${when}</span><span class="mono small">tua ${L(a.ans)} · giusta ${L(a.key)}${a.ms?` · ${fmtT(a.ms/1000)}`:''}</span></div>
+    ${a.trap&&TRAPS[a.trap]?`<p class="small"><b>Trappola:</b> ${esc(TRAPS[a.trap])}</p>`:''}
+    ${body}
+    ${tip?`<p class="tip"><b>Come evitarlo:</b> ${esc(tip)}</p>`:''}
+    <div class="row causes"><span class="small muted">Causa:</span>${Object.entries(CAUSES).map(([c,l])=>`<button class="small ${a.cause===c?'csel':''}" data-ecause="${e.uid}|${c}">${l}</button>`).join('')}</div>
+    <div class="row"><button class="small ${done?'':'primary'}" data-und="${e.uid}">${done?'Rimetti tra gli errori da rivedere':'Capito, toglilo dalla lista'}</button></div>
+  </article>`;
+}
+
 // ---------- configuration from the notice EPSO/AD/427/26 ----------
 const SEC={
   verbal:{name:'Verbal reasoning',it:'Ragionamento verbale',n:20,sec:35*60,letters:4},
@@ -1659,7 +1737,7 @@ function finishSession(){
     const att=P.items.map((it,i)=>{
       const a=P.ans[i], ok=a===it.key;
       const r={sec:it.sec,id:it.id,ok,ans:a===undefined?null:a,key:it.key,ms:Math.round(P.ms[i]||0),ch:P.changes[i]||0,fl:!!P.flag[i]};
-      r.snap=it.sec==='verbal'?{q:it.question,o:it.options.map(o=>o.text),k:it.options.map(o=>o.kind)}:it.sec==='numerical'?{q:it.question,stim:it.stim,o:it.options.map(o=>o.label),ex:it.explain}:{s:it.series,o:it.options.map(o=>o.frame),ex:it.explain};
+      r.snap=it.sec==='verbal'?{q:it.question,o:it.options.map(o=>o.text),k:it.options.map(o=>o.kind),w:it.options.map(o=>o.why),qt:it.q}:it.sec==='numerical'?{q:it.question,stim:it.stim,o:it.options.map(o=>o.label),ex:it.explain}:{s:it.series,o:it.options.map(o=>o.frame),ex:it.explain};
       if(it.sec==='verbal'){ r.q=it.q; r.trap=ok||a===undefined?null:verbalTrap(it,a); r.kind=a===undefined?null:it.options[a].kind;
         DB.seen[it.id]=(DB.seen[it.id]||0)+1; if(ok) delete DB.vwrong[it.id]; else DB.vwrong[it.id]=1; }
       if(it.sec==='numerical'){ r.tpl=it.tpl; r.slip=ok||a===undefined?null:(it.options[a].why||''); }
@@ -1732,8 +1810,8 @@ function bindPlan(){
 }
 
 // ---------- rendering ----------
-function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="method">Metodo</button><button class="ghost" data-nav="manual">Manuale</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button></nav></div></header>`; }
-function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; if(MAN&&MAN.run&&b.dataset.nav!=='manual'){ MAN.run=null; } ({home:renderHome,stats:renderStats,sheet:renderSheetSetup,method:renderMethod,manual:renderManual})[b.dataset.nav](); }); }
+function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="method">Metodo</button><button class="ghost" data-nav="manual">Manuale</button><button class="ghost" data-nav="errors">Errori</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button></nav></div></header>`; }
+function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; if(MAN&&MAN.run&&b.dataset.nav!=='manual'){ MAN.run=null; } ({home:renderHome,stats:renderStats,sheet:renderSheetSetup,method:renderMethod,manual:renderManual,errors:renderErrors})[b.dataset.nav](); }); }
 let leaveArmed=false;
 function confirmLeave(){ if(leaveArmed){leaveArmed=false;return true} leaveArmed=true; toast('Prova in corso: premi di nuovo per uscire senza salvare.'); setTimeout(()=>leaveArmed=false,4000); return false; }
 function toast(t){ let el=$('#toast'); if(!el){el=document.createElement('div');el.id='toast';document.body.appendChild(el)} el.textContent=t; el.className='show'; clearTimeout(el._t); el._t=setTimeout(()=>el.className='',3500); }
@@ -1894,6 +1972,7 @@ function renderResults(){
     ${v.length?`<section class="verdicts big">${v.map(x=>`<div class="vd ${x.pass?'ok':'bad'}"><span>${x.label}</span><b class="mono">${x.score}</b><span class="pill ${x.pass?'ok':'bad'}">${x.pass?'Superata':'Non superata'}</span><span class="muted small">${x.rule}</span></div>`).join('')}</section>`:''}
     ${rec.parts.map((p,pi)=>partResult(p,S.parts[pi],pi)).join('')}
     ${weakPanel(false)}
+    <div class="row"><button class="primary" data-nav="errors">Rivedi la spiegazione di tutti i tuoi errori</button></div>
     <section class="panel stack"><h2>Esporta questa sessione</h2>${exportBlock(sessionCSV([rec]),'sessione')}</section>
     <div class="row"><button class="primary" data-nav="home">Torna all'inizio</button><button data-nav="stats">Statistiche</button></div>
     ${footer()}
@@ -1961,6 +2040,7 @@ function renderStats(){
     ${dailyTable(all)}
     ${allTestsTable(ss,srcOf)}
     ${manualWrongPanel()}
+    <div class="row"><button class="primary" data-nav="errors">Spiegazione di tutti gli errori</button></div>
     <section class="panel stack"><h2>Simulazioni complete</h2>${full.length?`<div class="tblwrap"><table class="times"><thead><tr><th>Data</th><th>Verbale</th><th>Num.</th><th>Astr.</th><th>Num + astr.</th><th>Esito</th></tr></thead><tbody>${full.map(s=>{const g=k=>s.parts.find(p=>p.sec===k)||{score:0};const v=verdict(s);return `<tr><td>${fmtD(s.date)}</td><td class="mono">${g('verbal').score}/20</td><td class="mono">${g('numerical').score}/10</td><td class="mono">${g('abstract').score}/10</td><td class="mono">${g('numerical').score+g('abstract').score}/20</td><td>${v.every(x=>x.pass)?'<span class="pill ok">Superata</span>':'<span class="pill bad">Non superata</span>'}</td></tr>`}).join('')}</tbody></table></div>`:'<p class="muted">Nessuna simulazione completa salvata.</p>'}</section>
     <section class="grid2">
       <div class="panel stack"><h2>Cause degli errori (indicate da te)</h2>${Object.keys(causes).length?`<ul class="bars">${Object.entries(causes).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<li><span>${esc(CAUSES[k])}</span><b class="mono">${n}</b></li>`).join('')}</ul>`:'<p class="muted">Nei risultati, per ogni errore, indica la causa: qui vedrai quale prevale.</p>'}</div>
@@ -2085,7 +2165,7 @@ function renderSheet(){
 
 function footer(){ return `<footer class="foot">
   <p>Formato e soglie dal bando EPSO/AD/427/26: verbale 20 domande in 35 minuti (soglia 10/20); numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Numerico e astratto sono generati al momento con dati fittizi. Il punteggio qui non predice il risultato reale.</p>
-  <p class="mono">Versione 2026-11-06d · Statistiche di tutte le prove</p>
+  <p class="mono">Versione 2026-11-06e · Pagina Errori con spiegazioni</p>
   <p>Verbale: 42 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO.</p>
 </footer>`; }
 
