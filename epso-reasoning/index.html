@@ -1087,7 +1087,7 @@ const EY_NUM=[
  ()=>{ const price=R.int(8,40)*10, d1=R.pick([10,20,25,30]), d2=R.pick([10,15,20]); const v=price*(1-d1/100)*(1-d2/100);
    const r=numOptions(v,[[price*(1-(d1+d2)/100),'sconti sommati invece che in sequenza'],[price*(1-d1/100),'solo il primo sconto'],[price*d1*d2/10000,'calcolati solo gli sconti']],x=>'€'+nf(x,2));
    return {stim:'',q:`A laptop costs €${nf(price)}. It is discounted by ${d1}%, and the discounted price is then reduced by a further ${d2}%. What is the final price?`,...r,ex:`€${nf(price)} × ${nf(1-d1/100,2)} × ${nf(1-d2/100,2)} = €${nf(v,2)}. Due sconti in sequenza non si sommano.`,tip:'Sconti successivi: moltiplica i fattori (1 − p).'}; },
- ()=>{ const tot=R.int(12,60)*100, a=R.int(2,5), b=R.int(2,6), c=R.int(1,4); const v=tot*b/(a+b+c);
+ ()=>{ let tot,a,b,c; do{ tot=R.int(12,60)*100; a=R.int(2,5); b=R.int(2,6); c=R.int(1,4); }while(b*3===a+b+c||a===b); const v=tot*b/(a+b+c);
    const r=numOptions(v,[[tot/3,'diviso in parti uguali'],[tot*b/(a+c),'denominatore sbagliato'],[tot*a/(a+b+c),'quota di un altro']],x=>'€'+nf(Math.round(x)));
    return {stim:'',q:`A budget of €${nf(tot)} is shared between three units in the ratio ${a}:${b}:${c}. How much does the second unit receive?`,...r,ex:`Parti totali ${a}+${b}+${c} = ${a+b+c}. €${nf(tot)} × ${b}/${a+b+c} = €${nf(Math.round(v))}.`,tip:'Rapporto a:b:c → somma le parti, poi totale × parte/somma.'}; },
  ()=>{ const s=R.pick([60,75,80,90,100,120]), t1=R.pick([1.5,2,2.5]), s2=R.pick([50,60,80].filter(x=>x!==s)), t2=R.pick([1,1.5,2]); const v=(s*t1+s2*t2)/(t1+t2);
