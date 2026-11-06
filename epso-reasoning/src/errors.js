@@ -11,11 +11,12 @@ function collectErrors(){
 }
 function renderErrors(){
   const all=collectErrors(); DB.understood=DB.understood||{};
-  const list=all.filter(e=>(ERRV.filter==='all'||e.test===ERRV.filter)&&(ERRV.showDone||!DB.understood[e.uid]));
-  const count=t=>all.filter(e=>(t==='all'||e.test===t)&&!DB.understood[e.uid]).length;
+  const match=(e,t)=>t==='all'||(t==='ey'?!!SEC[e.test].ey:e.test===t);
+  const list=all.filter(e=>match(e,ERRV.filter)&&(ERRV.showDone||!DB.understood[e.uid]));
+  const count=t=>all.filter(e=>match(e,t)&&!DB.understood[e.uid]).length;
   app().innerHTML=header('Errori','Ogni risposta sbagliata con la spiegazione e il modo per non ripeterla.')+`
   <main class="wrap stack narrow">
-    <div class="tabs four">${[['all','Tutti'],['verbal','Verbale'],['numerical','Numerico'],['abstract','Astratto']].map(([k,l])=>`<button class="${ERRV.filter===k?'on':''}" data-ef="${k}">${l} (${count(k)})</button>`).join('')}</div>
+    <div class="tabs five">${[['all','Tutti'],['verbal','Verbale'],['numerical','Numerico'],['abstract','Astratto'],['ey','Test EY']].map(([k,l])=>`<button class="${ERRV.filter===k?'on':''}" data-ef="${k}">${l} (${count(k)})</button>`).join('')}</div>
     <label class="chk small"><input type="checkbox" id="ev-done" ${ERRV.showDone?'checked':''}><span>Mostra anche gli errori già segnati come capiti</span></label>
     ${list.length?list.slice(0,80).map(errorCard).join(''):`<div class="panel"><p class="muted">${all.length?'Nessun errore da rivedere in questa categoria.':'Ancora nessun errore salvato: fai una prova e torna qui.'}</p></div>`}
     ${list.length>80?`<p class="small muted">Mostro i primi 80 di ${list.length}.</p>`:''}
@@ -38,12 +39,12 @@ function errorCard(e){
       <p class="qtext">${esc(sn.q)}</p>
       ${sn.o.map((t,i)=>`<div class="eopt ${i===a.key?'right':''} ${i===a.ans?'mine':''}"><span class="mono">${LETTERS[i]}</span><div><span class="kind k-${sn.k[i]}">${{true:'Vera',false:'Falsa',cannot:'Non deducibile'}[sn.k[i]]}</span>${i===a.key?' <b>risposta giusta</b>':''}${i===a.ans?' <b class="badc">la tua</b>':''}<p>${esc(t)}</p>${sn.w&&sn.w[i]?`<p class="small muted">${esc(sn.w[i])}</p>`:''}</div></div>`).join('')}`;
     tip=TRAP_TIP[a.trap]||'';
-  } else if(e.test==='numerical'&&a.snap){
+  } else if(a.snap&&a.snap.stim!==undefined){
     const sn=a.snap; body=`<details><summary>Dati della domanda</summary>${sn.stim}</details><p class="qtext">${esc(sn.q)}</p>
       <p class="mono small">${sn.o.map((o,i)=>`<span class="${i===a.key?'okc':(i===a.ans?'badc':'')}">${LETTERS[i]}. ${esc(o)}</span>`).join(' · ')}</p>
       <p><b>Soluzione:</b> ${esc(sn.ex)}</p>${a.slip?`<p class="small">La tua risposta corrisponde a: <b>${esc(a.slip)}</b>.</p>`:''}`;
-    tip=NUM_TIP[a.tpl]||'';
-  } else if(e.test==='abstract'&&a.snap){
+    tip=NUM_TIP[a.tpl]||a.snap.tip||'';
+  } else if(a.snap&&a.snap.s){
     const sn=a.snap; body=`<div class="series sm">${sn.s.map(f=>frameSVG(f)).join('')}<div class="qmark">?</div></div>
       <div class="series sm">${sn.o.map((f,i)=>`<div class="optmini ${i===a.key?'k':''} ${i===a.ans?'w':''}"><span class="mono">${LETTERS[i]}</span>${frameSVG(f)}</div>`).join('')}</div>
       <p><b>Regola:</b> ${esc(sn.ex)}</p>${a.broken&&a.broken.length?`<p class="small">La tua opzione viola: <b>${a.broken.map(r=>AB_RULES[r]?AB_RULES[r].label.toLowerCase():r).join(', ')}</b>.</p>`:''}`;

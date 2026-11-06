@@ -209,12 +209,20 @@ table.sheet td,table.sheet th{padding:5px 8px;border-bottom:1px solid var(--line
 .primaryfile{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600;justify-content:center;align-self:start}
 .spark{width:140px;height:34px;flex:none}.spark .spl{fill:none;stroke:var(--accent);stroke-width:2}.spark .sp50{stroke:var(--line);stroke-dasharray:3 3}.spark .spd{fill:var(--accent)}
 .tabs.four{grid-template-columns:repeat(4,1fr)}
+.tabs.five{grid-template-columns:repeat(5,1fr)}
+@media (max-width:560px){.tabs.five{grid-template-columns:1fr 1fr}}
 @media (max-width:560px){.tabs.four{grid-template-columns:1fr 1fr}}
 .ecard.edone{opacity:.6}
 .eopt{display:flex;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:5px}
 .eopt p{margin:4px 0 0}
 .eopt.right{border-color:var(--ok);background:var(--ok-soft)}
 .eopt.mine:not(.right){border-color:var(--bad);background:var(--bad-soft)}
+.cards4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+@media (max-width:1000px){.cards4{grid-template-columns:1fr 1fr}}@media (max-width:560px){.cards4{grid-template-columns:1fr}}
+.clues{margin:0;padding-left:1.2rem;display:grid;gap:6px;font-size:1.02rem}
+.scenario{font-family:var(--f-read);font-size:1.05rem;line-height:1.6}
+.seriesnum{font-size:1.6rem;letter-spacing:.04em}
+textarea.eyex{min-height:90px;font-family:var(--f-ui);font-size:.95rem}
 .checks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .chk{flex-direction:row;align-items:flex-start;gap:10px;color:var(--fg);font-size:.95rem}
 .chk input{margin-top:4px;width:18px;height:18px;flex:none}
@@ -1023,6 +1031,140 @@ function buildAbstractFamily(fam){
   return buildAbstractItem(true);
 }
 
+// ---------- EY (Maki) practice: original items. MIND, critical thinking, adaptability, AI proficiency ----------
+const eyId=p=>p+'-'+Math.random().toString(36).slice(2,8);
+function mcq(sec,tpl,stim,question,opts,keyIdx,explain,tip,shuffle=true){
+  let o=opts.map((x,i)=>({label:x,why:i===keyIdx?null:'',k:i===keyIdx}));
+  if(shuffle) o=R.shuffle(o);
+  return {sec,fmt:'numerical',id:eyId(sec+'-'+tpl),tpl,stim,question,options:o.map(x=>({label:x.label,why:x.why})),key:o.findIndex(x=>x.k),explain,tip};
+}
+function numOpts5(v,slips,fmt){ const r=numOptions(v,slips,fmt); return r; }
+
+// ----- MIND: numerical word problems -----
+const EY_NUM=[
+ ()=>{ const a=R.pick([4,5,6,8,10,12]), b=R.pick([3,4,6,8,12,15].filter(x=>x!==a)); const t=a*b/(a+b);
+   const r=numOptions(t,[[(a+b)/2,'media dei due tempi'],[Math.abs(a-b),'differenza dei tempi'],[a*b/Math.max(a,b),'solo il più veloce']],x=>nf(x,1)+' days');
+   return {stim:'',q:`Anna can complete a report in ${a} days working alone. Ben can complete the same report in ${b} days. Working together at the same rates, how long do they need?`,...r,ex:`Insieme fanno 1/${a} + 1/${b} del lavoro al giorno = ${nf(1/a+1/b,3)}. Tempo = 1 ÷ ${nf(1/a+1/b,3)} = ${nf(t,1)} giorni.`,tip:'Lavoro combinato: somma le velocità (1/a + 1/b), non i tempi.'}; },
+ ()=>{ const p=R.int(3,8), d=R.pick([10,12,15,20]), p2=R.int(2,6)*p; const v=d*p2/p;
+   const r=numOptions(v,[[d*p/p2,'proporzione invertita'],[d+p2-p,'somma invece di proporzione'],[v/2,'metà']],x=>nf(x,0)+' days');
+   return {stim:'',q:`A team completes ${p} projects in ${d} days. At the same pace, how many days does it need for ${p2} projects?`,...r,ex:`${d} ÷ ${p} = ${nf(d/p,2)} giorni a progetto; × ${p2} = ${nf(v,0)} giorni.`,tip:'Prima il valore unitario (giorni per progetto), poi moltiplica.'}; },
+ ()=>{ const price=R.int(8,40)*10, d1=R.pick([10,20,25,30]), d2=R.pick([10,15,20]); const v=price*(1-d1/100)*(1-d2/100);
+   const r=numOptions(v,[[price*(1-(d1+d2)/100),'sconti sommati invece che in sequenza'],[price*(1-d1/100),'solo il primo sconto'],[price*d1*d2/10000,'calcolati solo gli sconti']],x=>'€'+nf(x,2));
+   return {stim:'',q:`A laptop costs €${nf(price)}. It is discounted by ${d1}%, and the discounted price is then reduced by a further ${d2}%. What is the final price?`,...r,ex:`€${nf(price)} × ${nf(1-d1/100,2)} × ${nf(1-d2/100,2)} = €${nf(v,2)}. Due sconti in sequenza non si sommano.`,tip:'Sconti successivi: moltiplica i fattori (1 − p).'}; },
+ ()=>{ const tot=R.int(12,60)*100, a=R.int(2,5), b=R.int(2,6), c=R.int(1,4); const v=tot*b/(a+b+c);
+   const r=numOptions(v,[[tot/3,'diviso in parti uguali'],[tot*b/(a+c),'denominatore sbagliato'],[tot*a/(a+b+c),'quota di un altro']],x=>'€'+nf(Math.round(x)));
+   return {stim:'',q:`A budget of €${nf(tot)} is shared between three units in the ratio ${a}:${b}:${c}. How much does the second unit receive?`,...r,ex:`Parti totali ${a}+${b}+${c} = ${a+b+c}. €${nf(tot)} × ${b}/${a+b+c} = €${nf(Math.round(v))}.`,tip:'Rapporto a:b:c → somma le parti, poi totale × parte/somma.'}; },
+ ()=>{ const s=R.pick([60,75,80,90,100,120]), t1=R.pick([1.5,2,2.5]), s2=R.pick([50,60,80].filter(x=>x!==s)), t2=R.pick([1,1.5,2]); const v=(s*t1+s2*t2)/(t1+t2);
+   const r=numOptions(v,[[(s+s2)/2,'media semplice delle velocità'],[s*t1+s2*t2,'distanza totale, non velocità'],[Math.max(s,s2),'velocità più alta']],x=>nf(x,1)+' km/h');
+   return {stim:'',q:`A car travels for ${nf(t1,1)} hours at ${s} km/h and then for ${nf(t2,1)} hours at ${s2} km/h. What is its average speed over the whole trip?`,...r,ex:`Distanza = ${s}×${t1} + ${s2}×${t2} = ${nf(s*t1+s2*t2,0)} km; tempo = ${t1+t2} h; media = ${nf(v,1)} km/h.`,tip:'Velocità media = distanza totale ÷ tempo totale, non la media delle velocità.'}; },
+ ()=>{ const n=R.int(4,7), avg=R.int(60,85), x=R.int(70,98); const v=(avg*n+x)/(n+1);
+   const r=numOptions(v,[[(avg+x)/2,'media delle due medie'],[avg+x/(n+1),'formula sbagliata'],[avg*n/(n+1),'nuovo voto dimenticato']],x2=>nf(x2,1));
+   return {stim:'',q:`The average score of ${n} tests is ${avg}. After one more test with a score of ${x}, what is the new average?`,...r,ex:`Somma = ${avg}×${n} + ${x} = ${avg*n+x}; ÷ ${n+1} = ${nf(v,1)}.`,tip:'Nuova media: ricostruisci la somma totale, aggiungi, dividi per il nuovo numero.'}; },
+ ()=>{ const p1=R.int(30,60)/10, q1=R.pick([250,330,400,500]), p2=R.int(40,90)/10, q2=R.pick([500,750,1000].filter(z=>z>q1)); const u1=p1/q1*1000, u2=p2/q2*1000; if(Math.abs(u1-u2)<0.4) return EY_NUM[6]();
+   const best=u1<u2?`Pack A (€${nf(p1,2)} for ${q1} ml)`:`Pack B (€${nf(p2,2)} for ${q2} ml)`, worst=u1<u2?`Pack B (€${nf(p2,2)} for ${q2} ml)`:`Pack A (€${nf(p1,2)} for ${q1} ml)`;
+   const o=[best,worst,'Both cost the same per litre','It cannot be determined']; const it=mcq('mind','unit','',`Which pack is cheaper per litre?`,o,0,`A: €${nf(u1,2)}/litro · B: €${nf(u2,2)}/litro. Conviene ${u1<u2?'A':'B'}.`,'Confronta sempre il prezzo per unità (€ per litro), non il prezzo totale.'); it.options.forEach(x=>x.why=x.label===best?null:'unità non confrontate'); return {stim:'',q:it.question,options:it.options,key:it.key,ex:it.explain,tip:it.tip}; }
+];
+function eyNumItem(sec){ const f=R.pick(EY_NUM)(); return {sec,fmt:'numerical',id:eyId(sec+'-num'),tpl:'ey-num',stim:f.stim||'',question:f.q,options:f.options,key:f.key,explain:f.ex,tip:f.tip}; }
+
+// ----- MIND: number series -----
+function eySeriesItem(sec){
+  const kinds=[
+    ()=>{ const a=R.int(2,30), d=R.int(3,12); const s=[0,1,2,3,4].map(i=>a+d*i); return {s,next:a+d*5,ex:`Si aggiunge ${d} ogni volta.`,slips:[a+d*4+d+1,a+d*6,a+d*5-1]}; },
+    ()=>{ const a=R.int(2,6), r=R.pick([2,3]); const s=[0,1,2,3,4].map(i=>a*r**i); return {s,next:a*r**5,ex:`Si moltiplica per ${r}.`,slips:[s[4]+(s[4]-s[3]),a*r**5+r,s[4]*(r+1)]}; },
+    ()=>{ const a=R.int(1,10), d0=R.int(1,4), dd=R.int(1,3); const s=[a]; let d=d0; for(let i=1;i<5;i++){ s.push(s[i-1]+d); d+=dd; } return {s,next:s[4]+d,ex:`Le differenze crescono di ${dd}: ${s.slice(1).map((x,i)=>x-s[i]).join(', ')}, ${d}.`,slips:[s[4]+d-dd,s[4]+d+dd,s[4]+(s[4]-s[3])]}; },
+    ()=>{ const a=R.int(1,9), b=R.int(20,40), da=R.int(2,5), db=R.pick([-2,-3,3,4]); const s=[a,b,a+da,b+db,a+2*da]; return {s,next:b+2*db,ex:`Due serie alternate: ${a}, ${a+da}, ${a+2*da} (+${da}) e ${b}, ${b+db}, ? (${db>0?'+':''}${db}).`,slips:[a+3*da,b+db*3,s[4]+da]}; },
+    ()=>{ const k=R.int(1,4), off=R.pick([-1,0,1,2]); const s=[0,1,2,3,4].map(i=>(i+k)**2+off); return {s,next:(5+k)**2+off,ex:`Quadrati ${k}², ${k+1}², … ${off?`${off>0?'+':''}${off}`:''}.`,slips:[(5+k)**2+off+1,s[4]+(s[4]-s[3]),(6+k)**2+off]}; },
+    ()=>{ const a=R.int(1,5), b=R.int(1,5); const s=[a,b]; for(let i=2;i<5;i++) s.push(s[i-1]+s[i-2]); return {s,next:s[3]+s[4],ex:'Ogni numero è la somma dei due precedenti.',slips:[s[4]+(s[4]-s[3]),s[4]*2,s[3]+s[4]+1]}; }
+  ];
+  const k=R.int(0,kinds.length-1), x=kinds[k]();
+  const r=numOptions(x.next,x.slips.map(v=>[v,'regola applicata male']),v=>nf(Math.round(v)));
+  if(!r) return eySeriesItem(sec);
+  return {sec,fmt:'numerical',id:eyId(sec+'-ser'),tpl:'ey-series',stim:`<p class="seriesnum mono">${x.s.map(v=>nf(v)).join(' , ')} , ?</p>`,question:'Which number comes next in the series?',options:r.options,key:r.key,explain:x.ex,tip:'Guarda prima le differenze tra numeri vicini; se non tornano, prova rapporti, quadrati o due serie alternate.'};
+}
+
+// ----- logic: ordering -----
+const EY_NAMES=['Anna','Ben','Clara','David','Elena','Filip','Greta','Hugo'];
+function eyOrderItem(sec){
+  const n=R.int(4,5), names=R.sample(EY_NAMES,n), attr=R.pick([['older','younger','oldest','youngest'],['taller','shorter','tallest','shortest']]);
+  // order[0] is the most (oldest/tallest/earliest)
+  const clues=[]; for(let i=0;i<n-1;i++){ const a=names[i],b=names[i+1]; clues.push(R.chance(.5)?`${a} is ${attr[0]} than ${b}.`:`${b} is ${attr[1]} than ${a}.`); }
+  const ask=R.pick(['most','least','second']);
+  const key=ask==='most'?names[0]:ask==='least'?names[n-1]:names[1];
+  const qtxt=ask==='most'?`Who is the ${attr[2]}?`:ask==='least'?`Who is the ${attr[3]}?`:`Who is the second ${attr[2]}?`;
+  const opts=R.sample(names,Math.min(n,4)); if(!opts.includes(key)) opts[0]=key;
+  const it=mcq(sec,'ey-order',`<ul class="clues">${R.shuffle(clues).map(c=>`<li>${esc(c)}</li>`).join('')}</ul>`,qtxt,opts,opts.indexOf(key),`Ordine completo: ${names.join(' > ')}.`,'Scrivi una riga e posiziona le persone indizio per indizio: a carta e penna si risolve in pochi secondi.');
+  return it;
+}
+
+// ----- logic: syllogisms -----
+const EY_TERMS=[['analysts','consultants','graduates'],['reports','documents','files'],['managers','employees','members of the union'],['projects','EU-funded initiatives','audited activities'],['trainees','language speakers','people in the Brussels office'],['policies','regulations','published texts']];
+const SYL=[
+  {p:(A,B,C)=>[`All ${A} are ${B}.`,`All ${B} are ${C}.`],ok:(A,B,C)=>`All ${A} are ${C}.`,bad:(A,B,C)=>[`All ${C} are ${A}.`,`No ${A} are ${C}.`,`Some ${C} are not ${B}.`],ex:'Se A è dentro B e B è dentro C, allora A è dentro C. Il contrario (tutti i C sono A) non segue.'},
+  {p:(A,B,C)=>[`All ${A} are ${B}.`,`No ${B} are ${C}.`],ok:(A,B,C)=>`No ${A} are ${C}.`,bad:(A,B,C)=>[`Some ${A} are ${C}.`,`All ${C} are ${B}.`,`Some ${B} are not ${A}.`],ex:'A è dentro B e B non tocca C: quindi nessun A è C.'},
+  {p:(A,B,C)=>[`Some ${A} are ${B}.`,`All ${B} are ${C}.`],ok:(A,B,C)=>`Some ${A} are ${C}.`,bad:(A,B,C)=>[`All ${A} are ${C}.`,`No ${A} are ${C}.`,`All ${C} are ${A}.`],ex:'Gli A che sono B sono anche C: quindi almeno alcuni A sono C. Non si può dire "tutti".'},
+  {p:(A,B,C)=>[`All ${A} are ${B}.`,`Some ${C} are ${A}.`],ok:(A,B,C)=>`Some ${C} are ${B}.`,bad:(A,B,C)=>[`All ${C} are ${B}.`,`No ${C} are ${B}.`,`All ${B} are ${A}.`],ex:'I C che sono A sono anche B (perché tutti gli A sono B): quindi alcuni C sono B.'},
+  {p:(A,B,C)=>[`No ${A} are ${B}.`,`All ${C} are ${A}.`],ok:(A,B,C)=>`No ${C} are ${B}.`,bad:(A,B,C)=>[`Some ${C} are ${B}.`,`All ${A} are ${C}.`,`All ${B} are ${C}.`],ex:'C è dentro A, e A non tocca B: quindi nessun C è B.'}
+];
+function eySylItem(sec){
+  const [A,B,C]=R.pick(EY_TERMS), f=R.pick(SYL);
+  return mcq(sec,'ey-syl',`<ul class="clues">${f.p(A,B,C).map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`,'Assuming both statements are true, which conclusion follows necessarily?',[f.ok(A,B,C)].concat(f.bad(A,B,C)),0,f.ex,'Disegna due o tre cerchi (diagrammi di Venn): ciò che segue "necessariamente" deve valere in ogni disegno possibile.');
+}
+// ----- logic: if-then -----
+function eyCondItem(sec){
+  const S=R.pick([['a report is approved by the director','it is published on the website'],['an applicant passes the reasoning tests','they are invited to the assessment centre'],['a project exceeds its budget','it is reviewed by the audit unit'],['a meeting has more than ten participants','it is held in room B']]);
+  const [P,Q]=S, P2=P.replace(/^(a|an) /,'this '), cases=[
+    {fact:`It is known that ${P2}.`,stmt:`Therefore ${Q}.`,ans:0,ex:'Se P allora Q, e P è vero: Q segue (modus ponens).'},
+    {fact:`It is known that it is NOT the case that ${Q}.`,stmt:`Therefore it is NOT the case that ${P2}.`,ans:0,ex:'Se P allora Q, e Q è falso: anche P è falso (contronominale).'},
+    {fact:`It is known that ${Q}.`,stmt:`Therefore ${P2}.`,ans:2,ex:'Q può essere vero anche per altri motivi: da Q non si può risalire a P (errore dell\'affermazione del conseguente).'},
+    {fact:`It is known that it is NOT the case that ${P2}.`,stmt:`Therefore it is NOT the case that ${Q}.`,ans:2,ex:'Se P è falso, la regola non dice nulla su Q (errore della negazione dell\'antecedente).'}
+  ];
+  const c=R.pick(cases);
+  return mcq(sec,'ey-cond',`<ul class="clues"><li>Rule: if ${esc(P)}, then ${esc(Q)}.</li><li>${esc(c.fact)}</li></ul>`,`Is the following statement true, false, or impossible to tell? "${c.stmt}"`,['True','False','Cannot say'],c.ans,c.ex,'"Se P allora Q": da P segue Q, da non-Q segue non-P. Da Q o da non-P non segue niente.',false);
+}
+
+// ----- adaptability (situational judgement): best answer + why -----
+const EY_ADAPT=[
+ {s:"Two days before a client deadline, the client changes the scope of the report you are drafting. Your manager is travelling and hard to reach.",o:["Clarify the new scope with the client in writing, re-plan the remaining work and send your manager a short update with the options.","Keep working on the original scope, because that is what was agreed in the contract.","Wait until your manager is back before changing anything.","Start the new scope immediately without telling anyone, to save time."],k:0,w:"Adattarsi senza perdere il controllo: chiarire, ripianificare e informare. Restare rigidi o agire da soli sono entrambi rischiosi."},
+ {s:"Your team switches to a new project-management tool you have never used. The first deadline using the tool is next week.",o:["Spend a short time on the tool's tutorial, ask a colleague who knows it for tips and use it on the next task straight away.","Keep tracking your work in your old spreadsheet until the tool is mandatory.","Tell your manager the change is a bad idea and ask to postpone it.","Wait until someone organises a full training session."],k:0,w:"Apprendimento attivo e rapido: provare subito, usare le risorse e i colleghi."},
+ {s:"In a meeting, a senior colleague criticises the structure of your analysis in front of the team.",o:["Thank them, ask one or two questions to understand the concern and propose how you will revise it.","Defend every point of your structure so the team sees your work was correct.","Say nothing and ignore the comment, since the analysis is already finished.","Agree with everything to avoid conflict, then keep the original version."],k:0,w:"Usare il feedback: ascoltare, chiarire, migliorare. Non difendersi a oltranza né far finta di accettare."},
+ {s:"You are asked to cover a topic outside your expertise (space-industry regulation) for a client briefing in three days.",o:["Map the key sources and people quickly, ask an expert colleague for a 20-minute briefing and be transparent about what still needs checking.","Decline the task because it is outside your expertise.","Copy a briefing from a previous project on a different topic and adapt the title.","Accept and present your own assumptions as established facts."],k:0,w:"Curiosità e apprendimento rapido con onestà sui limiti."},
+ {s:"Halfway through a project, the data source you relied on is withdrawn and the planned method no longer works.",o:["Inform the team, look for alternative sources or methods, and agree with the manager on an adjusted plan and timeline.","Continue with the old data you already downloaded without mentioning the problem.","Stop working until the original source is available again.","Change the research question so that no data is needed."],k:0,w:"Resilienza: riconoscere il problema, cercare alternative, riallineare il piano."},
+ {s:"Two managers give you conflicting priorities for the same afternoon.",o:["Explain the conflict to both, propose a realistic order of tasks and ask them to confirm the priority.","Do the task of the more senior manager and ignore the other.","Try to do both at the same time and deliver both late.","Pick the task you prefer."],k:0,w:"Gestire le priorità in conflitto in modo trasparente e collaborativo."},
+ {s:"A new colleague from another country joins your team and works in a very different way from you.",o:["Talk with them about how each of you prefers to work and agree simple ways to collaborate.","Ask the manager to move them to another team.","Keep your usual way of working and expect them to adjust.","Avoid working with them on shared tasks."],k:0,w:"Flessibilità e collaborazione in un team multiculturale."},
+ {s:"Your proposal for a client workshop is rejected by the team, who choose another approach.",o:["Accept the decision, help make the chosen approach work and share one lesson from your proposal that could still be useful.","Keep arguing for your proposal at every meeting.","Do the minimum on the new approach because it was not your idea.","Ask to be removed from the project."],k:0,w:"Adattarsi alle decisioni di gruppo restando costruttivi."},
+ {s:"A client asks for the same deliverable in a much shorter format the evening before a presentation.",o:["Identify the three key messages, cut the rest into an annex and check the short version with a colleague.","Send the long version anyway; the client can read what they need.","Ask for the presentation to be postponed.","Shorten it by deleting the last pages."],k:0,w:"Adattare il prodotto alle esigenze del cliente dando priorità ai contenuti."},
+ {s:"You receive critical feedback in your mid-year review about missing details in your work.",o:["Ask for two concrete examples, agree on a checklist to use before submitting work and review progress in a month.","Explain that the deadlines were too short.","Accept the feedback but change nothing, since the review is over.","Ask a colleague to check everything for you from now on."],k:0,w:"Trasformare il feedback in un piano concreto di miglioramento."},
+ {s:"An unexpected EU regulation is published that affects the recommendations of a nearly finished study.",o:["Assess the impact quickly, flag it to the manager and propose updating the affected recommendations before delivery.","Deliver the study as it is, because the regulation came after the work started.","Add a footnote saying a new regulation exists, without analysing it.","Restart the whole study from scratch."],k:0,w:"Reagire ai cambiamenti esterni con proporzione: valutare, segnalare, aggiornare."},
+ {s:"Your team moves from in-person to fully remote work for a month.",o:["Agree with the team on check-ins and shared documents, and keep your manager updated on progress more often than usual.","Work as usual and only reply when contacted.","Wait for the team to return to the office before starting new tasks.","Ask for every task in writing in great detail before starting."],k:0,w:"Adattare il modo di lavorare mantenendo comunicazione e visibilità."}
+];
+// ----- AI proficiency (practical judgement + basic knowledge) -----
+const EY_AI=[
+ {s:"You want to use a public generative-AI chatbot to summarise a confidential client contract.",o:["Do not paste it into a public tool; use the firm's approved tool or remove confidential information first, following firm policy.","Paste it in, because the chatbot does not store anything.","Paste it in, but delete the conversation afterwards.","Ask the chatbot whether it is safe to paste confidential data."],k:0,w:"Riservatezza: niente dati confidenziali in strumenti pubblici; usare strumenti approvati o anonimizzare."},
+ {s:"An AI summary of a study includes a precise statistic that you cannot find in the original document.",o:["Do not use it until you verify it in the source; it may be invented (a 'hallucination').","Use it, because AI summaries are generally accurate.","Use it but round the number.","Ask the AI to confirm the number and use it if it does."],k:0,w:"I modelli possono inventare dati in modo convincente: si verifica sempre sulla fonte originale. Chiedere conferma all'AI non basta."},
+ {s:"The AI gives you a generic, superficial answer to your request for a policy analysis.",o:["Refine the prompt: give context, the audience, the format you want and an example, then iterate.","Conclude that AI is not useful for policy work.","Ask the same question again with the same words.","Accept the answer and add more detail yourself without changing the prompt."],k:0,w:"Qualità dell'interazione: contesto, ruolo, formato ed esempi migliorano l'output; poi si itera."},
+ {s:"You use AI to find academic references for a briefing note.",o:["Check that every reference exists and says what is claimed before citing it.","Cite them directly: AI tools only give real references.","Cite only the first three references.","Remove the authors' names to avoid errors."],k:0,w:"Gli strumenti generativi possono produrre citazioni inesistenti: ogni riferimento va controllato."},
+ {s:"Which statement best describes how a large language model produces text?",o:["It predicts likely next words from patterns learned in training data, so answers can be fluent but wrong.","It searches a verified database and returns the correct answer.","It understands meaning exactly like a human expert.","It always cites the sources it used."],k:0,w:"Conoscenza di base: un LLM genera testo probabile, non verificato. Per questo serve controllo umano."},
+ {s:"Under the EU AI Act, an AI system used to screen job applications is classified as:",o:["High-risk, with obligations such as risk management, human oversight and documentation.","Prohibited in all cases.","Minimal risk, with no obligations.","Outside the scope of the AI Act."],k:0,w:"L'AI Act classifica come ad alto rischio i sistemi usati per selezionare candidati (allegato III, occupazione): obblighi di gestione del rischio, supervisione umana, documentazione."},
+ {s:"A colleague pastes AI-generated text unchanged into a client deliverable.",o:["Suggest reviewing and fact-checking it, adapting it to the client, and following the firm's rules on disclosing AI use.","Nothing; AI text is ready to use.","Report the colleague to HR immediately.","Rewrite it all by hand to avoid any AI use."],k:0,w:"Uso responsabile: revisione, verifica dei fatti, trasparenza secondo le regole interne."},
+ {s:"You need to analyse a 200-page regulation with an AI tool.",o:["Work section by section, ask for answers with article references, and check key points against the text.","Ask for a one-line summary of the whole regulation and rely on it.","Upload only the first page.","Ask the AI to decide which articles are relevant without reading them yourself."],k:0,w:"Strategia efficace: suddividere, chiedere riferimenti puntuali, verificare sul testo."},
+ {s:"An AI tool ranks candidates and consistently scores women lower for the same experience.",o:["Stop relying on it for that decision, report the possible bias and ask for the model and data to be checked.","Keep using it, because the algorithm is objective.","Adjust the scores manually without telling anyone.","Use it only for female candidates."],k:0,w:"Bias: riconoscerlo, segnalarlo, mantenere la supervisione umana."},
+ {s:"For which task is a generative-AI assistant LEAST appropriate without expert review?",o:["Giving final legal advice to a client.","Drafting a first outline of a presentation.","Suggesting alternative titles for a report.","Rewriting an email in a more concise style."],k:0,w:"Compiti ad alto rischio (consulenza legale finale) richiedono revisione esperta; bozze e riformulazioni sono usi adatti."},
+ {s:"The AI produces a chart with numbers for a slide you must present tomorrow.",o:["Recalculate the key figures from the original data before using the chart.","Use it, because the AI did the maths.","Remove the numbers and keep only the chart shape.","Ask the AI to double-check its own calculations and use the result."],k:0,w:"Anche i calcoli prodotti dall'AI vanno verificati sui dati originali."},
+ {s:"Which prompt is most likely to give a useful result?",o:["'You are an EU policy analyst. Summarise the attached text in 5 bullet points for a non-expert client, citing article numbers.'","'Summarise this.'","'Tell me everything about EU policy.'","'Write something good about the text.'"],k:0,w:"Un buon prompt indica ruolo, compito, pubblico, formato e vincoli."}
+];
+function eySJT(sec,bank,tip){ const x=R.pick(bank); return mcq(sec,sec==='adapt'?'ey-sjt':'ey-ai',`<p class="scenario">${esc(x.s)}</p>`,sec==='adapt'?'What is the most effective response?':(x.s.endsWith(':')||x.s.endsWith('?')?'Choose the best answer.':'What should you do?'),x.o,x.k,x.w,tip); }
+function eyPickSJT(sec,n,bank,tip){ return R.sample(bank,Math.min(n,bank.length)).map(x=>mcq(sec,sec==='adapt'?'ey-sjt':'ey-ai',`<p class="scenario">${esc(x.s)}</p>`,sec==='adapt'?'What is the most effective response?':(/[:?]$/.test(x.s)?'Choose the best answer.':'What should you do?'),x.o,x.k,x.w,tip)); }
+
+function eyFigItem(sec,hard){ const it=buildAbstractItem(hard); it.sec=sec; it.fmt='abstract'; return it; }
+function eyTableItem(sec){ const it=buildNumericalItem(R.pick(['maxratio','maxgrowth','yearboth','share'])); it.sec=sec; it.fmt='numerical'; return it; }
+
+function buildEY(sec,n){
+  if(sec==='mind'){ const plan=['num','num','num','num','num','ser','ser','ser','ser','fig','fig','fig','fig','ord','syl','num']; return plan.slice(0,n).map((k,i)=>k==='num'?eyNumItem(sec):k==='ser'?eySeriesItem(sec):k==='fig'?eyFigItem(sec,i%2===0):k==='ord'?eyOrderItem(sec):eySylItem(sec)); }
+  if(sec==='crit'){ const plan=['syl','syl','syl','syl','cond','cond','cond','ord','ord','tab','tab','syl','cond']; return R.shuffle(plan.slice(0,n).map(k=>k==='syl'?eySylItem(sec):k==='cond'?eyCondItem(sec):k==='ord'?eyOrderItem(sec):eyTableItem(sec))); }
+  if(sec==='adapt') return eyPickSJT(sec,n,EY_ADAPT,'Nelle situazioni di lavoro la risposta migliore di solito: affronta il problema, comunica con le persone coinvolte, mostra flessibilità e apprendimento. Evita rigidità, passività e iniziative non concordate.');
+  return eyPickSJT(sec,n,EY_AI,'Uso dell\'AI: proteggere i dati, verificare i fatti e le fonti, dare contesto nei prompt, mantenere il controllo umano sulle decisioni importanti.');
+}
+
 // ---------- method guide (original text) ----------
 const METHOD=[
 {sec:'verbal',title:'Ragionamento verbale',spec:'20 domande · 35 minuti · circa 1:45 a domanda · soglia 10/20',blocks:[
@@ -1220,8 +1362,9 @@ function startFocus(){ S={kind:'focus',parts:buildFocusParts(6),pi:0,created:Dat
 function coachTip(it,a){
   if(a===undefined||a===it.key) return '';
   let t='';
-  if(it.sec==='verbal') t=TRAP_TIP[verbalTrap(it,a)]||'';
-  else if(it.sec==='numerical') t=NUM_TIP[it.tpl]||'';
+  if(FMT(it)==='verbal') t=TRAP_TIP[verbalTrap(it,a)]||'';
+  else if(FMT(it)==='numerical') t=NUM_TIP[it.tpl]||it.tip||'';
+  else if(FMT(it)!=='abstract'){ t=it.tip||''; }
   else { const br=it.options[a].broken||[]; t=br.map(r=>ABS_TIP[r]).filter(Boolean).join(' ')||ABS_TIP[it.rules[0]]||''; }
   return t?`<p class="tip"><b>Come evitarlo:</b> ${esc(t)}</p>`:'';
 }
@@ -1592,11 +1735,12 @@ function collectErrors(){
 }
 function renderErrors(){
   const all=collectErrors(); DB.understood=DB.understood||{};
-  const list=all.filter(e=>(ERRV.filter==='all'||e.test===ERRV.filter)&&(ERRV.showDone||!DB.understood[e.uid]));
-  const count=t=>all.filter(e=>(t==='all'||e.test===t)&&!DB.understood[e.uid]).length;
+  const match=(e,t)=>t==='all'||(t==='ey'?!!SEC[e.test].ey:e.test===t);
+  const list=all.filter(e=>match(e,ERRV.filter)&&(ERRV.showDone||!DB.understood[e.uid]));
+  const count=t=>all.filter(e=>match(e,t)&&!DB.understood[e.uid]).length;
   app().innerHTML=header('Errori','Ogni risposta sbagliata con la spiegazione e il modo per non ripeterla.')+`
   <main class="wrap stack narrow">
-    <div class="tabs four">${[['all','Tutti'],['verbal','Verbale'],['numerical','Numerico'],['abstract','Astratto']].map(([k,l])=>`<button class="${ERRV.filter===k?'on':''}" data-ef="${k}">${l} (${count(k)})</button>`).join('')}</div>
+    <div class="tabs five">${[['all','Tutti'],['verbal','Verbale'],['numerical','Numerico'],['abstract','Astratto'],['ey','Test EY']].map(([k,l])=>`<button class="${ERRV.filter===k?'on':''}" data-ef="${k}">${l} (${count(k)})</button>`).join('')}</div>
     <label class="chk small"><input type="checkbox" id="ev-done" ${ERRV.showDone?'checked':''}><span>Mostra anche gli errori già segnati come capiti</span></label>
     ${list.length?list.slice(0,80).map(errorCard).join(''):`<div class="panel"><p class="muted">${all.length?'Nessun errore da rivedere in questa categoria.':'Ancora nessun errore salvato: fai una prova e torna qui.'}</p></div>`}
     ${list.length>80?`<p class="small muted">Mostro i primi 80 di ${list.length}.</p>`:''}
@@ -1619,12 +1763,12 @@ function errorCard(e){
       <p class="qtext">${esc(sn.q)}</p>
       ${sn.o.map((t,i)=>`<div class="eopt ${i===a.key?'right':''} ${i===a.ans?'mine':''}"><span class="mono">${LETTERS[i]}</span><div><span class="kind k-${sn.k[i]}">${{true:'Vera',false:'Falsa',cannot:'Non deducibile'}[sn.k[i]]}</span>${i===a.key?' <b>risposta giusta</b>':''}${i===a.ans?' <b class="badc">la tua</b>':''}<p>${esc(t)}</p>${sn.w&&sn.w[i]?`<p class="small muted">${esc(sn.w[i])}</p>`:''}</div></div>`).join('')}`;
     tip=TRAP_TIP[a.trap]||'';
-  } else if(e.test==='numerical'&&a.snap){
+  } else if(a.snap&&a.snap.stim!==undefined){
     const sn=a.snap; body=`<details><summary>Dati della domanda</summary>${sn.stim}</details><p class="qtext">${esc(sn.q)}</p>
       <p class="mono small">${sn.o.map((o,i)=>`<span class="${i===a.key?'okc':(i===a.ans?'badc':'')}">${LETTERS[i]}. ${esc(o)}</span>`).join(' · ')}</p>
       <p><b>Soluzione:</b> ${esc(sn.ex)}</p>${a.slip?`<p class="small">La tua risposta corrisponde a: <b>${esc(a.slip)}</b>.</p>`:''}`;
-    tip=NUM_TIP[a.tpl]||'';
-  } else if(e.test==='abstract'&&a.snap){
+    tip=NUM_TIP[a.tpl]||a.snap.tip||'';
+  } else if(a.snap&&a.snap.s){
     const sn=a.snap; body=`<div class="series sm">${sn.s.map(f=>frameSVG(f)).join('')}<div class="qmark">?</div></div>
       <div class="series sm">${sn.o.map((f,i)=>`<div class="optmini ${i===a.key?'k':''} ${i===a.ans?'w':''}"><span class="mono">${LETTERS[i]}</span>${frameSVG(f)}</div>`).join('')}</div>
       <p><b>Regola:</b> ${esc(sn.ex)}</p>${a.broken&&a.broken.length?`<p class="small">La tua opzione viola: <b>${a.broken.map(r=>AB_RULES[r]?AB_RULES[r].label.toLowerCase():r).join(', ')}</b>.</p>`:''}`;
@@ -1648,11 +1792,64 @@ function errorCard(e){
   </article>`;
 }
 
+// ---------- EY Belgium online assessment (Maki People): preparation page ----------
+const EY_TPL={'ey-num':'Problemi numerici','ey-series':'Serie numeriche','ey-order':'Ordinamenti','ey-syl':'Sillogismi','ey-cond':'Se… allora','ey-sjt':'Situazioni di lavoro','ey-ai':'Uso dell\'AI'};
+const EY_TIPS={
+  mind:['Circa 37 secondi a domanda: se una domanda ti blocca, scegli e vai avanti.','Problemi numerici: scrivi i dati su carta e calcola il valore unitario.','Serie: guarda le differenze, poi rapporti, quadrati, due serie alternate.','Figure: un elemento alla volta (forma, posizione, rotazione, numero, colore).'],
+  crit:['Sillogismi: disegna cerchi; segue solo ciò che vale in ogni caso.','"Se P allora Q": da P segue Q, da non-Q segue non-P; da Q o da non-P non segue nulla.','Ordinamenti: metti i nomi su una riga, indizio per indizio.','Tabelle: leggi la domanda prima dei dati.'],
+  adapt:['Scegli la risposta che affronta il problema, comunica con le persone coinvolte e mostra flessibilità.','Evita le risposte rigide ("si fa come concordato"), passive ("aspetto") o solitarie ("faccio da solo senza dire niente").'],
+  aipro:['Dati riservati mai in strumenti pubblici.','Ogni dato, citazione o calcolo prodotto dall\'AI va verificato.','Un buon prompt: ruolo, compito, pubblico, formato, vincoli.','Le decisioni importanti restano a una persona.']
+};
+function renderEY(){
+  const s=k=>SEC[k];
+  const last=DB.sessions.find(x=>x.kind==='eyfull');
+  const ex=(DB.eyExamples||[{},{},{}]);
+  app().innerHTML=header('Test EY · Maki','Preparazione al test online di EY Belgium (EU MIST): MIND, Critical thinking, Adaptability, AI proficiency.')+`
+  <main class="wrap stack">
+    <section class="panel stack">
+      <h2>Cosa sappiamo del test</h2>
+      <dl class="dl">
+        <dt>Confermato (email)</dt><dd>Piattaforma Maki People. Attività da 5-10 minuti ciascuna, 40 minuti in tutto. Pausa possibile solo tra un'attività e l'altra. Lingua: inglese, francese o olandese (scegli l'inglese e usalo per tutto). Carta e penna utili. Punteggio minimo richiesto. Scadenza venerdì 13 novembre. <b>Vietato usare l'AI durante il test.</b></dd>
+        <dt>Da fonti terze</dt><dd>MIND circa 16 domande in 10 minuti; Critical thinking circa 13 in 8; Adaptability circa 10 in 8; per AI proficiency resta circa il tempo rimanente. Timer non sospendibile dentro un'attività, ogni attività si fa una volta, spesso schermo intero e monitoraggio. Non verificato per il tuo test.</dd>
+        <dt>Piano</dt><dd>Allenati oggi e domani con le prove qui sotto, poi fai il test vero <b>lunedì 9 o martedì 10 novembre</b>, in un'unica sessione, da computer con Chrome, connessione stabile, carta e penna. Così resta margine prima del 13, che è anche il giorno dell'EPSO.</dd>
+      </dl>
+      <p class="small muted">Queste prove sono domande originali per allenarti al formato e ai tempi; non sono domande del test reale. Durante il test vero non usare l'AI né questo sito.</p>
+    </section>
+    <section class="hero">
+      <button class="card primary-card" id="ey-full"><span class="eyebrow">Simulazione completa EY</span><b>Le quattro attività di fila, con pausa facoltativa tra una e l'altra</b><span class="spec mono">16 dom. · 10:00 → 13 · 08:00 → 10 · 08:00 → 10 · 10:00</span>${last?`<span class="muted">Ultima: ${fmtD(last.date)} · ${last.parts.map(p=>`${SEC[p.sec].name} ${p.score}/${p.n}`).join(' · ')}</span>`:'<span class="muted">Fanne una come prova generale prima del test vero.</span>'}</button>
+      <div class="cards4">${['mind','crit','adapt','aipro'].map(k=>`<div class="card"><span class="eyebrow">${s(k).name}</span><b>${s(k).n} domande · ${fmtT(s(k).sec)}</b>
+        <span class="muted small">${{mind:'Problemi numerici, serie, figure, logica.',crit:'Sillogismi, "se… allora", ordinamenti, tabelle.',adapt:'Situazioni di lavoro: la risposta più efficace.',aipro:'Uso pratico e responsabile dell\'AI, basi dell\'AI Act.'}[k]}</span>
+        <div class="row"><button class="primary" data-eyt="${k}">A tempo</button><button data-eyp="${k}">Pratica</button></div></div>`).join('')}</div>
+    </section>
+    <section class="panel stack">
+      <h2>I miei esempi con l'AI</h2>
+      <p class="small muted">Per AI proficiency prepara 2-3 esempi reali. Per ciascuno: il compito, come hai verificato e corretto l'output, un errore che hai intercettato, un caso in cui hai scelto di non usarla. Restano solo in questo browser.</p>
+      ${[0,1,2].map(i=>`<label>Esempio ${i+1}<textarea class="eyex" data-i="${i}" rows="4" placeholder="Compito · come ho usato l'AI · cosa ho verificato o corretto · risultato">${esc(ex[i]&&ex[i].t||'')}</textarea></label>`).join('')}
+      <p class="small muted" id="ey-saved"></p>
+    </section>
+    ${footer()}
+  </main>`;
+  bindNav();
+  $('#ey-full').onclick=startEYFull;
+  document.querySelectorAll('[data-eyt]').forEach(b=>b.onclick=()=>startSession('single',{sec:b.dataset.eyt}));
+  document.querySelectorAll('[data-eyp]').forEach(b=>b.onclick=()=>startSession('practice',{sec:b.dataset.eyp}));
+  document.querySelectorAll('.eyex').forEach(t=>t.oninput=()=>{ DB.eyExamples=DB.eyExamples||[{},{},{}]; DB.eyExamples[+t.dataset.i]={t:t.value}; saveDB(); $('#ey-saved').textContent='Salvato.'; });
+}
+function startEYFull(){
+  const parts=['mind','crit','adapt','aipro'].map(sec=>({sec,items:buildEY(sec,SEC[sec].n),ans:{},flag:{},ms:{},changes:{},cur:0,timed:true,seconds:SEC[sec].sec,started:null,ended:null,deadline:null}));
+  S={kind:'eyfull',parts,pi:0,created:Date.now(),done:false}; renderIntro();
+}
+
 // ---------- configuration from the notice EPSO/AD/427/26 ----------
+const FMT=it=>it.fmt||it.sec;
 const SEC={
   verbal:{name:'Verbal reasoning',it:'Ragionamento verbale',n:20,sec:35*60,letters:4},
   numerical:{name:'Numerical reasoning',it:'Ragionamento numerico',n:10,sec:20*60,letters:5},
-  abstract:{name:'Abstract reasoning',it:'Ragionamento astratto',n:10,sec:10*60,letters:5}
+  abstract:{name:'Abstract reasoning',it:'Ragionamento astratto',n:10,sec:10*60,letters:5},
+  mind:{name:'MIND',it:'EY · MIND',n:16,sec:10*60,letters:5,ey:true},
+  crit:{name:'Basic critical thinking',it:'EY · Critical thinking',n:13,sec:8*60,letters:5,ey:true},
+  adapt:{name:'Adaptability',it:'EY · Adaptability',n:10,sec:8*60,letters:4,ey:true},
+  aipro:{name:'AI proficiency',it:'EY · AI proficiency',n:10,sec:10*60,letters:4,ey:true}
 };
 const PASS={verbal:10,numabs:10};
 const KEY='epsoAD5reasoning:v1';
@@ -1681,6 +1878,7 @@ function pickNumerical(n){
 }
 function pickAbstract(n){ const out=[]; for(let i=0;i<n;i++) out.push(buildAbstractItem(i>=Math.round(n*0.4))); return out; }
 function buildSection(sec,n,onlyWrong){
+  if(SEC[sec]&&SEC[sec].ey) return buildEY(sec,n);
   if(sec==='verbal') return pickVerbal(n,onlyWrong);
   if(sec==='numerical') return pickNumerical(n);
   return pickAbstract(n);
@@ -1726,8 +1924,8 @@ function endPart(auto){
 function scorePart(P){ return P.items.reduce((s,it,i)=>s+(P.ans[i]===it.key?1:0),0); }
 function tagOf(P,i){
   const it=P.items[i], a=P.ans[i];
-  if(it.sec==='verbal') return a===undefined?'blank':(a===it.key?'ok':verbalTrap(it,a));
-  if(it.sec==='numerical') return it.tpl;
+  if(FMT(it)==='verbal') return a===undefined?'blank':(a===it.key?'ok':verbalTrap(it,a));
+  if(FMT(it)==='numerical') return it.tpl;
   return it.rules.join('+');
 }
 function finishSession(){
@@ -1737,11 +1935,11 @@ function finishSession(){
     const att=P.items.map((it,i)=>{
       const a=P.ans[i], ok=a===it.key;
       const r={sec:it.sec,id:it.id,ok,ans:a===undefined?null:a,key:it.key,ms:Math.round(P.ms[i]||0),ch:P.changes[i]||0,fl:!!P.flag[i]};
-      r.snap=it.sec==='verbal'?{q:it.question,o:it.options.map(o=>o.text),k:it.options.map(o=>o.kind),w:it.options.map(o=>o.why),qt:it.q}:it.sec==='numerical'?{q:it.question,stim:it.stim,o:it.options.map(o=>o.label),ex:it.explain}:{s:it.series,o:it.options.map(o=>o.frame),ex:it.explain};
-      if(it.sec==='verbal'){ r.q=it.q; r.trap=ok||a===undefined?null:verbalTrap(it,a); r.kind=a===undefined?null:it.options[a].kind;
+      r.snap=FMT(it)==='verbal'?{q:it.question,o:it.options.map(o=>o.text),k:it.options.map(o=>o.kind),w:it.options.map(o=>o.why),qt:it.q}:FMT(it)==='numerical'?{q:it.question,stim:it.stim,o:it.options.map(o=>o.label),ex:it.explain,tip:it.tip||''}:{s:it.series,o:it.options.map(o=>o.frame),ex:it.explain};
+      if(FMT(it)==='verbal'){ r.q=it.q; r.trap=ok||a===undefined?null:verbalTrap(it,a); r.kind=a===undefined?null:it.options[a].kind;
         DB.seen[it.id]=(DB.seen[it.id]||0)+1; if(ok) delete DB.vwrong[it.id]; else DB.vwrong[it.id]=1; }
-      if(it.sec==='numerical'){ r.tpl=it.tpl; r.slip=ok||a===undefined?null:(it.options[a].why||''); }
-      if(it.sec==='abstract'){ r.rules=it.rules; r.broken=ok||a===undefined?null:it.options[a].broken; r.hard=it.hard; }
+      if(FMT(it)==='numerical'){ r.tpl=it.tpl; r.slip=ok||a===undefined?null:(it.options[a].why||''); }
+      if(FMT(it)==='abstract'){ r.rules=it.rules; r.broken=ok||a===undefined?null:it.options[a].broken; r.hard=it.hard; }
       return r;});
     rec.parts.push({sec:P.sec,n:P.items.length,score:scorePart(P),secs:Math.round((P.ended-P.started)/1000),limit:P.timed?P.seconds:null,auto:!!P.auto,att});
   });
@@ -1810,8 +2008,8 @@ function bindPlan(){
 }
 
 // ---------- rendering ----------
-function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="method">Metodo</button><button class="ghost" data-nav="manual">Manuale</button><button class="ghost" data-nav="errors">Errori</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button></nav></div></header>`; }
-function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; if(MAN&&MAN.run&&b.dataset.nav!=='manual'){ MAN.run=null; } ({home:renderHome,stats:renderStats,sheet:renderSheetSetup,method:renderMethod,manual:renderManual,errors:renderErrors})[b.dataset.nav](); }); }
+function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="method">Metodo</button><button class="ghost" data-nav="manual">Manuale</button><button class="ghost" data-nav="errors">Errori</button><button class="ghost" data-nav="ey">Test EY</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button></nav></div></header>`; }
+function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; if(MAN&&MAN.run&&b.dataset.nav!=='manual'){ MAN.run=null; } ({home:renderHome,stats:renderStats,sheet:renderSheetSetup,method:renderMethod,manual:renderManual,errors:renderErrors,ey:renderEY})[b.dataset.nav](); }); }
 let leaveArmed=false;
 function confirmLeave(){ if(leaveArmed){leaveArmed=false;return true} leaveArmed=true; toast('Prova in corso: premi di nuovo per uscire senza salvare.'); setTimeout(()=>leaveArmed=false,4000); return false; }
 function toast(t){ let el=$('#toast'); if(!el){el=document.createElement('div');el.id='toast';document.body.appendChild(el)} el.textContent=t; el.className='show'; clearTimeout(el._t); el._t=setTimeout(()=>el.className='',3500); }
@@ -1842,6 +2040,7 @@ function renderHome(msg){
       <button id="go-review" ${vw?'':'disabled'}>Ripassa errori verbali (${vw})</button>
       <button id="go-drill">Pratica breve: 5 per prova</button>
       <button id="go-method">Leggi il metodo (prima volta: 15 minuti)</button>
+      <button data-nav="ey">Test EY (Maki)</button>
     </section>
     <section class="panel stack"><h2>Ultima simulazione completa</h2>${last?resultLines(last):'<p class="muted">Ancora nessuna. La prova generale del piano è mercoledì 11 alle 11:00.</p>'}</section>
     ${footer()}
@@ -1871,8 +2070,8 @@ function renderIntro(){
     verbal:['Leggi prima la domanda: cerca l\'affermazione <b>correct</b> o <b>incorrect</b>? Alcune domande vanno completate ("According to the passage, …", "Why…?"): vale la stessa regola, conta solo il testo.','Poi le 4 opzioni, poi il brano cercando solo ciò che serve.','Vale solo ciò che il testo dice o implica: niente conoscenze esterne.','Attento a some/most/all, may/will, "dopo" vs "a causa di".'],
     numerical:['Leggi la domanda prima della tabella: individua righe, colonne e unità.','Stima prima di calcolare: spesso le opzioni sono abbastanza distanti.','Usa la calcolatrice a schermo (pulsante in alto), come all\'esame.','Percentuali: la base è il valore di partenza. Punti percentuali ≠ %.'],
     abstract:['Isola un elemento alla volta: forma, riempimento, lancetta, punti, quadratino, settori, caselle, lati.','Se una regola non torna tra figure vicine, prova a coppie: 1 + 2 = 3 e 4 + 5 = 6 (sovrapposizione).','Controlla il passo tra ogni coppia di figure, non solo tra la prima e l\'ultima.','Elimina le opzioni che violano anche una sola regola.','Un minuto a domanda: se dopo 60 secondi non vedi la regola, segna e passa oltre.']
-  }[P.sec];
-  app().innerHTML=header(c.it,S.kind==='full'?`Prova ${S.pi+1} di 3`:S.kind==='focus'?`Allenamento mirato · parte ${S.pi+1} di 3 · domande scelte sui tuoi errori`:(P.timed?'Prova a tempo':'Pratica con correzione immediata'))+`
+  }[P.sec]||EY_TIPS[P.sec]||[];
+  app().innerHTML=header(c.it,S.kind==='full'?`Prova ${S.pi+1} di 3`:S.kind==='eyfull'?`Simulazione EY · attività ${S.pi+1} di 4 · puoi fare una pausa prima di iniziare`:S.kind==='focus'?`Allenamento mirato · parte ${S.pi+1} di 3 · domande scelte sui tuoi errori`:(P.timed?'Prova a tempo':'Pratica con correzione immediata'))+`
   <main class="wrap stack narrow">
     <div class="panel stack">
       <div class="row spread"><h2>${c.name}</h2><span class="mono big2">${P.items.length} dom.${P.timed?' · '+fmtT(P.seconds):''}</span></div>
@@ -1885,24 +2084,24 @@ function renderIntro(){
 }
 
 function renderStim(it){
-  if(it.sec==='verbal') return `<article class="panel passage-panel"><div class="eyebrow">Text</div>${it.title?`<h3 class="ptitle">${esc(it.title)}</h3>`:''}<p class="passage">${esc(it.text)}</p>${it.source?`<p class="src">Source: ${esc(it.source.act)}, recital ${it.source.recital}. © European Union, EUR-Lex.</p>`:''}</article>`;
-  if(it.sec==='numerical') return `<article class="panel stim">${it.stim}</article>`;
+  if(FMT(it)==='verbal') return `<article class="panel passage-panel"><div class="eyebrow">Text</div>${it.title?`<h3 class="ptitle">${esc(it.title)}</h3>`:''}<p class="passage">${esc(it.text)}</p>${it.source?`<p class="src">Source: ${esc(it.source.act)}, recital ${it.source.recital}. © European Union, EUR-Lex.</p>`:''}</article>`;
+  if(FMT(it)==='numerical') return it.stim?`<article class="panel stim">${it.stim}</article>`:'';
   return `<article class="panel stim"><div class="eyebrow">Which figure comes next in the series?</div><div class="series">${it.series.map((f,i)=>frameSVG(f,'figura '+(i+1))).join('')}<div class="qmark">?</div></div></article>`;
 }
 function optionHTML(it,i,P,reveal){
   const a=P.ans[P.cur]; let c='opt'; if(a===i) c+=' sel';
   if(reveal){ if(i===it.key) c+=' right'; else if(a===i) c+=' wrong'; }
   const L=LETTERS[i];
-  if(it.sec==='abstract') return `<button class="${c} figopt" data-c="${i}" aria-label="Opzione ${L}"><span class="ltr">${L}</span>${frameSVG(it.options[i].frame,'opzione '+L)}</button>`;
-  const lab=it.sec==='verbal'?it.options[i].text:it.options[i].label;
-  return `<button class="${c}" data-c="${i}"><span class="ltr">${L}</span><span class="otext${it.sec==='numerical'?' mono':''}">${esc(lab)}</span></button>`;
+  if(FMT(it)==='abstract') return `<button class="${c} figopt" data-c="${i}" aria-label="Opzione ${L}"><span class="ltr">${L}</span>${frameSVG(it.options[i].frame,'opzione '+L)}</button>`;
+  const lab=FMT(it)==='verbal'?it.options[i].text:it.options[i].label;
+  return `<button class="${c}" data-c="${i}"><span class="ltr">${L}</span><span class="otext${FMT(it)==='numerical'?' mono':''}">${esc(lab)}</span></button>`;
 }
 function feedbackHTML(it,a){
   const ok=a===it.key;
-  if(it.sec==='verbal'){
+  if(FMT(it)==='verbal'){
     return `<div class="fb ${ok?'ok':'bad'}"><b>${ok?'Corretto.':'Sbagliato: la risposta è '+LETTERS[it.key]+'.'}</b>${it.options.map((o,i)=>`<p><span class="mono">${LETTERS[i]}</span> <span class="kind k-${o.kind}">${{true:'Vera',false:'Falsa',cannot:'Non deducibile'}[o.kind]}</span> ${esc(o.why)}</p>`).join('')}${!ok&&a!==undefined?`<p class="small muted">Trappola: ${esc(TRAPS[verbalTrap(it,a)]||'')}</p>`:''}${coachTip(it,a)}</div>`;
   }
-  if(it.sec==='numerical'){
+  if(FMT(it)==='numerical'){
     const w=a!==undefined&&!ok?it.options[a].why:null;
     return `<div class="fb ${ok?'ok':'bad'}"><b>${ok?'Corretto.':'Sbagliato: la risposta è '+LETTERS[it.key]+'.'}</b><p>${esc(it.explain)}</p>${w?`<p class="small muted">La tua opzione corrisponde a: ${esc(w)}.</p>`:''}${coachTip(it,a)}</div>`;
   }
@@ -1915,16 +2114,16 @@ function renderTest(){
   app().innerHTML=`
   <div class="bar"><div class="in">
     <div class="row"><span class="secname">${c.it}</span><span class="clock mono" id="clock">--:--</span><span class="pace small muted" id="pace">${P.timed?'':'Pratica · tempo trascorso'}</span></div>
-    <div class="row">${P.sec==='numerical'?'<button class="ghost" id="calc-t">Calcolatrice</button>':''}<button class="primary" id="end">${S.kind==='full'&&S.pi<2?'Consegna e passa alla prova successiva':'Consegna'}</button></div>
+    <div class="row">${P.sec==='numerical'?'<button class="ghost" id="calc-t">Calcolatrice</button>':''}<button class="primary" id="end">${(S.kind==='full'&&S.pi<2)||(S.kind==='eyfull'&&S.pi<3)?'Consegna e passa alla prova successiva':'Consegna'}</button></div>
   </div></div>
   <main class="wrap">
     <div class="qgrid" aria-label="Domande">${P.items.map((x,i)=>{let k='cell'; if(i===P.cur)k+=' cur'; if(P.ans[i]!==undefined) k+= !P.timed?(P.ans[i]===x.key?' r-ok':' r-bad'):' ans'; if(P.flag[i])k+=' flag'; return `<button class="${k}" data-go="${i}">${i+1}</button>`}).join('')}</div>
-    <div class="split ${P.sec}">
+    <div class="split ${FMT(it)==='numerical'&&!it.stim?'abstract':P.sec}">
       ${renderStim(it)}
       <section class="panel qpanel stack">
         <div class="row spread"><span class="eyebrow">Question ${P.cur+1} of ${P.items.length}</span>${P.timed?`<button class="ghost small" id="flag">${P.flag[P.cur]?'Togli segno':'Segna'}</button>`:''}</div>
-        <p class="qtext">${esc(it.sec==='verbal'?it.question:it.sec==='numerical'?it.question:'Select the figure that completes the series.')}</p>
-        <div class="opts ${it.sec==='abstract'?'figs':''}">${it.options.map((_,i)=>optionHTML(it,i,P,reveal)).join('')}</div>
+        <p class="qtext">${esc(FMT(it)==='verbal'?it.question:FMT(it)==='numerical'?it.question:'Select the figure that completes the series.')}</p>
+        <div class="opts ${FMT(it)==='abstract'?'figs':''}">${it.options.map((_,i)=>optionHTML(it,i,P,reveal)).join('')}</div>
         ${reveal?feedbackHTML(it,a):''}
         <div class="row spread"><button id="prev" ${P.cur===0?'disabled':''}>← Precedente</button>${P.cur<P.items.length-1?'<button id="next">Successiva →</button>':`<button class="primary" id="end2">Consegna</button>`}</div>
         <p class="small muted">Tastiera: ${c.letters===4?'A–D':'A–E'} o 1–${c.letters} per rispondere · ← → per spostarti${P.timed?' · F per segnare':''}</p>
@@ -1967,7 +2166,7 @@ function calcEval(e){
 // ---------- results ----------
 function renderResults(){
   const rec=S.rec, v=verdict(rec);
-  app().innerHTML=header('Risultati',fmtD(rec.date)+' · '+({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato'}[rec.kind]))+`
+  app().innerHTML=header('Risultati',fmtD(rec.date)+' · '+({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato',eyfull:'Simulazione EY'}[rec.kind]))+`
   <main class="wrap stack">
     ${v.length?`<section class="verdicts big">${v.map(x=>`<div class="vd ${x.pass?'ok':'bad'}"><span>${x.label}</span><b class="mono">${x.score}</b><span class="pill ${x.pass?'ok':'bad'}">${x.pass?'Superata':'Non superata'}</span><span class="muted small">${x.rule}</span></div>`).join('')}</section>`:''}
     ${rec.parts.map((p,pi)=>partResult(p,S.parts[pi],pi)).join('')}
@@ -1984,7 +2183,10 @@ const CAUSES={letto:'Testo letto male',tempo:'Tempo',form:'Formulazione',calcolo
 function partResult(p,P,pi){
   const c=SEC[p.sec], budget=SEC[p.sec].sec/SEC[p.sec].n;
   let analysis='';
-  if(p.sec==='verbal'){
+  if(SEC[p.sec]&&SEC[p.sec].ey){
+    const by={}; p.att.forEach(x=>{const k=x.rules?'Figure':(EY_TPL[x.tpl]||(NUM_T[x.tpl]?'Tabelle':'Altro'));by[k]=by[k]||{n:0,ok:0};by[k].n++;if(x.ok)by[k].ok++});
+    analysis=`<div class="stack"><h3>Per tipo di domanda</h3><ul class="bars">${Object.entries(by).map(([k,o])=>`<li><span>${esc(k)}</span><b class="mono">${o.ok}/${o.n}</b></li>`).join('')}</ul></div>`;
+  } else if(p.sec==='verbal'){
     const cnt={}; p.att.forEach(a=>{if(a.trap)cnt[a.trap]=(cnt[a.trap]||0)+1});
     const kinds={cannot:0,false:0,true:0}; p.att.forEach(a=>{if(!a.ok&&a.kind)kinds[a.kind]++});
     analysis=`<div class="stack"><h3>Dove hai sbagliato</h3>${Object.keys(cnt).length?`<ul class="bars">${Object.entries(cnt).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<li><span>${esc(TRAPS[k]||k)}</span><b class="mono">${n}</b></li>`).join('')}</ul>`:'<p class="muted">Nessun errore classificato.</p>'}
@@ -2012,8 +2214,8 @@ function reviewItem(it,a,i,pi,att){
   const ok=a===it.key;
   const causeBtns=(!ok&&att)?`<div class="row causes"><span class="small muted">Causa dell'errore:</span>${Object.entries(CAUSES).map(([k,l])=>`<button class="small ${att.cause===k?'csel':''}" data-cause="${pi}:${i}:${k}">${l}</button>`).join('')}</div>`:'';
   let body='';
-  if(it.sec==='verbal') body=`<details class="inner"><summary>Brano</summary><p class="passage small2">${esc(it.text)}</p></details><p class="small muted">${esc(it.question)}</p>${it.options.map((o,j)=>`<p class="${j===it.key?'okc':(j===a?'badc':'')}"><span class="mono">${LETTERS[j]}</span> ${esc(o.text)}<br><span class="small muted">${{true:'Vera',false:'Falsa',cannot:'Non deducibile'}[o.kind]}: ${esc(o.why)}</span></p>`).join('')}`;
-  else if(it.sec==='numerical') body=`<details class="inner"><summary>Dati</summary>${it.stim}</details><p>${esc(it.question)}</p><p class="small">${it.options.map((o,j)=>`<span class="${j===it.key?'okc':(j===a?'badc':'')}">${LETTERS[j]}. ${esc(o.label)}</span>`).join(' · ')}</p><p class="small muted">${esc(it.explain)}</p>`;
+  if(FMT(it)==='verbal') body=`<details class="inner"><summary>Brano</summary><p class="passage small2">${esc(it.text)}</p></details><p class="small muted">${esc(it.question)}</p>${it.options.map((o,j)=>`<p class="${j===it.key?'okc':(j===a?'badc':'')}"><span class="mono">${LETTERS[j]}</span> ${esc(o.text)}<br><span class="small muted">${{true:'Vera',false:'Falsa',cannot:'Non deducibile'}[o.kind]}: ${esc(o.why)}</span></p>`).join('')}`;
+  else if(FMT(it)==='numerical') body=`<details class="inner"><summary>Dati</summary>${it.stim}</details><p>${esc(it.question)}</p><p class="small">${it.options.map((o,j)=>`<span class="${j===it.key?'okc':(j===a?'badc':'')}">${LETTERS[j]}. ${esc(o.label)}</span>`).join(' · ')}</p><p class="small muted">${esc(it.explain)}</p>`;
   else body=`<div class="series sm">${it.series.map(f=>frameSVG(f)).join('')}<div class="qmark">?</div></div><div class="series sm">${it.options.map((o,j)=>`<div class="optmini ${j===it.key?'k':''} ${j===a&&!ok?'w':''}"><span class="mono">${LETTERS[j]}</span>${frameSVG(o.frame)}</div>`).join('')}</div><p class="small muted">${esc(it.explain)}</p>`;
   return `<div class="ritem ${ok?'ok':'bad'}"><div class="row"><span class="mono">${String(i+1).padStart(2,'0')}</span><span>${a===undefined?'Senza risposta':ok?'Corretta':'Tua: '+LETTERS[a]+' · giusta: '+LETTERS[it.key]}</span></div>${body}${coachTip(it,a)}${causeBtns}</div>`;
 }
@@ -2037,6 +2239,7 @@ function renderStats(){
     ${weakPanel(false)}
     <section class="stack"><h2>Riepilogo di tutte le prove</h2><p class="small muted">Test del programma, simulazioni ed esercizi sul manuale, fogli risposte: tutto insieme.</p>
       <div class="cards3">${['verbal','numerical','abstract'].map(s=>overviewCard(s,by(s),ss.filter(x=>x.kind!=='sheet'||true),srcOf)).join('')}</div></section>
+    ${['mind','crit','adapt','aipro'].some(k=>by(k).length)?`<section class="stack"><h2>Test EY</h2><div class="cards4">${['mind','crit','adapt','aipro'].map(k=>overviewCard(k,by(k))).join('')}</div></section>`:''}
     ${dailyTable(all)}
     ${allTestsTable(ss,srcOf)}
     ${manualWrongPanel()}
@@ -2093,7 +2296,7 @@ function dailyTable(all){
 }
 function allTestsTable(ss,srcOf){
   if(!ss.length) return '';
-  const kindLabel=s=>s.kind==='sheet'?(s.label||'Foglio risposte'):({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato'}[s.kind]||s.kind);
+  const kindLabel=s=>s.kind==='sheet'?(s.label||'Foglio risposte'):({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato',eyfull:'Simulazione EY'}[s.kind]||s.kind);
   const rows=[]; ss.slice(0,40).forEach(s=>s.parts.forEach(p=>rows.push({s,p})));
   return `<section class="panel stack"><h2>Tutte le prove</h2><div class="tblwrap"><table class="times"><thead><tr><th>Data</th><th>Origine</th><th>Tipo</th><th>Prova</th><th>Punteggio</th><th>Tempo</th></tr></thead><tbody>
     ${rows.map(({s,p})=>`<tr><td>${fmtD(s.date)}</td><td>${{programma:'Programma',manuale:'Manuale',foglio:'Foglio risposte'}[srcOf(s)]}</td><td>${esc(kindLabel(s))}</td><td>${SEC[p.sec]?SEC[p.sec].it.replace('Ragionamento ',''):esc(p.sec)}</td><td class="mono">${p.score}/${p.n} <span class="muted">(${p.n?Math.round(p.score/p.n*100):0}%)</span></td><td class="mono">${fmtT(p.secs||0)}${p.limit?' / '+fmtT(p.limit):''}</td></tr>`).join('')}</tbody></table></div></section>`;
@@ -2165,7 +2368,7 @@ function renderSheet(){
 
 function footer(){ return `<footer class="foot">
   <p>Formato e soglie dal bando EPSO/AD/427/26: verbale 20 domande in 35 minuti (soglia 10/20); numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Numerico e astratto sono generati al momento con dati fittizi. Il punteggio qui non predice il risultato reale.</p>
-  <p class="mono">Versione 2026-11-06f · Statistiche unificate e pagina Errori</p>
+  <p class="mono">Versione 2026-11-06g · Sezione Test EY</p>
   <p>Verbale: 42 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO.</p>
 </footer>`; }
 

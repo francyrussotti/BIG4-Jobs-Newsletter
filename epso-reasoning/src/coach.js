@@ -113,8 +113,9 @@ function startFocus(){ S={kind:'focus',parts:buildFocusParts(6),pi:0,created:Dat
 function coachTip(it,a){
   if(a===undefined||a===it.key) return '';
   let t='';
-  if(it.sec==='verbal') t=TRAP_TIP[verbalTrap(it,a)]||'';
-  else if(it.sec==='numerical') t=NUM_TIP[it.tpl]||'';
+  if(FMT(it)==='verbal') t=TRAP_TIP[verbalTrap(it,a)]||'';
+  else if(FMT(it)==='numerical') t=NUM_TIP[it.tpl]||it.tip||'';
+  else if(FMT(it)!=='abstract'){ t=it.tip||''; }
   else { const br=it.options[a].broken||[]; t=br.map(r=>ABS_TIP[r]).filter(Boolean).join(' ')||ABS_TIP[it.rules[0]]||''; }
   return t?`<p class="tip"><b>Come evitarlo:</b> ${esc(t)}</p>`:'';
 }

@@ -1,8 +1,13 @@
 // ---------- configuration from the notice EPSO/AD/427/26 ----------
+const FMT=it=>it.fmt||it.sec;
 const SEC={
   verbal:{name:'Verbal reasoning',it:'Ragionamento verbale',n:20,sec:35*60,letters:4},
   numerical:{name:'Numerical reasoning',it:'Ragionamento numerico',n:10,sec:20*60,letters:5},
-  abstract:{name:'Abstract reasoning',it:'Ragionamento astratto',n:10,sec:10*60,letters:5}
+  abstract:{name:'Abstract reasoning',it:'Ragionamento astratto',n:10,sec:10*60,letters:5},
+  mind:{name:'MIND',it:'EY · MIND',n:16,sec:10*60,letters:5,ey:true},
+  crit:{name:'Basic critical thinking',it:'EY · Critical thinking',n:13,sec:8*60,letters:5,ey:true},
+  adapt:{name:'Adaptability',it:'EY · Adaptability',n:10,sec:8*60,letters:4,ey:true},
+  aipro:{name:'AI proficiency',it:'EY · AI proficiency',n:10,sec:10*60,letters:4,ey:true}
 };
 const PASS={verbal:10,numabs:10};
 const KEY='epsoAD5reasoning:v1';
@@ -31,6 +36,7 @@ function pickNumerical(n){
 }
 function pickAbstract(n){ const out=[]; for(let i=0;i<n;i++) out.push(buildAbstractItem(i>=Math.round(n*0.4))); return out; }
 function buildSection(sec,n,onlyWrong){
+  if(SEC[sec]&&SEC[sec].ey) return buildEY(sec,n);
   if(sec==='verbal') return pickVerbal(n,onlyWrong);
   if(sec==='numerical') return pickNumerical(n);
   return pickAbstract(n);
@@ -76,8 +82,8 @@ function endPart(auto){
 function scorePart(P){ return P.items.reduce((s,it,i)=>s+(P.ans[i]===it.key?1:0),0); }
 function tagOf(P,i){
   const it=P.items[i], a=P.ans[i];
-  if(it.sec==='verbal') return a===undefined?'blank':(a===it.key?'ok':verbalTrap(it,a));
-  if(it.sec==='numerical') return it.tpl;
+  if(FMT(it)==='verbal') return a===undefined?'blank':(a===it.key?'ok':verbalTrap(it,a));
+  if(FMT(it)==='numerical') return it.tpl;
   return it.rules.join('+');
 }
 function finishSession(){
@@ -87,11 +93,11 @@ function finishSession(){
     const att=P.items.map((it,i)=>{
       const a=P.ans[i], ok=a===it.key;
       const r={sec:it.sec,id:it.id,ok,ans:a===undefined?null:a,key:it.key,ms:Math.round(P.ms[i]||0),ch:P.changes[i]||0,fl:!!P.flag[i]};
-      r.snap=it.sec==='verbal'?{q:it.question,o:it.options.map(o=>o.text),k:it.options.map(o=>o.kind),w:it.options.map(o=>o.why),qt:it.q}:it.sec==='numerical'?{q:it.question,stim:it.stim,o:it.options.map(o=>o.label),ex:it.explain}:{s:it.series,o:it.options.map(o=>o.frame),ex:it.explain};
-      if(it.sec==='verbal'){ r.q=it.q; r.trap=ok||a===undefined?null:verbalTrap(it,a); r.kind=a===undefined?null:it.options[a].kind;
+      r.snap=FMT(it)==='verbal'?{q:it.question,o:it.options.map(o=>o.text),k:it.options.map(o=>o.kind),w:it.options.map(o=>o.why),qt:it.q}:FMT(it)==='numerical'?{q:it.question,stim:it.stim,o:it.options.map(o=>o.label),ex:it.explain,tip:it.tip||''}:{s:it.series,o:it.options.map(o=>o.frame),ex:it.explain};
+      if(FMT(it)==='verbal'){ r.q=it.q; r.trap=ok||a===undefined?null:verbalTrap(it,a); r.kind=a===undefined?null:it.options[a].kind;
         DB.seen[it.id]=(DB.seen[it.id]||0)+1; if(ok) delete DB.vwrong[it.id]; else DB.vwrong[it.id]=1; }
-      if(it.sec==='numerical'){ r.tpl=it.tpl; r.slip=ok||a===undefined?null:(it.options[a].why||''); }
-      if(it.sec==='abstract'){ r.rules=it.rules; r.broken=ok||a===undefined?null:it.options[a].broken; r.hard=it.hard; }
+      if(FMT(it)==='numerical'){ r.tpl=it.tpl; r.slip=ok||a===undefined?null:(it.options[a].why||''); }
+      if(FMT(it)==='abstract'){ r.rules=it.rules; r.broken=ok||a===undefined?null:it.options[a].broken; r.hard=it.hard; }
       return r;});
     rec.parts.push({sec:P.sec,n:P.items.length,score:scorePart(P),secs:Math.round((P.ended-P.started)/1000),limit:P.timed?P.seconds:null,auto:!!P.auto,att});
   });
@@ -160,8 +166,8 @@ function bindPlan(){
 }
 
 // ---------- rendering ----------
-function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="method">Metodo</button><button class="ghost" data-nav="manual">Manuale</button><button class="ghost" data-nav="errors">Errori</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button></nav></div></header>`; }
-function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; if(MAN&&MAN.run&&b.dataset.nav!=='manual'){ MAN.run=null; } ({home:renderHome,stats:renderStats,sheet:renderSheetSetup,method:renderMethod,manual:renderManual,errors:renderErrors})[b.dataset.nav](); }); }
+function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="method">Metodo</button><button class="ghost" data-nav="manual">Manuale</button><button class="ghost" data-nav="errors">Errori</button><button class="ghost" data-nav="ey">Test EY</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button></nav></div></header>`; }
+function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; if(MAN&&MAN.run&&b.dataset.nav!=='manual'){ MAN.run=null; } ({home:renderHome,stats:renderStats,sheet:renderSheetSetup,method:renderMethod,manual:renderManual,errors:renderErrors,ey:renderEY})[b.dataset.nav](); }); }
 let leaveArmed=false;
 function confirmLeave(){ if(leaveArmed){leaveArmed=false;return true} leaveArmed=true; toast('Prova in corso: premi di nuovo per uscire senza salvare.'); setTimeout(()=>leaveArmed=false,4000); return false; }
 function toast(t){ let el=$('#toast'); if(!el){el=document.createElement('div');el.id='toast';document.body.appendChild(el)} el.textContent=t; el.className='show'; clearTimeout(el._t); el._t=setTimeout(()=>el.className='',3500); }
@@ -192,6 +198,7 @@ function renderHome(msg){
       <button id="go-review" ${vw?'':'disabled'}>Ripassa errori verbali (${vw})</button>
       <button id="go-drill">Pratica breve: 5 per prova</button>
       <button id="go-method">Leggi il metodo (prima volta: 15 minuti)</button>
+      <button data-nav="ey">Test EY (Maki)</button>
     </section>
     <section class="panel stack"><h2>Ultima simulazione completa</h2>${last?resultLines(last):'<p class="muted">Ancora nessuna. La prova generale del piano è mercoledì 11 alle 11:00.</p>'}</section>
     ${footer()}
@@ -221,8 +228,8 @@ function renderIntro(){
     verbal:['Leggi prima la domanda: cerca l\'affermazione <b>correct</b> o <b>incorrect</b>? Alcune domande vanno completate ("According to the passage, …", "Why…?"): vale la stessa regola, conta solo il testo.','Poi le 4 opzioni, poi il brano cercando solo ciò che serve.','Vale solo ciò che il testo dice o implica: niente conoscenze esterne.','Attento a some/most/all, may/will, "dopo" vs "a causa di".'],
     numerical:['Leggi la domanda prima della tabella: individua righe, colonne e unità.','Stima prima di calcolare: spesso le opzioni sono abbastanza distanti.','Usa la calcolatrice a schermo (pulsante in alto), come all\'esame.','Percentuali: la base è il valore di partenza. Punti percentuali ≠ %.'],
     abstract:['Isola un elemento alla volta: forma, riempimento, lancetta, punti, quadratino, settori, caselle, lati.','Se una regola non torna tra figure vicine, prova a coppie: 1 + 2 = 3 e 4 + 5 = 6 (sovrapposizione).','Controlla il passo tra ogni coppia di figure, non solo tra la prima e l\'ultima.','Elimina le opzioni che violano anche una sola regola.','Un minuto a domanda: se dopo 60 secondi non vedi la regola, segna e passa oltre.']
-  }[P.sec];
-  app().innerHTML=header(c.it,S.kind==='full'?`Prova ${S.pi+1} di 3`:S.kind==='focus'?`Allenamento mirato · parte ${S.pi+1} di 3 · domande scelte sui tuoi errori`:(P.timed?'Prova a tempo':'Pratica con correzione immediata'))+`
+  }[P.sec]||EY_TIPS[P.sec]||[];
+  app().innerHTML=header(c.it,S.kind==='full'?`Prova ${S.pi+1} di 3`:S.kind==='eyfull'?`Simulazione EY · attività ${S.pi+1} di 4 · puoi fare una pausa prima di iniziare`:S.kind==='focus'?`Allenamento mirato · parte ${S.pi+1} di 3 · domande scelte sui tuoi errori`:(P.timed?'Prova a tempo':'Pratica con correzione immediata'))+`
   <main class="wrap stack narrow">
     <div class="panel stack">
       <div class="row spread"><h2>${c.name}</h2><span class="mono big2">${P.items.length} dom.${P.timed?' · '+fmtT(P.seconds):''}</span></div>
@@ -235,24 +242,24 @@ function renderIntro(){
 }
 
 function renderStim(it){
-  if(it.sec==='verbal') return `<article class="panel passage-panel"><div class="eyebrow">Text</div>${it.title?`<h3 class="ptitle">${esc(it.title)}</h3>`:''}<p class="passage">${esc(it.text)}</p>${it.source?`<p class="src">Source: ${esc(it.source.act)}, recital ${it.source.recital}. © European Union, EUR-Lex.</p>`:''}</article>`;
-  if(it.sec==='numerical') return `<article class="panel stim">${it.stim}</article>`;
+  if(FMT(it)==='verbal') return `<article class="panel passage-panel"><div class="eyebrow">Text</div>${it.title?`<h3 class="ptitle">${esc(it.title)}</h3>`:''}<p class="passage">${esc(it.text)}</p>${it.source?`<p class="src">Source: ${esc(it.source.act)}, recital ${it.source.recital}. © European Union, EUR-Lex.</p>`:''}</article>`;
+  if(FMT(it)==='numerical') return it.stim?`<article class="panel stim">${it.stim}</article>`:'';
   return `<article class="panel stim"><div class="eyebrow">Which figure comes next in the series?</div><div class="series">${it.series.map((f,i)=>frameSVG(f,'figura '+(i+1))).join('')}<div class="qmark">?</div></div></article>`;
 }
 function optionHTML(it,i,P,reveal){
   const a=P.ans[P.cur]; let c='opt'; if(a===i) c+=' sel';
   if(reveal){ if(i===it.key) c+=' right'; else if(a===i) c+=' wrong'; }
   const L=LETTERS[i];
-  if(it.sec==='abstract') return `<button class="${c} figopt" data-c="${i}" aria-label="Opzione ${L}"><span class="ltr">${L}</span>${frameSVG(it.options[i].frame,'opzione '+L)}</button>`;
-  const lab=it.sec==='verbal'?it.options[i].text:it.options[i].label;
-  return `<button class="${c}" data-c="${i}"><span class="ltr">${L}</span><span class="otext${it.sec==='numerical'?' mono':''}">${esc(lab)}</span></button>`;
+  if(FMT(it)==='abstract') return `<button class="${c} figopt" data-c="${i}" aria-label="Opzione ${L}"><span class="ltr">${L}</span>${frameSVG(it.options[i].frame,'opzione '+L)}</button>`;
+  const lab=FMT(it)==='verbal'?it.options[i].text:it.options[i].label;
+  return `<button class="${c}" data-c="${i}"><span class="ltr">${L}</span><span class="otext${FMT(it)==='numerical'?' mono':''}">${esc(lab)}</span></button>`;
 }
 function feedbackHTML(it,a){
   const ok=a===it.key;
-  if(it.sec==='verbal'){
+  if(FMT(it)==='verbal'){
     return `<div class="fb ${ok?'ok':'bad'}"><b>${ok?'Corretto.':'Sbagliato: la risposta è '+LETTERS[it.key]+'.'}</b>${it.options.map((o,i)=>`<p><span class="mono">${LETTERS[i]}</span> <span class="kind k-${o.kind}">${{true:'Vera',false:'Falsa',cannot:'Non deducibile'}[o.kind]}</span> ${esc(o.why)}</p>`).join('')}${!ok&&a!==undefined?`<p class="small muted">Trappola: ${esc(TRAPS[verbalTrap(it,a)]||'')}</p>`:''}${coachTip(it,a)}</div>`;
   }
-  if(it.sec==='numerical'){
+  if(FMT(it)==='numerical'){
     const w=a!==undefined&&!ok?it.options[a].why:null;
     return `<div class="fb ${ok?'ok':'bad'}"><b>${ok?'Corretto.':'Sbagliato: la risposta è '+LETTERS[it.key]+'.'}</b><p>${esc(it.explain)}</p>${w?`<p class="small muted">La tua opzione corrisponde a: ${esc(w)}.</p>`:''}${coachTip(it,a)}</div>`;
   }
@@ -265,16 +272,16 @@ function renderTest(){
   app().innerHTML=`
   <div class="bar"><div class="in">
     <div class="row"><span class="secname">${c.it}</span><span class="clock mono" id="clock">--:--</span><span class="pace small muted" id="pace">${P.timed?'':'Pratica · tempo trascorso'}</span></div>
-    <div class="row">${P.sec==='numerical'?'<button class="ghost" id="calc-t">Calcolatrice</button>':''}<button class="primary" id="end">${S.kind==='full'&&S.pi<2?'Consegna e passa alla prova successiva':'Consegna'}</button></div>
+    <div class="row">${P.sec==='numerical'?'<button class="ghost" id="calc-t">Calcolatrice</button>':''}<button class="primary" id="end">${(S.kind==='full'&&S.pi<2)||(S.kind==='eyfull'&&S.pi<3)?'Consegna e passa alla prova successiva':'Consegna'}</button></div>
   </div></div>
   <main class="wrap">
     <div class="qgrid" aria-label="Domande">${P.items.map((x,i)=>{let k='cell'; if(i===P.cur)k+=' cur'; if(P.ans[i]!==undefined) k+= !P.timed?(P.ans[i]===x.key?' r-ok':' r-bad'):' ans'; if(P.flag[i])k+=' flag'; return `<button class="${k}" data-go="${i}">${i+1}</button>`}).join('')}</div>
-    <div class="split ${P.sec}">
+    <div class="split ${FMT(it)==='numerical'&&!it.stim?'abstract':P.sec}">
       ${renderStim(it)}
       <section class="panel qpanel stack">
         <div class="row spread"><span class="eyebrow">Question ${P.cur+1} of ${P.items.length}</span>${P.timed?`<button class="ghost small" id="flag">${P.flag[P.cur]?'Togli segno':'Segna'}</button>`:''}</div>
-        <p class="qtext">${esc(it.sec==='verbal'?it.question:it.sec==='numerical'?it.question:'Select the figure that completes the series.')}</p>
-        <div class="opts ${it.sec==='abstract'?'figs':''}">${it.options.map((_,i)=>optionHTML(it,i,P,reveal)).join('')}</div>
+        <p class="qtext">${esc(FMT(it)==='verbal'?it.question:FMT(it)==='numerical'?it.question:'Select the figure that completes the series.')}</p>
+        <div class="opts ${FMT(it)==='abstract'?'figs':''}">${it.options.map((_,i)=>optionHTML(it,i,P,reveal)).join('')}</div>
         ${reveal?feedbackHTML(it,a):''}
         <div class="row spread"><button id="prev" ${P.cur===0?'disabled':''}>← Precedente</button>${P.cur<P.items.length-1?'<button id="next">Successiva →</button>':`<button class="primary" id="end2">Consegna</button>`}</div>
         <p class="small muted">Tastiera: ${c.letters===4?'A–D':'A–E'} o 1–${c.letters} per rispondere · ← → per spostarti${P.timed?' · F per segnare':''}</p>
@@ -317,7 +324,7 @@ function calcEval(e){
 // ---------- results ----------
 function renderResults(){
   const rec=S.rec, v=verdict(rec);
-  app().innerHTML=header('Risultati',fmtD(rec.date)+' · '+({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato'}[rec.kind]))+`
+  app().innerHTML=header('Risultati',fmtD(rec.date)+' · '+({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato',eyfull:'Simulazione EY'}[rec.kind]))+`
   <main class="wrap stack">
     ${v.length?`<section class="verdicts big">${v.map(x=>`<div class="vd ${x.pass?'ok':'bad'}"><span>${x.label}</span><b class="mono">${x.score}</b><span class="pill ${x.pass?'ok':'bad'}">${x.pass?'Superata':'Non superata'}</span><span class="muted small">${x.rule}</span></div>`).join('')}</section>`:''}
     ${rec.parts.map((p,pi)=>partResult(p,S.parts[pi],pi)).join('')}
@@ -334,7 +341,10 @@ const CAUSES={letto:'Testo letto male',tempo:'Tempo',form:'Formulazione',calcolo
 function partResult(p,P,pi){
   const c=SEC[p.sec], budget=SEC[p.sec].sec/SEC[p.sec].n;
   let analysis='';
-  if(p.sec==='verbal'){
+  if(SEC[p.sec]&&SEC[p.sec].ey){
+    const by={}; p.att.forEach(x=>{const k=x.rules?'Figure':(EY_TPL[x.tpl]||(NUM_T[x.tpl]?'Tabelle':'Altro'));by[k]=by[k]||{n:0,ok:0};by[k].n++;if(x.ok)by[k].ok++});
+    analysis=`<div class="stack"><h3>Per tipo di domanda</h3><ul class="bars">${Object.entries(by).map(([k,o])=>`<li><span>${esc(k)}</span><b class="mono">${o.ok}/${o.n}</b></li>`).join('')}</ul></div>`;
+  } else if(p.sec==='verbal'){
     const cnt={}; p.att.forEach(a=>{if(a.trap)cnt[a.trap]=(cnt[a.trap]||0)+1});
     const kinds={cannot:0,false:0,true:0}; p.att.forEach(a=>{if(!a.ok&&a.kind)kinds[a.kind]++});
     analysis=`<div class="stack"><h3>Dove hai sbagliato</h3>${Object.keys(cnt).length?`<ul class="bars">${Object.entries(cnt).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<li><span>${esc(TRAPS[k]||k)}</span><b class="mono">${n}</b></li>`).join('')}</ul>`:'<p class="muted">Nessun errore classificato.</p>'}
@@ -362,8 +372,8 @@ function reviewItem(it,a,i,pi,att){
   const ok=a===it.key;
   const causeBtns=(!ok&&att)?`<div class="row causes"><span class="small muted">Causa dell'errore:</span>${Object.entries(CAUSES).map(([k,l])=>`<button class="small ${att.cause===k?'csel':''}" data-cause="${pi}:${i}:${k}">${l}</button>`).join('')}</div>`:'';
   let body='';
-  if(it.sec==='verbal') body=`<details class="inner"><summary>Brano</summary><p class="passage small2">${esc(it.text)}</p></details><p class="small muted">${esc(it.question)}</p>${it.options.map((o,j)=>`<p class="${j===it.key?'okc':(j===a?'badc':'')}"><span class="mono">${LETTERS[j]}</span> ${esc(o.text)}<br><span class="small muted">${{true:'Vera',false:'Falsa',cannot:'Non deducibile'}[o.kind]}: ${esc(o.why)}</span></p>`).join('')}`;
-  else if(it.sec==='numerical') body=`<details class="inner"><summary>Dati</summary>${it.stim}</details><p>${esc(it.question)}</p><p class="small">${it.options.map((o,j)=>`<span class="${j===it.key?'okc':(j===a?'badc':'')}">${LETTERS[j]}. ${esc(o.label)}</span>`).join(' · ')}</p><p class="small muted">${esc(it.explain)}</p>`;
+  if(FMT(it)==='verbal') body=`<details class="inner"><summary>Brano</summary><p class="passage small2">${esc(it.text)}</p></details><p class="small muted">${esc(it.question)}</p>${it.options.map((o,j)=>`<p class="${j===it.key?'okc':(j===a?'badc':'')}"><span class="mono">${LETTERS[j]}</span> ${esc(o.text)}<br><span class="small muted">${{true:'Vera',false:'Falsa',cannot:'Non deducibile'}[o.kind]}: ${esc(o.why)}</span></p>`).join('')}`;
+  else if(FMT(it)==='numerical') body=`<details class="inner"><summary>Dati</summary>${it.stim}</details><p>${esc(it.question)}</p><p class="small">${it.options.map((o,j)=>`<span class="${j===it.key?'okc':(j===a?'badc':'')}">${LETTERS[j]}. ${esc(o.label)}</span>`).join(' · ')}</p><p class="small muted">${esc(it.explain)}</p>`;
   else body=`<div class="series sm">${it.series.map(f=>frameSVG(f)).join('')}<div class="qmark">?</div></div><div class="series sm">${it.options.map((o,j)=>`<div class="optmini ${j===it.key?'k':''} ${j===a&&!ok?'w':''}"><span class="mono">${LETTERS[j]}</span>${frameSVG(o.frame)}</div>`).join('')}</div><p class="small muted">${esc(it.explain)}</p>`;
   return `<div class="ritem ${ok?'ok':'bad'}"><div class="row"><span class="mono">${String(i+1).padStart(2,'0')}</span><span>${a===undefined?'Senza risposta':ok?'Corretta':'Tua: '+LETTERS[a]+' · giusta: '+LETTERS[it.key]}</span></div>${body}${coachTip(it,a)}${causeBtns}</div>`;
 }
@@ -387,6 +397,7 @@ function renderStats(){
     ${weakPanel(false)}
     <section class="stack"><h2>Riepilogo di tutte le prove</h2><p class="small muted">Test del programma, simulazioni ed esercizi sul manuale, fogli risposte: tutto insieme.</p>
       <div class="cards3">${['verbal','numerical','abstract'].map(s=>overviewCard(s,by(s),ss.filter(x=>x.kind!=='sheet'||true),srcOf)).join('')}</div></section>
+    ${['mind','crit','adapt','aipro'].some(k=>by(k).length)?`<section class="stack"><h2>Test EY</h2><div class="cards4">${['mind','crit','adapt','aipro'].map(k=>overviewCard(k,by(k))).join('')}</div></section>`:''}
     ${dailyTable(all)}
     ${allTestsTable(ss,srcOf)}
     ${manualWrongPanel()}
@@ -443,7 +454,7 @@ function dailyTable(all){
 }
 function allTestsTable(ss,srcOf){
   if(!ss.length) return '';
-  const kindLabel=s=>s.kind==='sheet'?(s.label||'Foglio risposte'):({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato'}[s.kind]||s.kind);
+  const kindLabel=s=>s.kind==='sheet'?(s.label||'Foglio risposte'):({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato',eyfull:'Simulazione EY'}[s.kind]||s.kind);
   const rows=[]; ss.slice(0,40).forEach(s=>s.parts.forEach(p=>rows.push({s,p})));
   return `<section class="panel stack"><h2>Tutte le prove</h2><div class="tblwrap"><table class="times"><thead><tr><th>Data</th><th>Origine</th><th>Tipo</th><th>Prova</th><th>Punteggio</th><th>Tempo</th></tr></thead><tbody>
     ${rows.map(({s,p})=>`<tr><td>${fmtD(s.date)}</td><td>${{programma:'Programma',manuale:'Manuale',foglio:'Foglio risposte'}[srcOf(s)]}</td><td>${esc(kindLabel(s))}</td><td>${SEC[p.sec]?SEC[p.sec].it.replace('Ragionamento ',''):esc(p.sec)}</td><td class="mono">${p.score}/${p.n} <span class="muted">(${p.n?Math.round(p.score/p.n*100):0}%)</span></td><td class="mono">${fmtT(p.secs||0)}${p.limit?' / '+fmtT(p.limit):''}</td></tr>`).join('')}</tbody></table></div></section>`;
@@ -515,7 +526,7 @@ function renderSheet(){
 
 function footer(){ return `<footer class="foot">
   <p>Formato e soglie dal bando EPSO/AD/427/26: verbale 20 domande in 35 minuti (soglia 10/20); numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Numerico e astratto sono generati al momento con dati fittizi. Il punteggio qui non predice il risultato reale.</p>
-  <p class="mono">Versione 2026-11-06f · Statistiche unificate e pagina Errori</p>
+  <p class="mono">Versione 2026-11-06g · Sezione Test EY</p>
   <p>Verbale: 42 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO.</p>
 </footer>`; }
 
