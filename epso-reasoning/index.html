@@ -239,7 +239,11 @@ tr.today td{background:var(--accent-soft)}
 .mc-eq{display:flex;flex-wrap:wrap;justify-content:center;align-items:baseline;gap:14px;font-size:clamp(2rem,8vw,3.2rem);font-weight:500}
 .mc-eqs{color:var(--muted)} .mc-q{color:var(--accent);font-weight:600}
 .mc-ops{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;width:100%;max-width:520px}
-.mc-ops.two{grid-template-columns:1fr 1fr}
+.mc-ops.two{grid-template-columns:1fr 1fr} .mc-ops.five{grid-template-columns:repeat(5,minmax(0,1fr));max-width:620px}
+.mc-none{font-size:1rem!important;font-family:var(--f-ui)}
+.mc-tbar{width:100%;max-width:520px;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.mc-tbar i{display:block;height:100%;background:var(--accent);animation:mctb linear forwards}
+@keyframes mctb{from{width:100%}to{width:0}}
 .mc-op{font-size:1.7rem;min-height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
 .mc-op small{font-size:.7rem;color:var(--muted);font-family:var(--f-mono)}
 .mc-form input{font-size:1.6rem;width:10ch;text-align:center;padding:8px;border:1px solid var(--line);border-radius:5px;background:var(--panel)}
@@ -1929,12 +1933,12 @@ function startEYFull(){
 // Vero/Falso (verifica un'uguaglianza), Calcolo (scrivi il risultato).
 const MC_MODES={
   op:{name:'Operatore',desc:'Vedi tre numeri: il terzo è il risultato dei primi due. Scegli l\'operazione: + − × ÷.',keys:'Tasti 1-4 oppure + - * /'},
-  wheel:{name:'Ruota',desc:'Tre numeri girano su una ruota in ordine sparso. Trova l\'operazione che li lega: l\'ordine non conta (30, 10, 3 → × oppure ÷, entrambe giuste).',keys:'Tasti 1-4 oppure + - * /'},
+  wheel:{name:'Ruota',desc:'Tre numeri girano su una ruota in ordine sparso. Trova l\'operazione che li lega, l\'ordine non conta (30, 10, 3 → × o ÷). Circa una volta su tre non li lega nessuna: il risultato è sbagliato di poco.',keys:'Tasti 1-4 oppure + - * /; 5 o N = ∅ nessuna'},
   tf:{name:'Vero o falso',desc:'Un\'uguaglianza già scritta: è giusta o sbagliata? Gli errori sono vicini al risultato vero.',keys:'V / F oppure ← →'},
   calc:{name:'Calcolo',desc:'Scrivi il risultato e premi Invio. Dal livello 2 anche percentuali.',keys:'Numeri + Invio'}
 };
 const MC_LEVELS={1:'Facile · tabelline, numeri fino a 30',2:'Medio · due cifre, tabelline fino a 15',3:'Difficile · tre cifre, due cifre × una cifra'};
-const MC_SYM={'+':'+','-':'−','*':'×','/':'÷','%':'% di'};
+const MC_SYM={'+':'+','-':'−','*':'×','/':'÷','%':'% di','none':'∅ nessuna'};
 const MC_OPS=['+','-','*','/'];
 let MC=null;
 const mcR=(a,b)=>a+Math.floor(Math.random()*(b-a+1));
@@ -1965,7 +1969,15 @@ function mcItem(mode,L,prev){
       if(mode==='wheel'){ const v=mcAnyOrder([p.a,p.b,p.c]).sort().join('');
         if(v!=='+-'&&v!=='*/') continue; // una sola famiglia: +/− oppure ×/÷
         if(new Set([p.a,p.b,p.c]).size<3) continue;
-        p.valid=v.split(''); p.pos=[0,1,2].sort(()=>Math.random()-.5); p.spin=mcPick([1,-1]); }
+        p.valid=v.split(''); p.pos=[0,1,2].sort(()=>Math.random()-.5); p.spin=mcPick([1,-1]);
+        if(Math.random()<.32){ // trappola: il numero più grande è sbagliato di poco, nessuna operazione funziona
+          const n=[p.a,p.b,p.c], z=Math.max(...n), [x,y]=n.filter((_,i)=>i!==n.indexOf(z)), fam=v==='+-'?'+':'×';
+          const d=[1,-1,2,-2]; if(L>=2) d.push(10,-10); if(fam==='×') d.push(x,-x,y,-y); if(L>=3) d.push(100,-100);
+          const cand=d.map(k=>z+k).filter(w=>w>Math.max(x,y)&&w!==z&&!mcAnyOrder([x,y,w]).length);
+          if(!cand.length) continue;
+          const w=mcPick(cand); p.txt=`${x} ${fam} ${y} = ${z}, non ${w} → nessuna`;
+          p.a=x; p.b=y; p.c=w; p.op='none'; p.valid=['none'];
+        } }
       return p;
     }
     const ops=L>=2?['+','-','*','/','%']:MC_OPS;
@@ -1992,8 +2004,8 @@ const mcStore=()=>{ DB.mental=DB.mental||[]; return DB.mental; };
 function renderMental(){
   MC=null;
   const hist=mcStore();
-  const pref=DB.mentalPref||{mode:'op',level:2,dur:90};
-  const best=(m,l,d)=>{const xs=hist.filter(h=>h.mode===m&&h.level===l&&h.dur===d); return xs.length?Math.max(...xs.map(h=>h.ok)):null};
+  const pref=Object.assign({mode:'op',level:2,dur:90,lim:0},DB.mentalPref||{});
+  const best=(m,l,d,t)=>{const xs=hist.filter(h=>h.mode===m&&h.level===l&&h.dur===d&&(h.lim||0)===t); return xs.length?Math.max(...xs.map(h=>h.ok)):null};
   app().innerHTML=header('Calcolo rapido','Calcolo a mente a tempo. Utile per MIND (EY) e per non perdere secondi nel numerico EPSO.')+`
   <main class="wrap stack">
     <section class="panel stack">
@@ -2002,6 +2014,7 @@ function renderMental(){
       <div class="row wrap-gap">
         <label class="row">Livello <select id="mc-level">${[1,2,3].map(l=>`<option value="${l}" ${pref.level===l?'selected':''}>${l} · ${MC_LEVELS[l]}</option>`).join('')}</select></label>
         <label class="row">Durata <select id="mc-dur">${[[60,'1 minuto'],[90,'90 secondi'],[120,'2 minuti'],[180,'3 minuti']].map(([v,t])=>`<option value="${v}" ${pref.dur===v?'selected':''}>${t}</option>`).join('')}</select></label>
+        <label class="row">Limite per domanda <select id="mc-lim">${[[0,'nessuno'],[6,'6 secondi'],[4,'4 secondi'],[3,'3 secondi']].map(([v,t])=>`<option value="${v}" ${pref.lim===v?'selected':''}>${t}</option>`).join('')}</select></label>
         <button class="primary" id="mc-start">Inizia</button>
       </div>
       <p class="small muted" id="mc-best"></p>
@@ -2010,6 +2023,7 @@ function renderMental(){
       <h2>Come andare più veloce</h2>
       <dl class="dl">
         <dt>Operatore: prima la grandezza</dt><dd>Il terzo numero è più grande di entrambi → <b>+</b> o <b>×</b>. È più piccolo del primo → <b>−</b> o <b>÷</b>. Poi decidi tra i due con una stima: 14 e 6 → 84 è ×, 20 è +. Non serve calcolare tutto.</dd>
+        <dt>Ruota con «Nessuna»</dt><dd>La stima della grandezza ti dice solo la famiglia (+/− o ×/÷). Poi verifica sempre l'ultima cifra: 14, 6, 85 sembra × ma 4×6 finisce per 4, non per 5 → nessuna. Le trappole ±10 lasciano l'ultima cifra giusta: lì controlla le decine (14×6 = 84, non 94).</dd>
         <dt>Ultima cifra</dt><dd>Controlla solo le unità: 37 e 8 → con + finisce per 5, con × finisce per 6. Se il terzo numero finisce per 6 è ×. Funziona anche in Vero o falso: se l'ultima cifra non torna, è falso.</dd>
         <dt>Pari e dispari</dt><dd>Pari × qualsiasi = pari. Dispari + dispari = pari. Un risultato dispari con un fattore pari è sempre falso.</dd>
         <dt>Moltiplicazioni</dt><dd>×5 = ×10 e metà. ×25 = ×100 e diviso 4. ×9 = ×10 meno il numero. ×11 di due cifre: 43×11 = 4|7|3 = 473. 2 cifre × 1 cifra: scomponi, 47×6 = 240+42 = 282.</dd>
@@ -2020,23 +2034,24 @@ function renderMental(){
     ${hist.length?`<section class="panel stack"><h2>Ultimi allenamenti</h2>${mcHistTable(hist.slice(0,12))}</section>`:''}
   </main>${footer()}`;
   bindNav();
-  const upd=()=>{ const m=document.querySelector('[name="mc-mode"]:checked').value,l=+$('#mc-level').value,d=+$('#mc-dur').value,b=best(m,l,d);
-    $('#mc-best').textContent=b===null?'Nessun record per questa combinazione.':`Record ${MC_MODES[m].name}, livello ${l}, ${d} s: ${b} giuste.`; };
-  document.querySelectorAll('[name="mc-mode"],#mc-level,#mc-dur').forEach(e=>e.onchange=upd); upd();
-  $('#mc-start').onclick=()=>{ const mode=document.querySelector('[name="mc-mode"]:checked').value,level=+$('#mc-level').value,dur=+$('#mc-dur').value;
-    DB.mentalPref={mode,level,dur}; saveDB(); mcStart(mode,level,dur); };
+  const upd=()=>{ const m=document.querySelector('[name="mc-mode"]:checked').value,l=+$('#mc-level').value,d=+$('#mc-dur').value,t=+$('#mc-lim').value,b=best(m,l,d,t);
+    $('#mc-best').textContent=b===null?'Nessun record per questa combinazione.':`Record ${MC_MODES[m].name}, livello ${l}, ${d} s${t?`, ${t} s a domanda`:''}: ${b} giuste.`; };
+  document.querySelectorAll('[name="mc-mode"],#mc-level,#mc-dur,#mc-lim').forEach(e=>e.onchange=upd); upd();
+  $('#mc-start').onclick=()=>{ const mode=document.querySelector('[name="mc-mode"]:checked').value,level=+$('#mc-level').value,dur=+$('#mc-dur').value,lim=+$('#mc-lim').value;
+    DB.mentalPref={mode,level,dur,lim}; saveDB(); mcStart(mode,level,dur,lim); };
 }
 function mcHistTable(hs){
-  return `<div class="tblwrap"><table class="data"><thead><tr><th>Data</th><th>Esercizio</th><th>Liv.</th><th>Durata</th><th>Giuste</th><th>Precisione</th><th>Tempo medio</th></tr></thead><tbody>${hs.map(h=>`<tr><td>${fmtD(h.date)}</td><td>${MC_MODES[h.mode].name}</td><td>${h.level}</td><td>${h.dur}s</td><td class="mono">${h.ok}/${h.n}</td><td class="mono">${h.n?Math.round(h.ok/h.n*100):0}%</td><td class="mono">${h.n?(h.ms/h.n/1000).toFixed(1):'–'} s</td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="tblwrap"><table class="data"><thead><tr><th>Data</th><th>Esercizio</th><th>Liv.</th><th>Durata</th><th>Giuste</th><th>Precisione</th><th>Tempo medio</th></tr></thead><tbody>${hs.map(h=>`<tr><td>${fmtD(h.date)}</td><td>${MC_MODES[h.mode].name}</td><td>${h.level}</td><td>${h.dur}s${h.lim?` · ${h.lim}s/dom.`:''}</td><td class="mono">${h.ok}/${h.n}</td><td class="mono">${h.n?Math.round(h.ok/h.n*100):0}%</td><td class="mono">${h.n?(h.ms/h.n/1000).toFixed(1):'–'} s</td></tr>`).join('')}</tbody></table></div>`;
 }
-function mcStart(mode,level,dur){
-  S=null; MC={mode,level,dur,start:Date.now(),end:Date.now()+dur*1000,n:0,ok:0,att:[],item:null,t0:0,last:null};
-  mcNext(); clearInterval(TIMER); TIMER=setInterval(mcTick,200);
+function mcStart(mode,level,dur,lim){
+  S=null; MC={mode,level,dur,lim:lim||0,start:Date.now(),end:Date.now()+dur*1000,n:0,ok:0,att:[],item:null,t0:0,last:null};
+  mcNext(); clearInterval(TIMER); TIMER=setInterval(mcTick,100);
 }
 function mcTick(){
   if(!MC||!$('#mc-run')){ clearInterval(TIMER); return; }
   const left=(MC.end-Date.now())/1000; const c=$('#clock'); if(c){ c.textContent=fmtT(left); c.classList.toggle('low',left<=10); }
-  if(left<=0) mcFinish();
+  if(left<=0){ mcFinish(); return; }
+  if(MC.lim&&Date.now()-MC.t0>=MC.lim*1000) mcAnswer(null);
 }
 function mcNext(){ MC.item=mcItem(MC.mode,MC.level,MC.item); MC.t0=Date.now(); mcRender(); }
 function mcRender(){
@@ -2044,10 +2059,11 @@ function mcRender(){
   let stage='', ctrl='';
   if(m==='op') stage=`<div class="mc-eq mono"><span>${p.a}</span><span class="mc-q">?</span><span>${p.b}</span><span class="mc-eqs">=</span><span>${p.c}</span></div>`;
   else if(m==='wheel'){ const nums=[p.a,p.b,p.c]; const dur=[0,9,6,4][MC.level];
-    stage=`<div class="mc-wheel" style="--spin:${dur}s;--dir:${p.spin>0?'normal':'reverse'};--cdir:${p.spin>0?'reverse':'normal'}">${nums.map((x,i)=>`<div class="mc-slot s${p.pos[i]}"><div class="mc-c"><span class="mc-num mono">${x}</span></div></div>`).join('')}</div><p class="small muted center">Quale operazione lega i tre numeri? L'ordine non conta.</p>`; }
+    stage=`<div class="mc-wheel" style="--spin:${dur}s;--dir:${p.spin>0?'normal':'reverse'};--cdir:${p.spin>0?'reverse':'normal'}">${nums.map((x,i)=>`<div class="mc-slot s${p.pos[i]}"><div class="mc-c"><span class="mc-num mono">${x}</span></div></div>`).join('')}</div><p class="small muted center">Quale operazione lega i tre numeri? L'ordine non conta. <b>∅</b> = nessuna.</p>`; }
   else if(m==='tf') stage=`<div class="mc-eq mono"><span>${mcExpr(p)}</span><span class="mc-eqs">=</span><span>${p.shown}</span></div>`;
   else stage=`<div class="mc-eq mono"><span>${mcExpr(p)}</span><span class="mc-eqs">=</span><span class="mc-q">?</span></div>`;
-  if(m==='op'||m==='wheel') ctrl=`<div class="mc-ops">${MC_OPS.map((o,i)=>`<button class="mc-op mono" data-mco="${o}"><small>${i+1}</small>${MC_SYM[o]}</button>`).join('')}</div>`;
+  if(m==='op'||m==='wheel') ctrl=`<div class="mc-ops${m==='wheel'?' five':''}">${MC_OPS.map((o,i)=>`<button class="mc-op mono" data-mco="${o}"><small>${i+1}</small>${MC_SYM[o]}</button>`).join('')}${m==='wheel'?'<button class="mc-op mono" data-mco="none" title="Nessuna operazione" aria-label="Nessuna operazione"><small>5</small>∅</button>':''}</div>`;
+  if(MC.lim) stage=`<div class="mc-tbar" aria-hidden="true"><i style="animation-duration:${MC.lim}s"></i></div>`+stage;
   else if(m==='tf') ctrl=`<div class="mc-ops two"><button class="mc-op" data-mct="1"><small>V</small>Vero</button><button class="mc-op" data-mct="0"><small>F</small>Falso</button></div>`;
   else ctrl=`<form class="row mc-form" id="mc-form" autocomplete="off"><input id="mc-in" class="mono" inputmode="decimal" enterkeyhint="go" aria-label="Risultato"><button class="primary">Invio</button></form>`;
   const L=MC.last;
@@ -2062,10 +2078,12 @@ function mcRender(){
 function mcAnswer(ans){
   if(!MC||Date.now()>MC.end) return;
   const p=MC.item, m=MC.mode, ms=Date.now()-MC.t0; let ok, txt;
-  if(m==='wheel'){ ok=p.valid.includes(ans); txt=mcWheelTxt(p)+(ok?'':` (hai scelto ${MC_SYM[ans]})`); }
-  else if(m==='op'){ ok=ans===p.op; txt=`${p.a} ${MC_SYM[p.op]} ${p.b} = ${p.c}`+(ok?'':` (hai scelto ${MC_SYM[ans]})`); }
+  const why=ans===null?' (tempo scaduto)':` (hai scelto ${MC_SYM[ans]})`;
+  if(m==='wheel'){ ok=p.valid.includes(ans); txt=(p.txt||mcWheelTxt(p))+(ok?'':why); }
+  else if(m==='op'){ ok=ans===p.op; txt=`${p.a} ${MC_SYM[p.op]} ${p.b} = ${p.c}`+(ok?'':why); }
   else if(m==='tf'){ ok=ans===p.truth; txt=`${mcExpr(p)} = ${p.c}`+(p.truth?' → vero':` → falso, non ${p.shown}`); }
-  else { ok=ans===p.c; txt=`${mcExpr(p)} = ${p.c}`+(ok?'':` (hai scritto ${ans})`); }
+  else { ok=ans===p.c; txt=`${mcExpr(p)} = ${p.c}`+(ok?'':ans===null?' (tempo scaduto)':` (hai scritto ${ans})`); }
+  if(m==='tf'&&ans===null) txt+=' (tempo scaduto)';
   MC.n++; if(ok) MC.ok++;
   MC.att.push({op:p.op,ok,ms,txt}); MC.last={ok,txt};
   mcNext();
@@ -2075,8 +2093,8 @@ function mcFinish(){
   const R=MC; MC=null;
   const ms=R.att.reduce((s,a)=>s+a.ms,0);
   const byOp={}; R.att.forEach(a=>{const o=byOp[a.op]=byOp[a.op]||{n:0,ok:0,ms:0}; o.n++; o.ms+=a.ms; if(a.ok)o.ok++;});
-  const rec={date:Date.now(),mode:R.mode,level:R.level,dur:R.dur,n:R.n,ok:R.ok,ms,byOp};
-  const hist=mcStore(); const prevBest=hist.filter(h=>h.mode===R.mode&&h.level===R.level&&h.dur===R.dur).reduce((b,h)=>Math.max(b,h.ok),-1);
+  const rec={date:Date.now(),mode:R.mode,level:R.level,dur:R.dur,lim:R.lim,n:R.n,ok:R.ok,ms,byOp};
+  const hist=mcStore(); const prevBest=hist.filter(h=>h.mode===R.mode&&h.level===R.level&&h.dur===R.dur&&(h.lim||0)===R.lim).reduce((b,h)=>Math.max(b,h.ok),-1);
   if(R.n) { hist.unshift(rec); DB.mental=hist.slice(0,300); saveDB(); }
   const rate=R.n?(R.ok/(R.dur/60)).toFixed(1):'0';
   const opRows=Object.entries(byOp).sort((x,y)=>(x[1].ok/x[1].n)-(y[1].ok/y[1].n)||(y[1].ms/y[1].n)-(x[1].ms/x[1].n));
@@ -2084,7 +2102,7 @@ function mcFinish(){
   const wrong=R.att.filter(a=>!a.ok);
   const slow=R.att.filter(a=>a.ok).sort((a,b)=>b.ms-a.ms).slice(0,3);
   const verdict=!R.n?'Nessuna risposta data.':R.ok/R.n<.85?'Precisione sotto l\'85%: rallenta. Nel test un errore costa più di un secondo in più.':ms/R.n>4000?'Preciso ma lento: oltre 4 secondi a risposta. Usa grandezza e ultima cifra invece del calcolo completo.':'Buon equilibrio. Prova il livello successivo o la durata più lunga.';
-  app().innerHTML=header('Calcolo rapido · risultato',`${MC_MODES[R.mode].name} · livello ${R.level} · ${R.dur} secondi`)+`
+  app().innerHTML=header('Calcolo rapido · risultato',`${MC_MODES[R.mode].name} · livello ${R.level} · ${R.dur} secondi${R.lim?` · ${R.lim} s a domanda`:''}`)+`
   <main class="wrap stack">
     <section class="panel stack">
       <div class="cards3">
@@ -2101,7 +2119,7 @@ function mcFinish(){
     <div class="row"><button class="primary" id="mc-again">Ripeti</button><button id="mc-menu">Cambia esercizio</button><button data-nav="stats">Statistiche</button></div>
   </main>${footer()}`;
   bindNav();
-  $('#mc-again').onclick=()=>mcStart(R.mode,R.level,R.dur);
+  $('#mc-again').onclick=()=>mcStart(R.mode,R.level,R.dur,R.lim);
   $('#mc-menu').onclick=renderMental;
 }
 function mentalStatsPanel(){
@@ -2121,7 +2139,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){ mcFinish(); return; }
   if(e.target.tagName==='INPUT') return;
   const k=e.key.toLowerCase();
-  if(MC.mode==='op'||MC.mode==='wheel'){ const map={'1':'+','2':'-','3':'*','4':'/','+':'+','-':'-','*':'*','x':'*','/':'/',':':'/'}; if(map[k]){ e.preventDefault(); mcAnswer(map[k]); } }
+  if(MC.mode==='op'||MC.mode==='wheel'){ const map={'1':'+','2':'-','3':'*','4':'/','+':'+','-':'-','*':'*','x':'*','/':'/',':':'/'}; if(MC.mode==='wheel'){ map['5']='none'; map['n']='none'; map['0']='none'; } if(map[k]){ e.preventDefault(); mcAnswer(map[k]); } }
   else if(MC.mode==='tf'){ if(k==='v'||e.key==='ArrowLeft'){ e.preventDefault(); mcAnswer(true); } else if(k==='f'||e.key==='ArrowRight'){ e.preventDefault(); mcAnswer(false); } }
 });
 
@@ -2667,7 +2685,7 @@ function renderSheet(){
 
 function footer(){ return `<footer class="foot">
   <p>Formato e soglie dal bando EPSO/AD/427/26: verbale 20 domande in 35 minuti (soglia 10/20); numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Numerico e astratto sono generati al momento con dati fittizi. Il punteggio qui non predice il risultato reale.</p>
-  <p class="mono">Versione 2026-11-07c · Profilo ospite</p>
+  <p class="mono">Versione 2026-11-07d · Ruota con trappole e limite per domanda</p>
   <p>Verbale: 42 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO.</p>
 </footer>`; }
 
