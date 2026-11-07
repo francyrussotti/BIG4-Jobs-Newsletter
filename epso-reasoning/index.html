@@ -1927,7 +1927,7 @@ function startEYFull(){
 // Vero/Falso (verifica un'uguaglianza), Calcolo (scrivi il risultato).
 const MC_MODES={
   op:{name:'Operatore',desc:'Vedi tre numeri: il terzo è il risultato dei primi due. Scegli l\'operazione: + − × ÷.',keys:'Tasti 1-4 oppure + - * /'},
-  wheel:{name:'Ruota',desc:'Come Operatore, ma i tre numeri girano su una ruota e cambiano posto: trova ① ② ③ e scegli l\'operazione.',keys:'Tasti 1-4 oppure + - * /'},
+  wheel:{name:'Ruota',desc:'Tre numeri girano su una ruota in ordine sparso. Trova l\'operazione che li lega: l\'ordine non conta (30, 10, 3 → × oppure ÷, entrambe giuste).',keys:'Tasti 1-4 oppure + - * /'},
   tf:{name:'Vero o falso',desc:'Un\'uguaglianza già scritta: è giusta o sbagliata? Gli errori sono vicini al risultato vero.',keys:'V / F oppure ← →'},
   calc:{name:'Calcolo',desc:'Scrivi il risultato e premi Invio. Dal livello 2 anche percentuali.',keys:'Numeri + Invio'}
 };
@@ -1939,6 +1939,11 @@ const mcR=(a,b)=>a+Math.floor(Math.random()*(b-a+1));
 const mcPick=a=>a[Math.floor(Math.random()*a.length)];
 function mcVal(a,op,b){ return op==='+'?a+b:op==='-'?a-b:op==='*'?a*b:op==='/'?(b&&a%b===0?a/b:null):op==='%'?a*b/100:null; }
 function mcOpsGiving(a,b,c){ return MC_OPS.filter(o=>mcVal(a,o,b)===c); }
+// Ruota: operazioni valide con i tre numeri in qualsiasi ordine
+function mcAnyOrder(n){ const v=new Set(); const P=[[0,1,2],[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]];
+  P.forEach(([i,j,k])=>MC_OPS.forEach(o=>{ if(mcVal(n[i],o,n[j])===n[k]) v.add(o); })); return [...v]; }
+function mcWheelTxt(p){ return p.op==='+'||p.op==='-'?(()=>{const z=Math.max(p.a,p.b,p.c),[x,y]=[p.a,p.b,p.c].filter((_,i)=>i!==[p.a,p.b,p.c].indexOf(z));return `${x} + ${y} = ${z} · ${z} − ${y} = ${x}`})()
+  :(()=>{const z=Math.max(p.a,p.b,p.c),[x,y]=[p.a,p.b,p.c].filter((_,i)=>i!==[p.a,p.b,p.c].indexOf(z));return `${x} × ${y} = ${z} · ${z} ÷ ${y} = ${x}`})(); }
 function mcPair(op,L){
   let a,b;
   if(op==='+'){ if(L===1){a=mcR(2,20);b=mcR(2,20)} else if(L===2){a=mcR(11,99);b=mcR(11,99)} else {a=mcR(101,899);b=mcR(26,499)} }
@@ -1953,9 +1958,12 @@ function mcItem(mode,L,prev){
   for(let g=0;g<200;g++){
     if(mode==='op'||mode==='wheel'){
       const p=mcPair(mcPick(MC_OPS),L);
-      if(mcOpsGiving(p.a,p.b,p.c).length!==1) continue;
       if(prev&&prev.a===p.a&&prev.b===p.b) continue;
-      if(mode==='wheel'){ p.pos=[0,1,2].sort(()=>Math.random()-.5); p.spin=mcPick([1,-1]); }
+      if(mode==='op'&&mcOpsGiving(p.a,p.b,p.c).length!==1) continue;
+      if(mode==='wheel'){ const v=mcAnyOrder([p.a,p.b,p.c]).sort().join('');
+        if(v!=='+-'&&v!=='*/') continue; // una sola famiglia: +/− oppure ×/÷
+        if(new Set([p.a,p.b,p.c]).size<3) continue;
+        p.valid=v.split(''); p.pos=[0,1,2].sort(()=>Math.random()-.5); p.spin=mcPick([1,-1]); }
       return p;
     }
     const ops=L>=2?['+','-','*','/','%']:MC_OPS;
@@ -2033,8 +2041,8 @@ function mcRender(){
   const p=MC.item, m=MC.mode;
   let stage='', ctrl='';
   if(m==='op') stage=`<div class="mc-eq mono"><span>${p.a}</span><span class="mc-q">?</span><span>${p.b}</span><span class="mc-eqs">=</span><span>${p.c}</span></div>`;
-  else if(m==='wheel'){ const nums=[[p.a,'①'],[p.b,'②'],[p.c,'③']]; const dur=[0,9,6,4][MC.level];
-    stage=`<div class="mc-wheel" style="--spin:${dur}s;--dir:${p.spin>0?'normal':'reverse'};--cdir:${p.spin>0?'reverse':'normal'}">${nums.map((x,i)=>`<div class="mc-slot s${p.pos[i]}"><div class="mc-c"><span class="mc-num mono"><i>${x[1]}</i>${x[0]}</span></div></div>`).join('')}</div><p class="small muted center">③ = ① <b>?</b> ②</p>`; }
+  else if(m==='wheel'){ const nums=[p.a,p.b,p.c]; const dur=[0,9,6,4][MC.level];
+    stage=`<div class="mc-wheel" style="--spin:${dur}s;--dir:${p.spin>0?'normal':'reverse'};--cdir:${p.spin>0?'reverse':'normal'}">${nums.map((x,i)=>`<div class="mc-slot s${p.pos[i]}"><div class="mc-c"><span class="mc-num mono">${x}</span></div></div>`).join('')}</div><p class="small muted center">Quale operazione lega i tre numeri? L'ordine non conta.</p>`; }
   else if(m==='tf') stage=`<div class="mc-eq mono"><span>${mcExpr(p)}</span><span class="mc-eqs">=</span><span>${p.shown}</span></div>`;
   else stage=`<div class="mc-eq mono"><span>${mcExpr(p)}</span><span class="mc-eqs">=</span><span class="mc-q">?</span></div>`;
   if(m==='op'||m==='wheel') ctrl=`<div class="mc-ops">${MC_OPS.map((o,i)=>`<button class="mc-op mono" data-mco="${o}"><small>${i+1}</small>${MC_SYM[o]}</button>`).join('')}</div>`;
@@ -2052,7 +2060,8 @@ function mcRender(){
 function mcAnswer(ans){
   if(!MC||Date.now()>MC.end) return;
   const p=MC.item, m=MC.mode, ms=Date.now()-MC.t0; let ok, txt;
-  if(m==='op'||m==='wheel'){ ok=ans===p.op; txt=`${p.a} ${MC_SYM[p.op]} ${p.b} = ${p.c}`+(ok?'':` (hai scelto ${MC_SYM[ans]})`); }
+  if(m==='wheel'){ ok=p.valid.includes(ans); txt=mcWheelTxt(p)+(ok?'':` (hai scelto ${MC_SYM[ans]})`); }
+  else if(m==='op'){ ok=ans===p.op; txt=`${p.a} ${MC_SYM[p.op]} ${p.b} = ${p.c}`+(ok?'':` (hai scelto ${MC_SYM[ans]})`); }
   else if(m==='tf'){ ok=ans===p.truth; txt=`${mcExpr(p)} = ${p.c}`+(p.truth?' → vero':` → falso, non ${p.shown}`); }
   else { ok=ans===p.c; txt=`${mcExpr(p)} = ${p.c}`+(ok?'':` (hai scritto ${ans})`); }
   MC.n++; if(ok) MC.ok++;
@@ -2645,7 +2654,7 @@ function renderSheet(){
 
 function footer(){ return `<footer class="foot">
   <p>Formato e soglie dal bando EPSO/AD/427/26: verbale 20 domande in 35 minuti (soglia 10/20); numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Numerico e astratto sono generati al momento con dati fittizi. Il punteggio qui non predice il risultato reale.</p>
-  <p class="mono">Versione 2026-11-07a · Calcolo rapido</p>
+  <p class="mono">Versione 2026-11-07b · Ruota: ordine libero</p>
   <p>Verbale: 42 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO.</p>
 </footer>`; }
 
