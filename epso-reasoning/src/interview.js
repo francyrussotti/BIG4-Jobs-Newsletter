@@ -244,6 +244,7 @@ function renderInterview(tab){
   else if(t==='quiz') body=ivQuizHTML();
   app().innerHTML=header('EY interview · EU Space','Junior EU Consultant, Market Intelligence and Space Technology (Diegem). Requirements, technical content, questions and exercises.')+`
   <main class="wrap stack" lang="en">
+    <p class="row spread small"><span class="muted">All the theory in one document, with worked examples.</span><a href="theory/ey-space-theory.pdf" target="_blank" rel="noopener"><b>Download the theory handbook (PDF, 32 pages)</b></a></p>
     <nav class="ivtabs" aria-label="Sections">${IV_TABS.map(([k,l])=>`<button class="${t===k?'on':''}" data-ivt="${k}">${l}</button>`).join('')}</nav>
     ${body}
   </main>${footer()}`;
