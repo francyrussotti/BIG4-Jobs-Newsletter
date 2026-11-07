@@ -10,7 +10,10 @@ const SEC={
   aipro:{name:'AI proficiency',it:'EY · AI proficiency',n:10,sec:12*60,letters:4,ey:true}
 };
 const PASS={verbal:10,numabs:10};
-const KEY='epsoAD5reasoning:v1';
+const KEY_BASE='epsoAD5reasoning:v1';
+// Profilo: 'main' (tuo) oppure 'guest' (ospite, dati separati)
+let PROFILE=(()=>{try{return localStorage.getItem(KEY_BASE+':profile')==='guest'?'guest':'main'}catch(e){return 'main'}})();
+let KEY=PROFILE==='guest'?KEY_BASE+':guest':KEY_BASE;
 
 // ---------- storage ----------
 function loadDB(){try{const v=JSON.parse(localStorage.getItem(KEY)||'null');if(v&&v.sessions)return v}catch(e){}return {sessions:[],seen:{},vwrong:{}}}
@@ -166,8 +169,16 @@ function bindPlan(){
 }
 
 // ---------- rendering ----------
-function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="method">Metodo</button><button class="ghost" data-nav="manual">Manuale</button><button class="ghost" data-nav="errors">Errori</button><button class="ghost" data-nav="ey">Test EY</button><button class="ghost" data-nav="mental">Calcolo rapido</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button></nav></div></header>`; }
-function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; if(MAN&&MAN.run&&b.dataset.nav!=='manual'){ MAN.run=null; } ({home:renderHome,stats:renderStats,sheet:renderSheetSetup,method:renderMethod,manual:renderManual,errors:renderErrors,ey:renderEY,mental:renderMental})[b.dataset.nav](); }); }
+function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning${PROFILE==='guest'?' <span class="guestbadge">Profilo ospite</span>':''}</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="method">Metodo</button><button class="ghost" data-nav="manual">Manuale</button><button class="ghost" data-nav="errors">Errori</button><button class="ghost" data-nav="ey">Test EY</button><button class="ghost" data-nav="mental">Calcolo rapido</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button><button class="${PROFILE==='guest'?'warnbtn':'ghost'}" id="prof">${PROFILE==='guest'?'Esci da ospite':'Ospite'}</button></nav></div></header>`; }
+function setProfile(p){
+  if(S&&!S.done&&S.parts[S.pi]&&S.parts[S.pi].started){ if(!confirmLeave()) return; }
+  clearInterval(TIMER); S=null; SH=null; MC=null; MAN.run=null;
+  PROFILE=p; KEY=p==='guest'?KEY_BASE+':guest':KEY_BASE;
+  try{localStorage.setItem(KEY_BASE+':profile',p)}catch(e){}
+  DB=loadDB(); renderHome();
+  toast(p==='guest'?'Profilo ospite: risultati e statistiche separati dai tuoi.':'Tornato al tuo profilo.');
+}
+function bindNav(){ const pb=$('#prof'); if(pb) pb.onclick=()=>setProfile(PROFILE==='guest'?'main':'guest'); document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; if(MAN&&MAN.run&&b.dataset.nav!=='manual'){ MAN.run=null; } ({home:renderHome,stats:renderStats,sheet:renderSheetSetup,method:renderMethod,manual:renderManual,errors:renderErrors,ey:renderEY,mental:renderMental})[b.dataset.nav](); }); }
 let leaveArmed=false;
 function confirmLeave(){ if(leaveArmed){leaveArmed=false;return true} leaveArmed=true; toast('Prova in corso: premi di nuovo per uscire senza salvare.'); setTimeout(()=>leaveArmed=false,4000); return false; }
 function toast(t){ let el=$('#toast'); if(!el){el=document.createElement('div');el.id='toast';document.body.appendChild(el)} el.textContent=t; el.className='show'; clearTimeout(el._t); el._t=setTimeout(()=>el.className='',3500); }
@@ -421,7 +432,7 @@ function renderStats(){
   </main>`;
   bindNav(); bindExport(); bindFocus();
   document.querySelectorAll('[data-retry]').forEach(b=>b.onclick=()=>{ MAN.pendingRetry=b.dataset.retry; renderManual(); });
-  $('#bk').onclick=()=>download('epso-reasoning-backup.json',JSON.stringify(DB),'application/json');
+  $('#bk').onclick=()=>download(PROFILE==='guest'?'epso-reasoning-backup-ospite.json':'epso-reasoning-backup.json',JSON.stringify(DB),'application/json');
   $('#imp').onchange=e=>{const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{try{const d=JSON.parse(r.result); if(!d.sessions) throw 0; DB=d; saveDB(); toast('Backup importato.'); renderStats();}catch(x){toast('File non valido: serve un backup esportato da questo programma.')}}; r.readAsText(f);};
   let armed=false; $('#reset').onclick=()=>{ if(!armed){armed=true;$('#reset').textContent='Conferma: cancella tutto';return} DB={sessions:[],seen:{},vwrong:{},plan:{}}; saveDB(); renderStats(); toast('Storico cancellato.'); };
 }
@@ -529,7 +540,7 @@ function renderSheet(){
 
 function footer(){ return `<footer class="foot">
   <p>Formato e soglie dal bando EPSO/AD/427/26: verbale 20 domande in 35 minuti (soglia 10/20); numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Numerico e astratto sono generati al momento con dati fittizi. Il punteggio qui non predice il risultato reale.</p>
-  <p class="mono">Versione 2026-11-07b · Ruota: ordine libero</p>
+  <p class="mono">Versione 2026-11-07c · Profilo ospite</p>
   <p>Verbale: 42 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO.</p>
 </footer>`; }
 
