@@ -30,6 +30,7 @@ function renderEY(){
         <div class="row"><button class="primary" data-eyt="${k}">A tempo</button><button data-eyp="${k}">Pratica</button></div></div>`).join('')}</div>
     </section>
     <section class="panel row spread"><div><h2>Calcolo rapido</h2><p class="small muted">MIND è a tempo stretto: allena il calcolo a mente con sessioni da 60-180 secondi (operatore, ruota, vero o falso, calcolo).</p></div><button class="primary" data-nav="mental">Allenati</button></section>
+    <section class="panel row spread"><div><h2>Colloquio EY</h2><p class="small muted">Dopo il test: requisiti della vacancy, ecosistema spaziale UE, analisi costi-benefici, domande tecniche con risposte modello, esercizi.</p></div><button class="primary" data-nav="interview">Apri</button></section>
     <section class="panel stack">
       <h2>I miei esempi</h2>
       <p class="small muted">Se Adaptability o AI proficiency sono colloqui strutturati, ti chiederanno esperienze reali. Prepara per ciascun esempio: situazione, cosa hai fatto, risultato. Per l'AI: come hai verificato e corretto l'output, un errore intercettato, un caso in cui hai scelto di non usarla. Restano solo in questo browser.</p>

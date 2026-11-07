@@ -169,7 +169,7 @@ function bindPlan(){
 }
 
 // ---------- rendering ----------
-function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning${PROFILE==='guest'?' <span class="guestbadge">Profilo ospite</span>':''}</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="method">Metodo</button><button class="ghost" data-nav="manual">Manuale</button><button class="ghost" data-nav="errors">Errori</button><button class="ghost" data-nav="ey">Test EY</button><button class="ghost" data-nav="mental">Calcolo rapido</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button><button class="${PROFILE==='guest'?'warnbtn':'ghost'}" id="prof">${PROFILE==='guest'?'Esci da ospite':'Ospite'}</button></nav></div></header>`; }
+function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning${PROFILE==='guest'?' <span class="guestbadge">Profilo ospite</span>':''}</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="method">Metodo</button><button class="ghost" data-nav="manual">Manuale</button><button class="ghost" data-nav="errors">Errori</button><button class="ghost" data-nav="ey">Test EY</button><button class="ghost" data-nav="mental">Calcolo rapido</button><button class="ghost" data-nav="interview">Colloquio EY</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button><button class="${PROFILE==='guest'?'warnbtn':'ghost'}" id="prof">${PROFILE==='guest'?'Esci da ospite':'Ospite'}</button></nav></div></header>`; }
 function setProfile(p){
   if(S&&!S.done&&S.parts[S.pi]&&S.parts[S.pi].started){ if(!confirmLeave()) return; }
   clearInterval(TIMER); S=null; SH=null; MC=null; MAN.run=null;
@@ -178,7 +178,7 @@ function setProfile(p){
   DB=loadDB(); renderHome();
   toast(p==='guest'?'Profilo ospite: risultati e statistiche separati dai tuoi.':'Tornato al tuo profilo.');
 }
-function bindNav(){ const pb=$('#prof'); if(pb) pb.onclick=()=>setProfile(PROFILE==='guest'?'main':'guest'); document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; if(MAN&&MAN.run&&b.dataset.nav!=='manual'){ MAN.run=null; } ({home:renderHome,stats:renderStats,sheet:renderSheetSetup,method:renderMethod,manual:renderManual,errors:renderErrors,ey:renderEY,mental:renderMental})[b.dataset.nav](); }); }
+function bindNav(){ const pb=$('#prof'); if(pb) pb.onclick=()=>setProfile(PROFILE==='guest'?'main':'guest'); document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; if(MAN&&MAN.run&&b.dataset.nav!=='manual'){ MAN.run=null; } ({home:renderHome,stats:renderStats,sheet:renderSheetSetup,method:renderMethod,manual:renderManual,errors:renderErrors,ey:renderEY,mental:renderMental,interview:()=>renderInterview()})[b.dataset.nav](); }); }
 let leaveArmed=false;
 function confirmLeave(){ if(leaveArmed){leaveArmed=false;return true} leaveArmed=true; toast('Prova in corso: premi di nuovo per uscire senza salvare.'); setTimeout(()=>leaveArmed=false,4000); return false; }
 function toast(t){ let el=$('#toast'); if(!el){el=document.createElement('div');el.id='toast';document.body.appendChild(el)} el.textContent=t; el.className='show'; clearTimeout(el._t); el._t=setTimeout(()=>el.className='',3500); }
@@ -211,6 +211,7 @@ function renderHome(msg){
       <button id="go-method">Leggi il metodo (prima volta: 15 minuti)</button>
       <button data-nav="ey">Test EY (Maki)</button>
       <button data-nav="mental">Calcolo rapido</button>
+      <button data-nav="interview">Colloquio EY</button>
     </section>
     <section class="panel stack"><h2>Ultima simulazione completa</h2>${last?resultLines(last):'<p class="muted">Ancora nessuna. La prova generale del piano è mercoledì 11 alle 11:00.</p>'}</section>
     ${footer()}
@@ -540,7 +541,7 @@ function renderSheet(){
 
 function footer(){ return `<footer class="foot">
   <p>Formato e soglie dal bando EPSO/AD/427/26: verbale 20 domande in 35 minuti (soglia 10/20); numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Numerico e astratto sono generati al momento con dati fittizi. Il punteggio qui non predice il risultato reale.</p>
-  <p class="mono">Versione 2026-11-07e · Ruota con trappole, dati nel testo delle domande MIND</p>
+  <p class="mono">Versione 2026-11-07f · Colloquio EY</p>
   <p>Verbale: 42 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO.</p>
 </footer>`; }
 
