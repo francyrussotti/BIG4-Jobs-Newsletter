@@ -29,6 +29,8 @@ function renderEY(){
         <span class="muted small">${{mind:'Problemi numerici, serie, figure, logica.',crit:'Logica non verbale: serie di figure e "quale non c\'entra".',adapt:'Situazioni di lavoro: la risposta più efficace.',aipro:'Uso pratico e responsabile dell\'AI. Nel test vero: rispondi in modo sincero e coerente.'}[k]}</span>
         <div class="row"><button class="primary" data-eyt="${k}">A tempo</button><button data-eyp="${k}">Pratica</button></div></div>`).join('')}</div>
     </section>
+    <section class="panel stack"><div class="row spread"><div><h2>Formati difficili</h2><p class="small muted">I formati più duri visti nel test vero, con domande originali: sufficienza dei dati, tavolo rotondo, produttività, percentuali a catena e voti, serie intrecciate e cifre invertite, piramidi di numeri, matrici 3×3 e 2×2. 12 domande in 9 minuti.</p></div></div>
+      <div class="row"><label class="row small">Formato <select id="eyh-only"><option value="">Tutti mescolati</option>${Object.entries(EY_HARD_T).map(([k,v])=>`<option value="${k}" ${EY_HARD_ONLY===k?'selected':''}>${v[0]}</option>`).join('')}</select></label><button class="primary" data-eyt="eyhard">A tempo</button><button data-eyp="eyhard">Pratica</button></div></section>
     <section class="panel row spread"><div><h2>Calcolo rapido</h2><p class="small muted">MIND è a tempo stretto: allena il calcolo a mente con sessioni da 60-180 secondi (operatore, ruota, vero o falso, calcolo).</p></div><button class="primary" data-nav="mental">Allenati</button></section>
     <section class="panel row spread"><div><h2>EY interview</h2><p class="small muted">In inglese, dopo il test: requisiti della vacancy, ecosistema spaziale UE, analisi costi-benefici, domande tecniche con risposte modello, esercizi.</p></div><button class="primary" data-nav="interview">Apri</button></section>
     <section class="panel stack">
@@ -41,6 +43,7 @@ function renderEY(){
   </main>`;
   bindNav();
   $('#ey-full').onclick=startEYFull;
+  $('#eyh-only').onchange=e=>{ EY_HARD_ONLY=e.target.value; };
   document.querySelectorAll('[data-eyt]').forEach(b=>b.onclick=()=>startSession('single',{sec:b.dataset.eyt}));
   document.querySelectorAll('[data-eyp]').forEach(b=>b.onclick=()=>startSession('practice',{sec:b.dataset.eyp}));
   document.querySelectorAll('.eyex').forEach(t=>t.oninput=()=>{ DB.eyExamples=DB.eyExamples||[{},{},{},{},{}]; DB.eyExamples[+t.dataset.i]={t:t.value}; saveDB(); $('#ey-saved').textContent='Salvato.'; });

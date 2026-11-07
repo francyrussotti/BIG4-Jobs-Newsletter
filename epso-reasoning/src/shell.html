@@ -278,6 +278,14 @@ button.warnbtn{background:var(--warn-soft);color:var(--warn);border-color:var(--
 .ivopt.ok{border-color:var(--ok);background:var(--ok-soft)} .ivopt.bad{border-color:var(--bad);background:var(--bad-soft)}
 .ivopt[disabled]{opacity:1}
 .note{padding:10px 12px;border-radius:5px;border-left:3px solid var(--line)} .note.okn{background:var(--ok-soft);border-color:var(--ok)} .note.badn{background:var(--bad-soft);border-color:var(--bad)}
+.mgrid{display:grid;grid-template-columns:repeat(var(--c),minmax(0,110px));gap:6px;margin-top:10px}
+.mgrid.sm{grid-template-columns:repeat(var(--c),minmax(0,70px))}
+.mgrid .qmark{max-width:110px}
+.pyrs{display:flex;flex-wrap:wrap;gap:28px;margin-top:8px}
+.pyr{display:flex;flex-direction:column;align-items:center;gap:6px}
+.pyr-r{display:flex;gap:6px}
+.pyr-r span{min-width:46px;padding:8px 6px;border:1.5px solid var(--fg);border-radius:4px;text-align:center;font-family:var(--f-mono);font-size:1.05rem;background:var(--panel)}
+.pyr-r span.q{border-style:dashed;color:var(--accent);font-weight:600}
 </style>
 </head>
 <body>

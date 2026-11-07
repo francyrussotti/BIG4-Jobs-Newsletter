@@ -432,6 +432,7 @@ function frameSVG(f,label){
     for(let i=0;i<=3;i++) s+=`<line x1="${x0}" y1="${x0+i*w}" x2="${x0+3*w}" y2="${x0+i*w}" stroke="#111" stroke-width="2"/><line x1="${x0+i*w}" y1="${x0}" x2="${x0+i*w}" y2="${x0+3*w}" stroke="#111" stroke-width="2"/>`;
   } else if(f.kind==='lines'){
     f.e.forEach(k=>{const v=STROKES[k]; s+= v==='circle'?`<circle cx="50" cy="50" r="16" fill="none" stroke="#111" stroke-width="3"/>`:`<line x1="${v[0]}" y1="${v[1]}" x2="${v[2]}" y2="${v[3]}" stroke="#111" stroke-width="3.2" stroke-linecap="round"/>`;});
+  } else if(f.kind==='mcell'){ s+=mcellSVG(f);
   } else if(f.kind==='sides'){
     const oFill=f.inv?'#111111':'#ffffff', iFill=f.inv?'#ffffff':'#111111';
     s+=`<polygon points="${polyPts(50,50,38,f.o,f.ro)}" fill="${oFill}" stroke="#111" stroke-width="2.2"/><polygon points="${polyPts(50,50,15,f.i,f.ri)}" fill="${iFill}" stroke="${f.inv?'#fff':'#111'}" stroke-width="1.6"/>`;

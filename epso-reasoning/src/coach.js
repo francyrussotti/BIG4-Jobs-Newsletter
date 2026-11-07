@@ -36,6 +36,12 @@ const NUM_TIP={
   line:'Grafico a linee: leggi i valori sui punti dell\'anno giusto e della serie giusta (guarda la legenda), poi calcola.'
 };
 const ABS_TIP={
+  mshape:'Matrice: in ogni riga e colonna ogni forma compare una volta. Trova la forma che manca nella riga e verifica sulla colonna.',
+  mcount:'Matrice: conta le figure per cella; spesso ogni numero compare una volta per riga e colonna.',
+  mfill:'Matrice: segui il colore separatamente dalla forma.',
+  msize:'Matrice 2×2: confronta la dimensione tra le due celle della prima riga.',
+  mflip:'Matrice 2×2: controlla se la figura punta in su o in giù tra le due colonne.',
+  mdot:'Matrice 2×2: segui il pallino d\'angolo: dove va tra la prima e la seconda colonna?',
   rot:'Rotazione: guarda solo la lancetta e misura l\'angolo tra due figure vicine (45°, 90°, 135°) e il verso.',
   cnt:'Conta i punti in ogni figura e scrivi la sequenza: +1, −1 o schemi tipo +2, −1.',
   pos:'Segui solo il quadratino lungo il bordo: conta di quante posizioni si sposta e in che verso.',

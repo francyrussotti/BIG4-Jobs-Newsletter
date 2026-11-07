@@ -127,8 +127,9 @@ function eyChartItem(sec,kind){ const pool=kind==='chart'?['bar','pie','line','l
 function eyTableItem(sec){ const it=buildNumericalItem(R.pick(['maxratio','maxgrowth','yearboth','share'])); it.sec=sec; it.fmt='numerical'; return it; }
 
 function buildEY(sec,n){
-  if(sec==='mind'){ const plan=['num','num','num','num','chart','chart','chart','tab','tab','ser','ser','ser','ser','fig','fig','fig']; return plan.slice(0,n).map((k,i)=>k==='num'?eyNumItem(sec):k==='ser'?eySeriesItem(sec):k==='fig'?eyFigItem(sec,i%2===0):k==='chart'?eyChartItem(sec,'chart'):k==='tab'?eyChartItem(sec,'table'):eyOrderItem(sec)); }
-  if(sec==='crit'){ const plan=['fig','fig','fig','fig','fig','fig','fig','fig','odd','odd','odd','odd','fig']; return plan.slice(0,n).map((k,i)=>k==='odd'?eyOddItem(sec):eyFigItem(sec,i%3!==0)); }
+  if(sec==='eyhard') return buildEYHard(sec,n);
+  if(sec==='mind'){ const plan=['num','rate','pct','ds','chart','chart','tab','seat','ser','ser2','pyr','ser2','mat2','fig','mat3','num']; const F={num:()=>eyNumItem(sec),rate:()=>eyRateItem(sec),pct:()=>eyPctChainItem(sec),ds:()=>eyDSItem(sec),chart:()=>eyChartItem(sec,'chart'),tab:()=>eyChartItem(sec,'table'),seat:()=>eySeatItem(sec),ser:()=>eySeriesItem(sec),ser2:()=>eySeries2Item(sec),pyr:()=>eyPyramidItem(sec),mat2:()=>eyTransformItem(sec),mat3:()=>eyLatinItem(sec),fig:()=>eyFigItem(sec,true)}; return plan.slice(0,n).map(k=>F[k]()); }
+  if(sec==='crit'){ const plan=['fig','mat3','mat2','odd','fig','mat3','mat2','fig','odd','mat3','mat2','fig','mat3']; return plan.slice(0,n).map((k,i)=>k==='odd'?eyOddItem(sec):k==='mat3'?eyLatinItem(sec):k==='mat2'?eyTransformItem(sec):eyFigItem(sec,i%3!==0)); }
   if(sec==='adapt') return eyPickSJT(sec,n,EY_ADAPT,'Nelle situazioni di lavoro la risposta migliore di solito: affronta il problema, comunica con le persone coinvolte, mostra flessibilità e apprendimento. Evita rigidità, passività e iniziative non concordate.');
   return eyPickSJT(sec,n,EY_AI,'Uso dell\'AI: proteggere i dati, verificare i fatti e le fonti, dare contesto nei prompt, mantenere il controllo umano sulle decisioni importanti.');
 }

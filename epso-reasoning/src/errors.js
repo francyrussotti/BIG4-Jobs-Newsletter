@@ -45,7 +45,7 @@ function errorCard(e){
       <p><b>Soluzione:</b> ${esc(sn.ex)}</p>${a.slip?`<p class="small">La tua risposta corrisponde a: <b>${esc(a.slip)}</b>.</p>`:''}`;
     tip=NUM_TIP[a.tpl]||a.snap.tip||'';
   } else if(a.snap&&a.snap.s){
-    const sn=a.snap; body=`<div class="series sm">${sn.s.map(f=>frameSVG(f)).join('')}<div class="qmark">?</div></div>
+    const sn=a.snap; body=`${sn.m?matrixHTML(sn.m,'sm'):`<div class="series sm">${sn.s.map(f=>frameSVG(f)).join('')}<div class="qmark">?</div></div>`}
       <div class="series sm">${sn.o.map((f,i)=>`<div class="optmini ${i===a.key?'k':''} ${i===a.ans?'w':''}"><span class="mono">${LETTERS[i]}</span>${frameSVG(f)}</div>`).join('')}</div>
       <p><b>Regola:</b> ${esc(sn.ex)}</p>${a.broken&&a.broken.length?`<p class="small">La tua opzione viola: <b>${a.broken.map(r=>AB_RULES[r]?AB_RULES[r].label.toLowerCase():r).join(', ')}</b>.</p>`:''}`;
     tip=(a.broken||[]).map(r=>ABS_TIP[r]).filter(Boolean)[0]||(a.rules?ABS_TIP[a.rules[0]]:'')||'';
