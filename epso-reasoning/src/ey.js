@@ -29,6 +29,7 @@ function renderEY(){
         <span class="muted small">${{mind:'Problemi numerici, serie, figure, logica.',crit:'Logica non verbale: serie di figure e "quale non c\'entra".',adapt:'Situazioni di lavoro: la risposta più efficace.',aipro:'Uso pratico e responsabile dell\'AI. Nel test vero: rispondi in modo sincero e coerente.'}[k]}</span>
         <div class="row"><button class="primary" data-eyt="${k}">A tempo</button><button data-eyp="${k}">Pratica</button></div></div>`).join('')}</div>
     </section>
+    <section class="panel row spread"><div><h2>Calcolo rapido</h2><p class="small muted">MIND è a tempo stretto: allena il calcolo a mente con sessioni da 60-180 secondi (operatore, ruota, vero o falso, calcolo).</p></div><button class="primary" data-nav="mental">Allenati</button></section>
     <section class="panel stack">
       <h2>I miei esempi</h2>
       <p class="small muted">Se Adaptability o AI proficiency sono colloqui strutturati, ti chiederanno esperienze reali. Prepara per ciascun esempio: situazione, cosa hai fatto, risultato. Per l'AI: come hai verificato e corretto l'output, un errore intercettato, un caso in cui hai scelto di non usarla. Restano solo in questo browser.</p>

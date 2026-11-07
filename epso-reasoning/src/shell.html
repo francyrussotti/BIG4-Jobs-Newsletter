@@ -232,6 +232,31 @@ textarea.eyex{min-height:90px;font-family:var(--f-ui);font-size:.95rem}
 tr.today td{background:var(--accent-soft)}
 .causes{gap:6px} .causes button.csel{background:var(--warn-soft);border-color:var(--warn);color:var(--fg);font-weight:600}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* Calcolo rapido */
+.mc-mode{cursor:pointer} .mc-mode:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.mc-main{max-width:720px} .mc-stage{align-items:center;text-align:center;padding:28px 18px}
+.mc-eq{display:flex;flex-wrap:wrap;justify-content:center;align-items:baseline;gap:14px;font-size:clamp(2rem,8vw,3.2rem);font-weight:500}
+.mc-eqs{color:var(--muted)} .mc-q{color:var(--accent);font-weight:600}
+.mc-ops{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;width:100%;max-width:520px}
+.mc-ops.two{grid-template-columns:1fr 1fr}
+.mc-op{font-size:1.7rem;min-height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.mc-op small{font-size:.7rem;color:var(--muted);font-family:var(--f-mono)}
+.mc-form input{font-size:1.6rem;width:10ch;text-align:center;padding:8px;border:1px solid var(--line);border-radius:5px;background:var(--panel)}
+.mc-last{min-height:1.5em}
+.flash-ok{animation:mcok .35s ease-out} .flash-bad{animation:mcbad .35s ease-out}
+@keyframes mcok{from{box-shadow:0 0 0 3px var(--ok)}to{box-shadow:0 0 0 0 transparent}}
+@keyframes mcbad{from{box-shadow:0 0 0 3px var(--bad)}to{box-shadow:0 0 0 0 transparent}}
+.mc-wheel{position:relative;width:260px;height:260px;margin:4px auto;border:2px dashed var(--line);border-radius:50%;animation:mcspin var(--spin) linear infinite;animation-direction:var(--dir)}
+.mc-slot{position:absolute;left:50%;top:50%;width:0;height:0}
+.mc-slot.s0{transform:rotate(0deg) translateY(-98px) rotate(0deg)}
+.mc-slot.s1{transform:rotate(120deg) translateY(-98px) rotate(-120deg)}
+.mc-slot.s2{transform:rotate(240deg) translateY(-98px) rotate(-240deg)}
+.mc-c{transform:translate(-50%,-50%);width:max-content}
+.mc-num{display:block;font-size:1.9rem;font-weight:500;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:4px 12px;animation:mcspin var(--spin) linear infinite;animation-direction:var(--cdir)}
+.mc-num i{font-style:normal;font-size:.85rem;color:var(--accent);margin-right:6px;vertical-align:middle}
+@keyframes mcspin{to{transform:rotate(360deg)}}
+.center{text-align:center}
 </style>
 </head>
 <body>
