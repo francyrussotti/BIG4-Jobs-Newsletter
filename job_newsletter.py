@@ -2523,36 +2523,55 @@ def invia_email(html_body, totale):
     destinatari = list(dict.fromkeys(
         d.strip() for d in re.split(r"[,;\s]+", EMAIL_DESTINATARIO) if d.strip()))
 
-    msg            = MIMEMultipart("alternative")
-    msg["Subject"] = f"📰 Big4 Jobs {datetime.now():%d/%m/%Y} — {conta_offerte(totale)}"
-    msg["From"]    = GMAIL_MITTENTE
-    # Destinatari in CCN: nell'intestazione "A" compare solo il mittente e
-    # NON si scrive alcun header "Bcc" (altrimenti gli indirizzi sarebbero
-    # visibili nel sorgente del messaggio). I veri destinatari vengono
-    # passati solo a sendmail(), cioè a livello di trasporto SMTP.
-    msg["To"]      = GMAIL_MITTENTE
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
-    # Il mittente riceve anch'esso la copia (è nel campo "A"): lo si aggiunge
-    # una sola volta per non ricevere doppioni se è già tra i destinatari.
+    oggetto = f"📰 Big4 Jobs {datetime.now():%d/%m/%Y} — {conta_offerte(totale)}"
+
+    def messaggio(per):
+        # Una mail separata per ogni destinatario, come le newsletter: nel
+        # campo "A" c'è solo il suo indirizzo e nessuno vede gli altri.
+        msg            = MIMEMultipart("alternative")
+        msg["Subject"] = oggetto
+        msg["From"]    = GMAIL_MITTENTE
+        msg["To"]      = per
+        msg.attach(MIMEText(html_body, "html", "utf-8"))
+        return msg.as_string()
+
+    # Anche il mittente riceve la sua copia (una sola volta, senza doppioni).
     invio_a = list(dict.fromkeys([GMAIL_MITTENTE] + destinatari))
+    inviate, rifiutati = set(), set()
 
     # Errori temporanei (rete, Gmail momentaneamente non disponibile): si
-    # riprova. Le credenziali rifiutate invece non si risolvono riprovando.
+    # riprova solo per chi non l'ha ancora ricevuta. Le credenziali rifiutate
+    # invece non si risolvono riprovando.
     attese = (0, 10, 30)
     for tentativo, attesa in enumerate(attese, 1):
+        mancanti = [d for d in invio_a if d not in inviate and d not in rifiutati]
+        if not mancanti:
+            break
         time.sleep(attesa)
         try:
             with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=60) as s:
                 s.login(GMAIL_MITTENTE, GMAIL_PASSWORD)
-                s.sendmail(GMAIL_MITTENTE, invio_a, msg.as_string())
-            print(f"✅ Email inviata in CCN a {len(destinatari)} destinatari")
-            return "ok"
+                for per in mancanti:
+                    try:
+                        s.sendmail(GMAIL_MITTENTE, [per], messaggio(per))
+                        inviate.add(per)
+                    except smtplib.SMTPRecipientsRefused:
+                        print(f"❌ Indirizzo rifiutato da Gmail: {per}")
+                        rifiutati.add(per)
         except smtplib.SMTPAuthenticationError:
             print("❌ Errore autenticazione → rigenera App Password su myaccount.google.com")
             return "auth"
         except Exception as e:
             print(f"❌ Errore invio (tentativo {tentativo}/{len(attese)}): {e}")
-    return "errore"
+
+    if not inviate:
+        return "errore"
+    non_arrivate = len(invio_a) - len(inviate)
+    print(f"✅ Email inviata a {len(inviate)} destinatari (una mail separata per ciascuno)"
+          + (f" — ⚠️ {non_arrivate} non raggiunti" if non_arrivate else ""))
+    # Se almeno una è partita si considera inviata: riprovare domani
+    # manderebbe un doppione a chi l'ha già ricevuta.
+    return "ok"
 
 # ============================================================
 # 🚀  MAIN
