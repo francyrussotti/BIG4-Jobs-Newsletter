@@ -35,6 +35,7 @@ except ImportError:
 GMAIL_MITTENTE     = os.environ.get("GMAIL_MITTENTE",     "")
 GMAIL_PASSWORD     = os.environ.get("GMAIL_PASSWORD",     "")
 EMAIL_DESTINATARIO = os.environ.get("EMAIL_DESTINATARIO", "")
+COPIA_AL_MITTENTE  = True   # il reinvio a una sola persona (reinvia.py) la spegne
 
 # File locale dove vengono salvati gli ID delle offerte già inviate
 SEEN_FILE = "seen_jobs.json"
@@ -2536,7 +2537,7 @@ def invia_email(html_body, totale):
         return msg.as_string()
 
     # Anche il mittente riceve la sua copia (una sola volta, senza doppioni).
-    invio_a = list(dict.fromkeys([GMAIL_MITTENTE] + destinatari))
+    invio_a = list(dict.fromkeys(([GMAIL_MITTENTE] if COPIA_AL_MITTENTE else []) + destinatari))
     inviate, rifiutati = set(), set()
 
     # Errori temporanei (rete, Gmail momentaneamente non disponibile): si

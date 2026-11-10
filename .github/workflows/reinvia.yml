@@ -1,0 +1,39 @@
+name: 📮 Rimanda la newsletter di oggi a una persona
+
+# Avvio manuale. "chi" è una parte dell'indirizzo (es. il nome): l'indirizzo
+# completo si prende dal secret EMAIL_DESTINATARIO, così non resta scritto da
+# nessuna parte nel repository pubblico. Non tocca seen_jobs.json.
+on:
+  workflow_dispatch:
+    inputs:
+      chi:
+        description: "Parte dell'indirizzo del destinatario (deve essere già nel secret EMAIL_DESTINATARIO)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: newsletter
+  cancel-in-progress: false
+
+jobs:
+  reinvia:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 50
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt && playwright install --with-deps chromium
+      - name: Rimanda
+        timeout-minutes: 40
+        env:
+          GMAIL_MITTENTE: ${{ secrets.GMAIL_MITTENTE }}
+          GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
+          EMAIL_DESTINATARIO: ${{ secrets.EMAIL_DESTINATARIO }}
+          REINVIA_A: ${{ inputs.chi }}
+        run: python reinvia.py
