@@ -2,6 +2,7 @@
 Avvio:  python -m unittest -v test_job_newsletter
 """
 import json
+import re
 import os
 import tempfile
 import unittest
@@ -452,26 +453,49 @@ class TestPrivacyDestinatari(unittest.TestCase):
     """Ogni destinatario non deve vedere gli altri: indirizzi solo nella busta
     SMTP, mai nelle intestazioni (né To, né Cc, né Bcc)."""
 
-    def test_destinatari_in_ccn(self):
-        catturato = {}
+    def finto_smtp(self, invii, fallisci_una_volta=False):
+        stato = {"fallito": False}
 
         class FintoSMTP:
             def __init__(self, *a, **k): pass
             def __enter__(self): return self
             def __exit__(self, *a): pass
             def login(self, *a): pass
-            def sendmail(self, mitt, dest, msg): catturato.update(dest=dest, msg=msg)
+            def sendmail(self, mitt, dest, msg):
+                if fallisci_una_volta and len(invii) == 1 and not stato["fallito"]:
+                    stato["fallito"] = True
+                    raise OSError("connessione persa")
+                invii.append((dest, msg))
+        return FintoSMTP
 
-        dest = ["anna@x.it", "bruno@y.it", "carla@z.it"]
+    def invia(self, dest, smtp):
         with mock.patch.object(jn, "GMAIL_MITTENTE", "mittente@gmail.com"), \
              mock.patch.object(jn, "GMAIL_PASSWORD", "x"), \
              mock.patch.object(jn, "EMAIL_DESTINATARIO", ", ".join(dest)), \
-             mock.patch.object(jn.smtplib, "SMTP_SSL", FintoSMTP):
-            self.assertEqual(jn.invia_email("<p>ok</p>", 1), "ok")
-        for d in dest:
-            self.assertIn(d, catturato["dest"])        # consegnata a tutti
-            self.assertNotIn(d, catturato["msg"])      # ma invisibile nel messaggio
-        self.assertNotRegex(catturato["msg"], r"(?im)^(cc|bcc):")
+             mock.patch.object(jn.smtplib, "SMTP_SSL", smtp), \
+             mock.patch.object(jn.time, "sleep"):
+            return jn.invia_email("<p>ok</p>", 1)
+
+    def test_una_mail_separata_per_ciascuno(self):
+        dest = ["anna@x.it", "bruno@y.it", "carla@z.it"]
+        invii = []
+        self.assertEqual(self.invia(dest, self.finto_smtp(invii)), "ok")
+        self.assertEqual(len(invii), 4)                     # 3 destinatari + il mittente
+        for busta, msg in invii:
+            self.assertEqual(len(busta), 1)
+            per = busta[0]
+            self.assertRegex(msg, rf"(?m)^To: {re.escape(per)}$")
+            for altro in dest:
+                if altro != per:
+                    self.assertNotIn(altro, msg)            # nessuno vede gli altri
+            self.assertNotRegex(msg, r"(?im)^(cc|bcc):")
+
+    def test_riprova_senza_doppioni(self):
+        dest = ["anna@x.it", "bruno@y.it"]
+        invii = []
+        self.assertEqual(self.invia(dest, self.finto_smtp(invii, fallisci_una_volta=True)), "ok")
+        destinatari = [b[0] for b, _ in invii]
+        self.assertEqual(sorted(destinatari), sorted(["mittente@gmail.com"] + dest))
 
 
 class TestTesti(unittest.TestCase):
