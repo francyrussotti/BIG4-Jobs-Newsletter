@@ -1,12 +1,15 @@
-# EPSO Reasoning Trainer (AD/427/26)
+# Reasoning & Case Prep
 
-Programma di allenamento per la Parte 1 del concorso EPSO/AD/427/26 (AD5): solo le tre prove di reasoning, con formato, tempi e soglie del bando.
+Programma di allenamento per test logici, numerici e verbali e per business case, con tempi, correzione e analisi degli errori. Un solo file HTML, funziona anche offline.
 
-| Prova | Domande | Tempo | Soglia |
-|---|---|---|---|
-| Verbale | 20 | 35 min | 10/20 |
-| Numerico | 10 | 20 min | 10/20 combinata con l'astratto |
-| Astratto | 10 | 10 min | (vedi sopra) |
+| Area | Contenuto |
+|---|---|
+| Logical | Serie di figure, matrici 3×3 e 2×2, figura intrusa, tavolo rotondo, sufficienza dei dati |
+| Numerical | Tabelle e grafici, test misto a tempo stretto, problemi di produttività e percentuali, serie e piramidi di numeri, calcolo rapido |
+| Verbal | Brani con affermazioni vere, false o non deducibili |
+| Business case | Analisi costi-benefici, stime di mercato, domande di colloquio (in inglese), situazioni di lavoro, uso dell'AI; modulo di settore sullo spazio UE e manuale PDF |
+
+Simulazioni complete in due formati: concorso (verbale 20/35', numerico 10/20', astratto 10/10', con soglie) e assessment online (quattro attività brevi).
 
 ## Come aprirlo
 

@@ -1,9 +1,9 @@
-// ---------- EY interview · EU Space (MIST): requirements, technical content, questions, exercises ----------
+// ---------- Business case & interview: requirements, methods, sector module (EU space), questions, exercises ----------
 // Content written for this programme from public sources (European Commission, EUSPA, ESA, European Court of Auditors).
 // Personal notes stay in the browser (DB.iv), never in the published code. Page language: English (the interview is in English).
 const IVV={tab:'req',ex:null,quiz:null};
 const ivDB=()=>{ DB.iv=DB.iv||{notes:{},ex:{n:0,ok:0},quiz:{n:0,ok:0}}; DB.iv.notes=DB.iv.notes||{}; DB.iv.ex=DB.iv.ex||{n:0,ok:0}; DB.iv.quiz=DB.iv.quiz||{n:0,ok:0}; return DB.iv; };
-const IV_TABS=[['req','Requirements'],['space','EU space'],['meth','Methods'],['proj','EY projects'],['tq','Technical questions'],['bq','Personal questions'],['ex','Exercises'],['quiz','Quiz']];
+const IV_TABS=[['req','Role requirements'],['space','EU space'],['meth','Methods'],['proj','Project examples'],['tq','Technical questions'],['bq','Personal questions'],['ex','Exercises'],['quiz','Quiz']];
 
 // ---- 1. Vacancy requirements ----
 const IV_REQ=[
@@ -14,9 +14,9 @@ const IV_REQ=[
  {k:'wp',r:'Demonstrable experience managing research tasks / work packages',they:'That you can deliver a piece of research on your own: objective, sources, plan, deadline, quality check, delivery.',prove:'A concrete STAR example with numbers: how many sources, how many interviewees, how many weeks, what you delivered, how it was used.',q:'Tell me about a research task you managed from start to finish.'},
  {k:'office',r:'Proficiency in Excel, Word and PowerPoint',they:'That you are productive from day one.',prove:'Be specific: XLOOKUP/INDEX-MATCH, pivot tables, NPV/IRR functions, data tables for sensitivity analysis, error checks. PowerPoint: action titles that state the conclusion, one message per slide.',q:'How would you build a sensitivity analysis in Excel?'},
  {k:'flex',r:'Self-motivation and flexibility in a small, fast-growing consultancy',they:'That you don\'t need hand-holding and can cope with shifting priorities and tight deadlines.',prove:'An example of priorities changing at the last minute and how you reorganised without losing quality.',q:'Tell me about a time priorities changed suddenly.'},
- {k:'ai',r:'Strong affinity with AI, interest in applying AI at work',they:'Concrete, critical use, not generic enthusiasm. EY sells AI adoption to clients.',prove:'Two or three real uses (desk research, extracting data from PDFs, code for analysis, first drafts) and how you check the output: source verification, no confidential data in public tools, traceability.',q:'How do you use AI in your work? How would you use it to produce a market report?'},
+ {k:'ai',r:'Strong affinity with AI, interest in applying AI at work',they:'Concrete, critical use, not generic enthusiasm. Consultancies sell AI adoption to clients.',prove:'Two or three real uses (desk research, extracting data from PDFs, code for analysis, first drafts) and how you check the output: source verification, no confidential data in public tools, traceability.',q:'How do you use AI in your work? How would you use it to produce a market report?'},
  {k:'team',r:'Work independently and in a team',they:'Balance: autonomy on your piece, coordination on the rest.',prove:'One example where you asked for help at the right moment, and one where you unblocked someone else\'s work.',q:'Describe a disagreement in a team and how you handled it.'},
- {k:'bonus',r:'Bonus: secure satcom, Earth Observation and geospatial, GNSS, EU space ecosystem',they:'Not mandatory, but they set you apart from other juniors with the same profile.',prove:'Know the basics in the "EU space" and "EY projects" tabs and connect them to markets (agriculture, transport, insurance, security).',q:'What do you know about Galileo / Copernicus / IRIS²?'}
+ {k:'bonus',r:'Bonus: secure satcom, Earth Observation and geospatial, GNSS, EU space ecosystem',they:'Not mandatory, but they set you apart from other juniors with the same profile.',prove:'Know the basics in the "EU space" and "Project examples" tabs and connect them to markets (agriculture, transport, insurance, security).',q:'What do you know about Galileo / Copernicus / IRIS²?'}
 ];
 
 // ---- 2. EU space ecosystem ----
@@ -34,13 +34,13 @@ const IV_SPACE=[
   <dt>Services</dt><dd>Free <b>Open Service</b>. <b>HAS</b> (High Accuracy Service): free corrections, around 20 cm accuracy, initial service since January 2023. <b>OSNMA</b>: authenticates the navigation message against spoofing, initial service declared by EUSPA on 24 July 2025. <b>PRS</b>: encrypted service for authorised government users. <b>SAR</b>: search and rescue with a return link.</dd>
   <dt>Why, if GPS is free</dt><dd>Strategic autonomy (GPS is a US military system), resilience, more satellites in view and so better accuracy in cities, distinctive services (HAS, OSNMA, SAR return link), PRS.</dd>
   <dt>EGNOS</dt><dd>Satellite-based augmentation system (SBAS) over Europe that improves GPS accuracy and integrity: precision approaches in aviation (LPV), agriculture, maritime.</dd>
-  <dt>LEO-PNT</dt><dd>Positioning, navigation and timing from low Earth orbit (500-1,200 km). Stronger signals and fast-changing geometry: more resilience to jamming and spoofing, faster convergence of precise positioning. ESA's <b>Celeste</b> demonstrator launched its first 2 satellites at the end of March 2026 (Electron rocket); 8 more planned from 2027. The vacancy mentions a cost-benefit analysis of an EU LEO-PNT initiative.</dd>
+  <dt>LEO-PNT</dt><dd>Positioning, navigation and timing from low Earth orbit (500-1,200 km). Stronger signals and fast-changing geometry: more resilience to jamming and spoofing, faster convergence of precise positioning. ESA's <b>Celeste</b> demonstrator launched its first 2 satellites at the end of March 2026 (Electron rocket); 8 more planned from 2027. A typical consulting assignment: a cost-benefit analysis of an EU LEO-PNT initiative.</dd>
  </dl>`},
  {h:'Copernicus (Earth Observation)',b:`<dl class="dl">
   <dt>What it is</dt><dd>The EU Earth Observation programme. Data are <b>free, full and open</b>. Access through the Copernicus Data Space Ecosystem.</dd>
   <dt>Sentinels</dt><dd><b>1</b> synthetic aperture radar (SAR, C-band): sees at night and through clouds. <b>2</b> high-resolution multispectral optical (10 m): agriculture, land. <b>3</b> ocean and land: colour, temperature, altimetry. <b>5P</b> atmosphere. <b>6</b> sea level. Expansion missions in development (e.g. CO2M for CO₂, CHIME, CIMR, CRISTAL, LSTM, ROSE-L).</dd>
   <dt>6 services</dt><dd>Land, marine, atmosphere, climate change, emergency management, security.</dd>
-  <dt>Contributing missions</dt><dd>Commercial data, often very high resolution, purchased to complement the Sentinels. One of the cost-benefit analyses in the vacancy is about the value of high-resolution, fast-revisit data compared with the Sentinels (10 m, a few days between passes).</dd>
+  <dt>Contributing missions</dt><dd>Commercial data, often very high resolution, purchased to complement the Sentinels. A typical cost-benefit question is the value of high-resolution, fast-revisit data compared with the Sentinels (10 m, a few days between passes).</dd>
  </dl>`},
  {h:'Secure satellite communications',b:`<dl class="dl">
   <dt>GOVSATCOM</dt><dd>Pooling and sharing of secure satellite capacity, national and commercial, for governmental users (security, crisis management, maritime surveillance).</dd>
@@ -49,7 +49,7 @@ const IV_SPACE=[
  </dl>`},
  {h:'Policies and documents to know',b:`<dl class="dl">
   <dt>EU Space Act</dt><dd>Proposed regulation COM(2025) 335 of 25 June 2025. Three pillars: <b>safety</b> (debris, collision avoidance), <b>resilience</b> (cybersecurity; lex specialis to NIS2), <b>sustainability</b> (common method for environmental footprint). Expected to apply from 2030. Under discussion in the European Parliament (ITRE committee) and the Council: <b>check</b> progress.</dd>
-  <dt>European Court of Auditors, Special Report 07/2021</dt><dd>On Galileo and Copernicus: services launched, but uptake below potential. Copernicus used mainly by experts, weak monitoring of Galileo uptake, no <b>comprehensive strategy with measurable, time-bound objectives</b>. Recommendations: a strategy, a framework to measure socio-economic benefits, integrated data access. In 2024 the Commission published a staff working document with a framework for measuring uptake. One of the vacancy projects is exactly the implementation of these recommendations.</dd>
+  <dt>European Court of Auditors, Special Report 07/2021</dt><dd>On Galileo and Copernicus: services launched, but uptake below potential. Copernicus used mainly by experts, weak monitoring of Galileo uptake, no <b>comprehensive strategy with measurable, time-bound objectives</b>. Recommendations: a strategy, a framework to measure socio-economic benefits, integrated data access. In 2024 the Commission published a staff working document with a framework for measuring uptake. Supporting the implementation of these recommendations is a typical consulting assignment.</dd>
   <dt>Other</dt><dd>EU Space Strategy for Security and Defence (March 2023). Chips Act (2023), relevant to the semiconductor project.</dd>
  </dl>`},
  {h:'Market: definitions and figures',b:`<dl class="dl">
@@ -107,7 +107,7 @@ const IV_METH=[
   <p><b>Commodities trading</b>: Earth Observation to forecast harvests and monitor oil storage, ports and mines. GNSS timing to timestamp transactions: MiFID II requires clocks synchronised and traceable to UTC.</p>`}
 ];
 
-// ---- 4. Projects listed in the vacancy ----
+// ---- 4. Project examples ----
 const IV_PROJ=[
  {t:'CBA of the EU LEO-PNT initiative (for EUSPA and the Commission)',what:'Deciding whether and how the EU should have a low-orbit navigation component alongside Galileo.',you:'Data collection on costs (satellites, launches, ground segment, operations), benefit estimates by sector, Excel model, sensitivity analysis, interviews with industry and users.',m:'Counterfactual: Galileo alone, plus commercial or terrestrial alternatives. Benefits: avoided losses from GNSS jamming or spoofing (telecoms, finance, energy, transport), better performance, autonomy. Cost-effectiveness or multi-criteria analysis for the strategic part.',trap:'Do not attribute to LEO-PNT benefits already delivered by Galileo (OSNMA, HAS). Treat commercial alternatives as an option, don\'t ignore them.',q:'What would be the key benefit categories and the counterfactual in a CBA of LEO-PNT?'},
  {t:'Market and technology monitoring, EO & GNSS Market Report',what:'EUSPA\'s reference report on downstream markets, now the EU Space Market Report.',you:'Updating databases by segment, collecting company and shipment data, consistency checks, drafting segment sections, expert validation.',m:'Installed base × penetration × revenue per unit. Device and service revenues. 10-year forecasts with scenarios.',trap:'Definitions change between editions: a direct comparison across reports can be wrong.',q:'How would you forecast GNSS revenues in road and automotive to 2034?'},
@@ -145,7 +145,7 @@ const IV_TQ=[
 // ---- 6. Personal questions (STAR) ----
 const IV_BQ=[
  {k:'pitch',q:'Tell me about yourself (60-90 seconds).',t:'Who you are in one sentence, two experiences linked to the role (research, quantitative analysis), why EU space and why now.'},
- {k:'whyey',q:'Why EY, and why this team?',t:'A small team with institutional clients (EUSPA, DG DEFIS, ESA), work on real data and policy, the projects listed in the vacancy. No sentences that would fit any company.'},
+ {k:'whyey',q:'Why this firm, and why this team?',t:'A small team with institutional clients (EUSPA, DG DEFIS, ESA), work on real data and policy, the projects in the job description. No sentences that would fit any company.'},
  {k:'whyspace',q:'Why space? Why EU policy?',t:'A concrete, personal reason linked to impact: space as infrastructure for agriculture, transport and security; the EU as the actor deciding how to use it.'},
  {k:'research',q:'Tell me about a research task you managed end to end.',t:'STAR: objective, sources, plan, deadlines, obstacles, result with numbers, how it was used.'},
  {k:'deadline',q:'Tell me about a time priorities changed or a deadline was very tight.',t:'How you reorganised, what you communicated and to whom, what you dropped and why.'},
@@ -234,17 +234,17 @@ const IV_EX=[
 function renderInterview(tab){
   if(tab) IVV.tab=tab; const D=ivDB(); const t=IVV.tab;
   let body='';
-  if(t==='req') body=`<p class="small muted">For each requirement: what they look for, how to prove it, the likely question. Write your own example in the box: it stays in this browser only.</p>`+IV_REQ.map(r=>`<section class="panel stack"><h3>${esc(r.r)}</h3><dl class="dl"><dt>What they look for</dt><dd>${esc(r.they)}</dd><dt>How to prove it</dt><dd>${esc(r.prove)}</dd><dt>Likely question</dt><dd><i>${esc(r.q)}</i></dd></dl><textarea class="ivnote" data-ivn="req-${r.k}" rows="3" placeholder="Your concrete example (situation, what you did, result with numbers)">${esc(D.notes['req-'+r.k]||'')}</textarea></section>`).join('');
+  if(t==='req') body=`<p class="small muted">Typical requirements for a junior consulting role. For each one: what they look for, how to prove it, the likely question. Write your own example in the box: it stays in this browser only.</p>`+IV_REQ.map(r=>`<section class="panel stack"><h3>${esc(r.r)}</h3><dl class="dl"><dt>What they look for</dt><dd>${esc(r.they)}</dd><dt>How to prove it</dt><dd>${esc(r.prove)}</dd><dt>Likely question</dt><dd><i>${esc(r.q)}</i></dd></dl><textarea class="ivnote" data-ivn="req-${r.k}" rows="3" placeholder="Your concrete example (situation, what you did, result with numbers)">${esc(D.notes['req-'+r.k]||'')}</textarea></section>`).join('');
   else if(t==='space') body=`<p class="small muted">Facts checked in November 2026 against official sources (European Commission, EUSPA, ESA, European Court of Auditors). Before the interview, re-check the items marked <b>check</b>.</p>`+IV_SPACE.map(s=>`<section class="panel stack ivtext"><h2>${s.h}</h2>${s.b}</section>`).join('');
   else if(t==='meth') body=IV_METH.map(s=>`<section class="panel stack ivtext"><h2>${s.h}</h2>${s.b}</section>`).join('')+`<div class="row"><button class="primary" data-ivt="ex">Try the numerical exercises</button></div>`;
-  else if(t==='proj') body=`<p class="small muted">These are the projects listed in the vacancy: you may be asked how you would work on one of them.</p>`+IV_PROJ.map(p=>`<section class="panel stack"><h3>${esc(p.t)}</h3><dl class="dl"><dt>What it is</dt><dd>${esc(p.what)}</dd><dt>Your role as a junior</dt><dd>${esc(p.you)}</dd><dt>Method</dt><dd>${esc(p.m)}</dd><dt>Trap</dt><dd>${esc(p.trap)}</dd><dt>Possible question</dt><dd><i>${esc(p.q)}</i></dd></dl></section>`).join('');
+  else if(t==='proj') body=`<p class="small muted">Typical policy and market consulting projects (sector module: EU space): you may be asked how you would work on one of them.</p>`+IV_PROJ.map(p=>`<section class="panel stack"><h3>${esc(p.t)}</h3><dl class="dl"><dt>What it is</dt><dd>${esc(p.what)}</dd><dt>Your role as a junior</dt><dd>${esc(p.you)}</dd><dt>Method</dt><dd>${esc(p.m)}</dd><dt>Trap</dt><dd>${esc(p.trap)}</dd><dt>Possible question</dt><dd><i>${esc(p.q)}</i></dd></dl></section>`).join('');
   else if(t==='tq') body=`<p class="small muted">Answer out loud in 60-90 seconds, then open the model answer. Don't memorise it: take the structure.</p>`+IV_TQ.map((x,i)=>`<section class="panel stack"><h3>${i+1}. ${esc(x.q)}</h3><details><summary>Model answer</summary><p class="ivans">${esc(x.a)}</p>${x.n?`<p class="small muted">${esc(x.n)}</p>`:''}</details></section>`).join('');
   else if(t==='bq') body=`<p class="small muted">STAR structure: Situation, Task, Action (the longest part, in the first person), Result with numbers. Your answers stay in this browser only.</p>`+IV_BQ.map(x=>`<section class="panel stack"><h3>${esc(x.q)}</h3><p class="small">${esc(x.t)}</p><textarea class="ivnote" data-ivn="bq-${x.k}" rows="5" placeholder="${x.k==='ask'?'Your questions':'Situation · Task · Action · Result'}">${esc(D.notes['bq-'+x.k]||'')}</textarea></section>`).join('');
   else if(t==='ex') body=ivExHTML();
   else if(t==='quiz') body=ivQuizHTML();
-  app().innerHTML=header('EY interview · EU Space','Junior EU Consultant, Market Intelligence and Space Technology (Diegem). Requirements, technical content, questions and exercises.')+`
+  app().innerHTML=header('Business case & interview','Consulting case skills: cost-benefit analysis, market sizing, evaluation, interview questions. Sector module: EU space.')+`
   <main class="wrap stack" lang="en">
-    <p class="row spread small"><span class="muted">All the theory in one document, with worked examples.</span><a href="theory/ey-space-theory.pdf" target="_blank" rel="noopener"><b>Download the theory handbook (PDF, 32 pages)</b></a></p>
+    <p class="row spread small"><span class="muted">All the theory in one document, with worked examples.</span><a href="theory/case-theory-handbook.pdf" target="_blank" rel="noopener"><b>Download the theory handbook (PDF, 32 pages)</b></a></p>
     <nav class="ivtabs" aria-label="Sections">${IV_TABS.map(([k,l])=>`<button class="${t===k?'on':''}" data-ivt="${k}">${l}</button>`).join('')}</nav>
     ${body}
   </main>${footer()}`;

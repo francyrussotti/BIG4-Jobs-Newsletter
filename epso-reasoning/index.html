@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>EPSO Reasoning Trainer</title>
+<title>Reasoning &amp; Case Prep</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
@@ -286,6 +286,7 @@ button.warnbtn{background:var(--warn-soft);color:var(--warn);border-color:var(--
 .pyr-r{display:flex;gap:6px}
 .pyr-r span{min-width:46px;padding:8px 6px;border:1.5px solid var(--fg);border-radius:4px;text-align:center;font-family:var(--f-mono);font-size:1.05rem;background:var(--panel)}
 .pyr-r span.q{border-style:dashed;color:var(--accent);font-weight:600}
+.areacard{cursor:pointer;min-height:120px}.areacard b{font-size:1.15rem;color:var(--accent)}
 </style>
 </head>
 <body>
@@ -1534,9 +1535,9 @@ function eyTransformItem(sec){
 
 // ===== Practice of the harder formats only =====
 const EY_HARD_T={ds:['Sufficienza dei dati',eyDSItem],seat:['Tavolo rotondo',eySeatItem],rate:['Produttività e tempi',eyRateItem],pct:['Percentuali a catena e voti',eyPctChainItem],ser2:['Serie intrecciate e cifre invertite',eySeries2Item],pyr:['Piramidi di numeri',eyPyramidItem],mat3:['Matrici 3×3',eyLatinItem],mat2:['Matrici 2×2 con trasformazioni',eyTransformItem]};
-let EY_HARD_ONLY='';
+let EY_HARD_ONLY='', EY_HARD_SET=null;
 function buildEYHard(sec,n){
-  const keys=EY_HARD_ONLY?[EY_HARD_ONLY]:Object.keys(EY_HARD_T);
+  const keys=EY_HARD_ONLY?[EY_HARD_ONLY]:(EY_HARD_SET||Object.keys(EY_HARD_T));
   const plan=[]; while(plan.length<n) plan.push(...R.shuffle(keys)); return plan.slice(0,n).map(k=>EY_HARD_T[k][1](sec));
 }
 
@@ -2122,7 +2123,7 @@ function renderErrors(){
   const count=t=>all.filter(e=>match(e,t)&&!DB.understood[e.uid]).length;
   app().innerHTML=header('Errori','Ogni risposta sbagliata con la spiegazione e il modo per non ripeterla.')+`
   <main class="wrap stack narrow">
-    <div class="tabs five">${[['all','Tutti'],['verbal','Verbale'],['numerical','Numerico'],['abstract','Astratto'],['ey','Test EY']].map(([k,l])=>`<button class="${ERRV.filter===k?'on':''}" data-ef="${k}">${l} (${count(k)})</button>`).join('')}</div>
+    <div class="tabs five">${[['all','Tutti'],['verbal','Verbale'],['numerical','Numerico'],['abstract','Astratto'],['ey','Altri test']].map(([k,l])=>`<button class="${ERRV.filter===k?'on':''}" data-ef="${k}">${l} (${count(k)})</button>`).join('')}</div>
     <label class="chk small"><input type="checkbox" id="ev-done" ${ERRV.showDone?'checked':''}><span>Mostra anche gli errori già segnati come capiti</span></label>
     ${list.length?list.slice(0,80).map(errorCard).join(''):`<div class="panel"><p class="muted">${all.length?'Nessun errore da rivedere in questa categoria.':'Ancora nessun errore salvato: fai una prova e torna qui.'}</p></div>`}
     ${list.length>80?`<p class="small muted">Mostro i primi 80 di ${list.length}.</p>`:''}
@@ -2174,7 +2175,7 @@ function errorCard(e){
   </article>`;
 }
 
-// ---------- EY Belgium online assessment (Maki People): preparation page ----------
+// ---------- Area pages: Logical, Numerical, Verbal, Business case, Simulations, Tools ----------
 const EY_TPL={'ey-num':'Problemi numerici','ey-series':'Serie numeriche','ey-order':'Ordinamenti','ey-syl':'Sillogismi','ey-cond':'Se… allora','ey-sjt':'Situazioni di lavoro','ey-ai':'Uso dell\'AI'};
 const EY_TIPS={
   mind:['Circa 37 secondi a domanda: se una domanda ti blocca, scegli e vai avanti.','Problemi numerici: scrivi i dati su carta e calcola il valore unitario.','Serie: guarda le differenze, poi rapporti, quadrati, due serie alternate.','Figure: un elemento alla volta (forma, posizione, rotazione, numero, colore).'],
@@ -2182,49 +2183,90 @@ const EY_TIPS={
   adapt:['Scegli la risposta che affronta il problema, comunica con le persone coinvolte e mostra flessibilità.','Evita le risposte rigide ("si fa come concordato"), passive ("aspetto") o solitarie ("faccio da solo senza dire niente").'],
   aipro:['Nel test vero sono affermazioni sul tuo modo di usare l\'AI: rispondi in modo sincero e coerente, non "da manuale".','Dati riservati mai in strumenti pubblici.','Ogni dato, citazione o calcolo prodotto dall\'AI va verificato.','Un buon prompt: ruolo, compito, pubblico, formato, vincoli.','Le decisioni importanti restano a una persona.']
 };
-function renderEY(){
-  const s=k=>SEC[k];
-  const last=DB.sessions.find(x=>x.kind==='eyfull');
-  const ex=(DB.eyExamples||[{},{},{},{},{}]);
-  app().innerHTML=header('Test EY · Maki','Preparazione al test online di EY Belgium (EU MIST): MIND, Critical thinking, Adaptability, AI proficiency.')+`
-  <main class="wrap stack">
-    <section class="panel stack">
-      <h2>Cosa sappiamo del test</h2>
-      <dl class="dl">
-        <dt>Confermato (email)</dt><dd>Piattaforma Maki People. Attività da 5-10 minuti ciascuna, 40 minuti in tutto. Pausa possibile solo tra un'attività e l'altra. Lingua: inglese, francese o olandese (scegli l'inglese e usalo per tutto). Carta e penna utili. Punteggio minimo richiesto. Scadenza venerdì 13 novembre. <b>Vietato usare l'AI durante il test.</b></dd>
-        <dt>Catalogo ufficiale Maki</dt><dd><b>MIND</b> 10 min: abilità cognitiva non verbale, serie di numeri, problem solving, ragionamento numerico. <b>Basic critical thinking</b> 8 min: logica <b>non verbale</b> (figure). <b>Adaptability (SJT)</b> 8 min: situazioni di lavoro. <b>AI proficiency (SJT)</b> 12 min: affermazioni sul tuo uso dell'AI, scegli l'opzione che ti descrive meglio; misura agilità con gli strumenti, alfabetizzazione su dati e algoritmi, uso etico, interazione con lo strumento. Totale 38 minuti, coerente con i 40 dell'email.</dd>
-        <dt>Da verificare all'inizio</dt><dd>Adaptability e AI proficiency esistono anche come <b>colloquio strutturato</b> (11-12 min, risposte scritte o parlate su tue esperienze reali, valutate con griglie di comportamento). Le versioni a situazioni non sono disponibili in olandese, quelle a colloquio sì: EY potrebbe usare queste. Prepara comunque gli esempi qui sotto.</dd>
-        <dt>Da fonti terze</dt><dd>Numero di domande: MIND circa 16, Critical thinking circa 13, Adaptability circa 10. Timer non sospendibile dentro un'attività, ogni attività si fa una volta, risultato riusato se hai fatto la stessa attività negli ultimi 6 mesi, Chrome da computer, schermo intero, monitoraggio.</dd>
-        <dt>Piano</dt><dd>Allenati oggi e domani con le prove qui sotto, poi fai il test vero <b>lunedì 9 o martedì 10 novembre</b>, in un'unica sessione, da computer con Chrome, connessione stabile, carta e penna. Così resta margine prima del 13, che è anche il giorno dell'EPSO.</dd>
-      </dl>
-      <p class="small muted">Queste prove sono domande originali per allenarti al formato e ai tempi; non sono domande del test reale. Durante il test vero non usare l'AI né questo sito.</p>
-    </section>
-    <section class="hero">
-      <button class="card primary-card" id="ey-full"><span class="eyebrow">Simulazione completa EY</span><b>Le quattro attività di fila, con pausa facoltativa tra una e l'altra</b><span class="spec mono">16 dom. · 10:00 → 13 · 08:00 → 10 · 08:00 → 10 · 12:00</span>${last?`<span class="muted">Ultima: ${fmtD(last.date)} · ${last.parts.map(p=>`${SEC[p.sec].name} ${p.score}/${p.n}`).join(' · ')}</span>`:'<span class="muted">Fanne una come prova generale prima del test vero.</span>'}</button>
-      <div class="cards4">${['mind','crit','adapt','aipro'].map(k=>`<div class="card"><span class="eyebrow">${s(k).name}</span><b>${s(k).n} domande · ${fmtT(s(k).sec)}</b>
-        <span class="muted small">${{mind:'Problemi numerici, serie, figure, logica.',crit:'Logica non verbale: serie di figure e "quale non c\'entra".',adapt:'Situazioni di lavoro: la risposta più efficace.',aipro:'Uso pratico e responsabile dell\'AI. Nel test vero: rispondi in modo sincero e coerente.'}[k]}</span>
-        <div class="row"><button class="primary" data-eyt="${k}">A tempo</button><button data-eyp="${k}">Pratica</button></div></div>`).join('')}</div>
-    </section>
-    <section class="panel stack"><div class="row spread"><div><h2>Formati difficili</h2><p class="small muted">I formati più duri visti nel test vero, con domande originali: sufficienza dei dati, tavolo rotondo, produttività, percentuali a catena e voti, serie intrecciate e cifre invertite, piramidi di numeri, matrici 3×3 e 2×2. 12 domande in 9 minuti.</p></div></div>
-      <div class="row"><label class="row small">Formato <select id="eyh-only"><option value="">Tutti mescolati</option>${Object.entries(EY_HARD_T).map(([k,v])=>`<option value="${k}" ${EY_HARD_ONLY===k?'selected':''}>${v[0]}</option>`).join('')}</select></label><button class="primary" data-eyt="eyhard">A tempo</button><button data-eyp="eyhard">Pratica</button></div></section>
-    <section class="panel row spread"><div><h2>Calcolo rapido</h2><p class="small muted">MIND è a tempo stretto: allena il calcolo a mente con sessioni da 60-180 secondi (operatore, ruota, vero o falso, calcolo).</p></div><button class="primary" data-nav="mental">Allenati</button></section>
-    <section class="panel row spread"><div><h2>EY interview</h2><p class="small muted">In inglese, dopo il test: requisiti della vacancy, ecosistema spaziale UE, analisi costi-benefici, domande tecniche con risposte modello, esercizi.</p></div><button class="primary" data-nav="interview">Apri</button></section>
+
+const AREA_HARD={logical:['ds','seat','mat3','mat2'],numerical:['rate','pct','ser2','pyr']};
+const SEC_DESC={
+  verbal:'Brano + 4 affermazioni, una sola giusta.',
+  numerical:'Tabelle e grafici, 5 opzioni, calcolatrice a schermo.',
+  abstract:'Serie di 5 figure: scegli la sesta.',
+  mind:'Test misto a tempo stretto: problemi, grafici, serie, logica, figure.',
+  crit:'Matrici 3×3 e 2×2, serie di figure, figura intrusa.',
+  adapt:'Situazioni di lavoro: scegli la risposta più efficace.',
+  aipro:'Uso pratico e responsabile dell\'AI nel lavoro.'
+};
+function secCard(k,title){ const c=SEC[k]; return `<div class="card"><span class="eyebrow">${esc(title||c.it)}</span><b>${c.n} domande · ${fmtT(c.sec)}</b><span class="muted small">${SEC_DESC[k]||''}</span><div class="row"><button class="primary" data-t="${k}">A tempo</button><button data-p="${k}">Pratica</button></div></div>`; }
+function hardCard(area){ const keys=AREA_HARD[area]; return `<div class="card"><span class="eyebrow">Formati avanzati</span><b>12 domande · ${fmtT(SEC.eyhard.sec)}</b><span class="muted small">${keys.map(k=>EY_HARD_T[k][0]).join(', ')}.</span><label class="row small">Formato <select data-hsel="${area}"><option value="">Tutti mescolati</option>${keys.map(k=>`<option value="${k}">${EY_HARD_T[k][0]}</option>`).join('')}</select></label><div class="row"><button class="primary" data-ht="${area}">A tempo</button><button data-hp="${area}">Pratica</button></div></div>`; }
+function bindSecButtons(){
+  document.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>startSession('single',{sec:b.dataset.t}));
+  document.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>startSession('practice',{sec:b.dataset.p,n:10}));
+  const hard=(area,kind)=>{ const sel=document.querySelector(`[data-hsel="${area}"]`); EY_HARD_SET=AREA_HARD[area]; EY_HARD_ONLY=sel?sel.value:''; startSession(kind,{sec:'eyhard'}); };
+  document.querySelectorAll('[data-ht]').forEach(b=>b.onclick=()=>hard(b.dataset.ht,'single'));
+  document.querySelectorAll('[data-hp]').forEach(b=>b.onclick=()=>hard(b.dataset.hp,'practice'));
+}
+const AREAS={
+  logical:{name:'Logical',sub:'Ragionamento astratto e logico: serie di figure, matrici, vincoli, sufficienza dei dati.'},
+  numerical:{name:'Numerical',sub:'Tabelle, grafici, problemi, serie numeriche e calcolo a mente.'},
+  verbal:{name:'Verbal',sub:'Comprensione di brani: cosa è vero, falso o non deducibile.'},
+  case:{name:'Business case',sub:'Casi e colloqui: analisi costi-benefici, stime di mercato, situazioni di lavoro, uso dell\'AI.'}
+};
+function renderArea(k){
+  const A=AREAS[k]; let body='';
+  if(k==='logical') body=`<div class="cards3">${secCard('abstract','Serie di figure')}${secCard('crit','Matrici e figura intrusa')}${hardCard('logical')}</div>
+    <section class="panel row spread"><div><h2>Metodo</h2><p class="small muted">Checklist per le figure: un elemento alla volta (forma, numero, colore, posizione, rotazione).</p></div><button data-nav="method">Apri il metodo</button></section>`;
+  else if(k==='numerical') body=`<div class="cards3">${secCard('numerical','Tabelle e grafici')}${secCard('mind','Test attitudinale misto')}${hardCard('numerical')}</div>
+    <section class="panel row spread"><div><h2>Calcolo rapido</h2><p class="small muted">Calcolo a mente a tempo: operatore, ruota con trappole, vero o falso, calcolo. Sessioni da 60-180 secondi.</p></div><button class="primary" data-nav="mental">Allenati</button></section>`;
+  else if(k==='verbal'){ const vw=Object.keys(DB.vwrong).length, vt=verbalSources().length, vs=verbalSources().filter(s=>DB.seen[s.pid]).length;
+    body=`<div class="cards3">${secCard('verbal','Comprensione di brani')}
+      <div class="card"><span class="eyebrow">Ripasso</span><b>Errori verbali: ${vw}</b><span class="muted small">Rifai solo i brani che hai sbagliato. ${vs}/${vt} brani visti.</span><div class="row"><button class="primary" id="go-review" ${vw?'':'disabled'}>Ripassa</button></div></div>
+      <div class="card"><span class="eyebrow">Metodo</span><b>Trappole verbali</b><span class="muted small">Tipi di affermazione e trappole ricorrenti, con esempi.</span><div class="row"><button data-nav="method">Apri il metodo</button></div></div></div>`; }
+  else { const ex=(DB.eyExamples||[{},{},{},{},{}]);
+    body=`<div class="cards3">
+      <div class="card"><span class="eyebrow">Case & interview</span><b>Teoria, domande ed esercizi</b><span class="muted small">In inglese: analisi costi-benefici, stime di mercato, valutazioni, domande tecniche con risposte modello, esercizi numerici, quiz. Modulo di settore: spazio UE.</span><div class="row"><button class="primary" id="go-iv">Apri</button><a href="theory/case-theory-handbook.pdf" target="_blank" rel="noopener">Manuale PDF</a></div></div>
+      ${secCard('adapt','Situational judgement')}${secCard('aipro','AI at work')}</div>
     <section class="panel stack">
       <h2>I miei esempi</h2>
-      <p class="small muted">Se Adaptability o AI proficiency sono colloqui strutturati, ti chiederanno esperienze reali. Prepara per ciascun esempio: situazione, cosa hai fatto, risultato. Per l'AI: come hai verificato e corretto l'output, un errore intercettato, un caso in cui hai scelto di non usarla. Restano solo in questo browser.</p>
-      ${[0,1,2,3,4].map(i=>`<label>${i<3?'AI · esempio '+(i+1):'Adattamento al cambiamento · esempio '+(i-2)}<textarea class="eyex" data-i="${i}" rows="4" placeholder="Compito · come ho usato l'AI · cosa ho verificato o corretto · risultato">${esc(ex[i]&&ex[i].t||'')}</textarea></label>`).join('')}
+      <p class="small muted">Per colloqui e test con risposte aperte servono esperienze reali. Per ciascun esempio: situazione, cosa hai fatto, risultato con numeri. Per l'AI: come hai verificato l'output, un errore intercettato, un caso in cui hai scelto di non usarla. Resta salvato solo in questo browser.</p>
+      ${[0,1,2,3,4].map(i=>`<label>${i<3?'AI · esempio '+(i+1):'Adattamento al cambiamento · esempio '+(i-2)}<textarea class="eyex" data-i="${i}" rows="4" placeholder="Situazione · cosa ho fatto · cosa ho verificato o corretto · risultato">${esc(ex[i]&&ex[i].t||'')}</textarea></label>`).join('')}
       <p class="small muted" id="ey-saved"></p>
+    </section>`; }
+  app().innerHTML=header(A.name,A.sub)+`<main class="wrap stack">${body}${footer()}</main>`;
+  bindNav(); bindSecButtons();
+  const rv=$('#go-review'); if(rv) rv.onclick=()=>startSession('review',{sec:'verbal',n:20});
+  const iv=$('#go-iv'); if(iv) iv.onclick=()=>renderInterview();
+  document.querySelectorAll('.eyex').forEach(t=>t.oninput=()=>{ DB.eyExamples=DB.eyExamples||[{},{},{},{},{}]; DB.eyExamples[+t.dataset.i]={t:t.value}; saveDB(); $('#ey-saved').textContent='Salvato.'; });
+}
+function renderSims(){
+  const lastA=DB.sessions.find(x=>x.kind==='full'), lastB=DB.sessions.find(x=>x.kind==='eyfull');
+  app().innerHTML=header('Simulazioni','Prove complete a tempo, nei due formati più comuni.')+`
+  <main class="wrap stack">
+    <section class="hero">
+      <button class="card primary-card" id="go-full"><span class="eyebrow">Formato concorso</span><b>Verbale → numerico → astratto, di fila</b><span class="spec mono">20 dom. · 35:00 → 10 dom. · 20:00 → 10 dom. · 10:00</span><span class="muted">Esito con soglie: verbale 10/20, numerico + astratto 10/20 combinati (formato dei concorsi UE).</span>${lastA?`<span class="muted small">Ultima: ${fmtD(lastA.date)}</span>`:''}</button>
+      <button class="card primary-card" id="go-online"><span class="eyebrow">Formato assessment online</span><b>Quattro attività brevi, con pausa facoltativa tra una e l'altra</b><span class="spec mono">16 dom. · 10:00 → 13 · 08:00 → 10 · 08:00 → 10 · 12:00</span><span class="muted">Test misto, logica con figure, situazioni di lavoro, uso dell'AI (formato tipico delle selezioni aziendali).</span>${lastB?`<span class="muted small">Ultima: ${fmtD(lastB.date)} · ${lastB.parts.map(p=>`${SEC[p.sec].it} ${p.score}/${p.n}`).join(' · ')}</span>`:''}</button>
     </section>
+    <section class="row wrap-gap"><button id="go-drill">Pratica breve: 5 domande per prova</button><button data-nav="stats">Statistiche</button></section>
+    <section class="panel stack"><h2>Regole pratiche</h2><ul>
+      <li>Nei test online il timer di solito non si ferma dentro un'attività: fai le pause solo tra una e l'altra.</li>
+      <li>Carta e penna pronte; se una domanda ti blocca, scegli e vai avanti.</li>
+      <li>Queste simulazioni usano domande originali generate al momento: allenano formato e tempi, non anticipano le domande reali.</li>
+      <li>Nei test veri non usare aiuti esterni se il regolamento li vieta.</li></ul></section>
     ${footer()}
   </main>`;
   bindNav();
-  $('#ey-full').onclick=startEYFull;
-  $('#eyh-only').onchange=e=>{ EY_HARD_ONLY=e.target.value; };
-  document.querySelectorAll('[data-eyt]').forEach(b=>b.onclick=()=>startSession('single',{sec:b.dataset.eyt}));
-  document.querySelectorAll('[data-eyp]').forEach(b=>b.onclick=()=>startSession('practice',{sec:b.dataset.eyp}));
-  document.querySelectorAll('.eyex').forEach(t=>t.oninput=()=>{ DB.eyExamples=DB.eyExamples||[{},{},{},{},{}]; DB.eyExamples[+t.dataset.i]={t:t.value}; saveDB(); $('#ey-saved').textContent='Salvato.'; });
+  $('#go-full').onclick=()=>startSession('full',{});
+  $('#go-online').onclick=startEYFull;
+  $('#go-drill').onclick=()=>{ S=null; startDrill(); };
+}
+function renderTools(){
+  app().innerHTML=header('Strumenti','Metodo, esercizi dal tuo manuale in PDF, foglio risposte per test su carta.')+`
+  <main class="wrap stack"><div class="cards3">
+    <div class="card"><span class="eyebrow">Metodo</span><b>Guida alle prove</b><span class="muted small">Tipi di domanda, trappole, formule, gestione del tempo.</span><div class="row"><button class="primary" data-nav="method">Apri</button></div></div>
+    <div class="card"><span class="eyebrow">Manuale</span><b>Il tuo PDF, con correzione</b><span class="muted small">Apri un manuale dal computer: soluzioni coperte, correzione automatica, simulazione a tempo. Il file resta nel browser.</span><div class="row"><button class="primary" data-nav="manual">Apri</button></div></div>
+    <div class="card"><span class="eyebrow">Foglio risposte</span><b>Test su carta o altri siti</b><span class="muted small">Cronometro e griglia A-E; poi inserisci le soluzioni e ottieni punteggio e tempi.</span><div class="row"><button class="primary" data-nav="sheet">Apri</button></div></div>
+  </div>${footer()}</main>`;
+  bindNav();
 }
 function startEYFull(){
+  EY_HARD_SET=null; EY_HARD_ONLY='';
   const parts=['mind','crit','adapt','aipro'].map(sec=>({sec,items:buildEY(sec,SEC[sec].n),ans:{},flag:{},ms:{},changes:{},cur:0,timed:true,seconds:SEC[sec].sec,started:null,ended:null,deadline:null}));
   S={kind:'eyfull',parts,pi:0,created:Date.now(),done:false}; renderIntro();
 }
@@ -2307,7 +2349,7 @@ function renderMental(){
   const hist=mcStore();
   const pref=Object.assign({mode:'op',level:2,dur:90,lim:0},DB.mentalPref||{});
   const best=(m,l,d,t)=>{const xs=hist.filter(h=>h.mode===m&&h.level===l&&h.dur===d&&(h.lim||0)===t); return xs.length?Math.max(...xs.map(h=>h.ok)):null};
-  app().innerHTML=header('Calcolo rapido','Calcolo a mente a tempo. Utile per MIND (EY) e per non perdere secondi nel numerico EPSO.')+`
+  app().innerHTML=header('Calcolo rapido','Calcolo a mente a tempo. Utile nei test misti a tempo stretto e per non perdere secondi nei test numerici.')+`
   <main class="wrap stack">
     <section class="panel stack">
       <h2>Scegli l'esercizio</h2>
@@ -2444,12 +2486,12 @@ document.addEventListener('keydown',e=>{
   else if(MC.mode==='tf'){ if(k==='v'||e.key==='ArrowLeft'){ e.preventDefault(); mcAnswer(true); } else if(k==='f'||e.key==='ArrowRight'){ e.preventDefault(); mcAnswer(false); } }
 });
 
-// ---------- EY interview · EU Space (MIST): requirements, technical content, questions, exercises ----------
+// ---------- Business case & interview: requirements, methods, sector module (EU space), questions, exercises ----------
 // Content written for this programme from public sources (European Commission, EUSPA, ESA, European Court of Auditors).
 // Personal notes stay in the browser (DB.iv), never in the published code. Page language: English (the interview is in English).
 const IVV={tab:'req',ex:null,quiz:null};
 const ivDB=()=>{ DB.iv=DB.iv||{notes:{},ex:{n:0,ok:0},quiz:{n:0,ok:0}}; DB.iv.notes=DB.iv.notes||{}; DB.iv.ex=DB.iv.ex||{n:0,ok:0}; DB.iv.quiz=DB.iv.quiz||{n:0,ok:0}; return DB.iv; };
-const IV_TABS=[['req','Requirements'],['space','EU space'],['meth','Methods'],['proj','EY projects'],['tq','Technical questions'],['bq','Personal questions'],['ex','Exercises'],['quiz','Quiz']];
+const IV_TABS=[['req','Role requirements'],['space','EU space'],['meth','Methods'],['proj','Project examples'],['tq','Technical questions'],['bq','Personal questions'],['ex','Exercises'],['quiz','Quiz']];
 
 // ---- 1. Vacancy requirements ----
 const IV_REQ=[
@@ -2460,9 +2502,9 @@ const IV_REQ=[
  {k:'wp',r:'Demonstrable experience managing research tasks / work packages',they:'That you can deliver a piece of research on your own: objective, sources, plan, deadline, quality check, delivery.',prove:'A concrete STAR example with numbers: how many sources, how many interviewees, how many weeks, what you delivered, how it was used.',q:'Tell me about a research task you managed from start to finish.'},
  {k:'office',r:'Proficiency in Excel, Word and PowerPoint',they:'That you are productive from day one.',prove:'Be specific: XLOOKUP/INDEX-MATCH, pivot tables, NPV/IRR functions, data tables for sensitivity analysis, error checks. PowerPoint: action titles that state the conclusion, one message per slide.',q:'How would you build a sensitivity analysis in Excel?'},
  {k:'flex',r:'Self-motivation and flexibility in a small, fast-growing consultancy',they:'That you don\'t need hand-holding and can cope with shifting priorities and tight deadlines.',prove:'An example of priorities changing at the last minute and how you reorganised without losing quality.',q:'Tell me about a time priorities changed suddenly.'},
- {k:'ai',r:'Strong affinity with AI, interest in applying AI at work',they:'Concrete, critical use, not generic enthusiasm. EY sells AI adoption to clients.',prove:'Two or three real uses (desk research, extracting data from PDFs, code for analysis, first drafts) and how you check the output: source verification, no confidential data in public tools, traceability.',q:'How do you use AI in your work? How would you use it to produce a market report?'},
+ {k:'ai',r:'Strong affinity with AI, interest in applying AI at work',they:'Concrete, critical use, not generic enthusiasm. Consultancies sell AI adoption to clients.',prove:'Two or three real uses (desk research, extracting data from PDFs, code for analysis, first drafts) and how you check the output: source verification, no confidential data in public tools, traceability.',q:'How do you use AI in your work? How would you use it to produce a market report?'},
  {k:'team',r:'Work independently and in a team',they:'Balance: autonomy on your piece, coordination on the rest.',prove:'One example where you asked for help at the right moment, and one where you unblocked someone else\'s work.',q:'Describe a disagreement in a team and how you handled it.'},
- {k:'bonus',r:'Bonus: secure satcom, Earth Observation and geospatial, GNSS, EU space ecosystem',they:'Not mandatory, but they set you apart from other juniors with the same profile.',prove:'Know the basics in the "EU space" and "EY projects" tabs and connect them to markets (agriculture, transport, insurance, security).',q:'What do you know about Galileo / Copernicus / IRIS²?'}
+ {k:'bonus',r:'Bonus: secure satcom, Earth Observation and geospatial, GNSS, EU space ecosystem',they:'Not mandatory, but they set you apart from other juniors with the same profile.',prove:'Know the basics in the "EU space" and "Project examples" tabs and connect them to markets (agriculture, transport, insurance, security).',q:'What do you know about Galileo / Copernicus / IRIS²?'}
 ];
 
 // ---- 2. EU space ecosystem ----
@@ -2480,13 +2522,13 @@ const IV_SPACE=[
   <dt>Services</dt><dd>Free <b>Open Service</b>. <b>HAS</b> (High Accuracy Service): free corrections, around 20 cm accuracy, initial service since January 2023. <b>OSNMA</b>: authenticates the navigation message against spoofing, initial service declared by EUSPA on 24 July 2025. <b>PRS</b>: encrypted service for authorised government users. <b>SAR</b>: search and rescue with a return link.</dd>
   <dt>Why, if GPS is free</dt><dd>Strategic autonomy (GPS is a US military system), resilience, more satellites in view and so better accuracy in cities, distinctive services (HAS, OSNMA, SAR return link), PRS.</dd>
   <dt>EGNOS</dt><dd>Satellite-based augmentation system (SBAS) over Europe that improves GPS accuracy and integrity: precision approaches in aviation (LPV), agriculture, maritime.</dd>
-  <dt>LEO-PNT</dt><dd>Positioning, navigation and timing from low Earth orbit (500-1,200 km). Stronger signals and fast-changing geometry: more resilience to jamming and spoofing, faster convergence of precise positioning. ESA's <b>Celeste</b> demonstrator launched its first 2 satellites at the end of March 2026 (Electron rocket); 8 more planned from 2027. The vacancy mentions a cost-benefit analysis of an EU LEO-PNT initiative.</dd>
+  <dt>LEO-PNT</dt><dd>Positioning, navigation and timing from low Earth orbit (500-1,200 km). Stronger signals and fast-changing geometry: more resilience to jamming and spoofing, faster convergence of precise positioning. ESA's <b>Celeste</b> demonstrator launched its first 2 satellites at the end of March 2026 (Electron rocket); 8 more planned from 2027. A typical consulting assignment: a cost-benefit analysis of an EU LEO-PNT initiative.</dd>
  </dl>`},
  {h:'Copernicus (Earth Observation)',b:`<dl class="dl">
   <dt>What it is</dt><dd>The EU Earth Observation programme. Data are <b>free, full and open</b>. Access through the Copernicus Data Space Ecosystem.</dd>
   <dt>Sentinels</dt><dd><b>1</b> synthetic aperture radar (SAR, C-band): sees at night and through clouds. <b>2</b> high-resolution multispectral optical (10 m): agriculture, land. <b>3</b> ocean and land: colour, temperature, altimetry. <b>5P</b> atmosphere. <b>6</b> sea level. Expansion missions in development (e.g. CO2M for CO₂, CHIME, CIMR, CRISTAL, LSTM, ROSE-L).</dd>
   <dt>6 services</dt><dd>Land, marine, atmosphere, climate change, emergency management, security.</dd>
-  <dt>Contributing missions</dt><dd>Commercial data, often very high resolution, purchased to complement the Sentinels. One of the cost-benefit analyses in the vacancy is about the value of high-resolution, fast-revisit data compared with the Sentinels (10 m, a few days between passes).</dd>
+  <dt>Contributing missions</dt><dd>Commercial data, often very high resolution, purchased to complement the Sentinels. A typical cost-benefit question is the value of high-resolution, fast-revisit data compared with the Sentinels (10 m, a few days between passes).</dd>
  </dl>`},
  {h:'Secure satellite communications',b:`<dl class="dl">
   <dt>GOVSATCOM</dt><dd>Pooling and sharing of secure satellite capacity, national and commercial, for governmental users (security, crisis management, maritime surveillance).</dd>
@@ -2495,7 +2537,7 @@ const IV_SPACE=[
  </dl>`},
  {h:'Policies and documents to know',b:`<dl class="dl">
   <dt>EU Space Act</dt><dd>Proposed regulation COM(2025) 335 of 25 June 2025. Three pillars: <b>safety</b> (debris, collision avoidance), <b>resilience</b> (cybersecurity; lex specialis to NIS2), <b>sustainability</b> (common method for environmental footprint). Expected to apply from 2030. Under discussion in the European Parliament (ITRE committee) and the Council: <b>check</b> progress.</dd>
-  <dt>European Court of Auditors, Special Report 07/2021</dt><dd>On Galileo and Copernicus: services launched, but uptake below potential. Copernicus used mainly by experts, weak monitoring of Galileo uptake, no <b>comprehensive strategy with measurable, time-bound objectives</b>. Recommendations: a strategy, a framework to measure socio-economic benefits, integrated data access. In 2024 the Commission published a staff working document with a framework for measuring uptake. One of the vacancy projects is exactly the implementation of these recommendations.</dd>
+  <dt>European Court of Auditors, Special Report 07/2021</dt><dd>On Galileo and Copernicus: services launched, but uptake below potential. Copernicus used mainly by experts, weak monitoring of Galileo uptake, no <b>comprehensive strategy with measurable, time-bound objectives</b>. Recommendations: a strategy, a framework to measure socio-economic benefits, integrated data access. In 2024 the Commission published a staff working document with a framework for measuring uptake. Supporting the implementation of these recommendations is a typical consulting assignment.</dd>
   <dt>Other</dt><dd>EU Space Strategy for Security and Defence (March 2023). Chips Act (2023), relevant to the semiconductor project.</dd>
  </dl>`},
  {h:'Market: definitions and figures',b:`<dl class="dl">
@@ -2553,7 +2595,7 @@ const IV_METH=[
   <p><b>Commodities trading</b>: Earth Observation to forecast harvests and monitor oil storage, ports and mines. GNSS timing to timestamp transactions: MiFID II requires clocks synchronised and traceable to UTC.</p>`}
 ];
 
-// ---- 4. Projects listed in the vacancy ----
+// ---- 4. Project examples ----
 const IV_PROJ=[
  {t:'CBA of the EU LEO-PNT initiative (for EUSPA and the Commission)',what:'Deciding whether and how the EU should have a low-orbit navigation component alongside Galileo.',you:'Data collection on costs (satellites, launches, ground segment, operations), benefit estimates by sector, Excel model, sensitivity analysis, interviews with industry and users.',m:'Counterfactual: Galileo alone, plus commercial or terrestrial alternatives. Benefits: avoided losses from GNSS jamming or spoofing (telecoms, finance, energy, transport), better performance, autonomy. Cost-effectiveness or multi-criteria analysis for the strategic part.',trap:'Do not attribute to LEO-PNT benefits already delivered by Galileo (OSNMA, HAS). Treat commercial alternatives as an option, don\'t ignore them.',q:'What would be the key benefit categories and the counterfactual in a CBA of LEO-PNT?'},
  {t:'Market and technology monitoring, EO & GNSS Market Report',what:'EUSPA\'s reference report on downstream markets, now the EU Space Market Report.',you:'Updating databases by segment, collecting company and shipment data, consistency checks, drafting segment sections, expert validation.',m:'Installed base × penetration × revenue per unit. Device and service revenues. 10-year forecasts with scenarios.',trap:'Definitions change between editions: a direct comparison across reports can be wrong.',q:'How would you forecast GNSS revenues in road and automotive to 2034?'},
@@ -2591,7 +2633,7 @@ const IV_TQ=[
 // ---- 6. Personal questions (STAR) ----
 const IV_BQ=[
  {k:'pitch',q:'Tell me about yourself (60-90 seconds).',t:'Who you are in one sentence, two experiences linked to the role (research, quantitative analysis), why EU space and why now.'},
- {k:'whyey',q:'Why EY, and why this team?',t:'A small team with institutional clients (EUSPA, DG DEFIS, ESA), work on real data and policy, the projects listed in the vacancy. No sentences that would fit any company.'},
+ {k:'whyey',q:'Why this firm, and why this team?',t:'A small team with institutional clients (EUSPA, DG DEFIS, ESA), work on real data and policy, the projects in the job description. No sentences that would fit any company.'},
  {k:'whyspace',q:'Why space? Why EU policy?',t:'A concrete, personal reason linked to impact: space as infrastructure for agriculture, transport and security; the EU as the actor deciding how to use it.'},
  {k:'research',q:'Tell me about a research task you managed end to end.',t:'STAR: objective, sources, plan, deadlines, obstacles, result with numbers, how it was used.'},
  {k:'deadline',q:'Tell me about a time priorities changed or a deadline was very tight.',t:'How you reorganised, what you communicated and to whom, what you dropped and why.'},
@@ -2680,17 +2722,17 @@ const IV_EX=[
 function renderInterview(tab){
   if(tab) IVV.tab=tab; const D=ivDB(); const t=IVV.tab;
   let body='';
-  if(t==='req') body=`<p class="small muted">For each requirement: what they look for, how to prove it, the likely question. Write your own example in the box: it stays in this browser only.</p>`+IV_REQ.map(r=>`<section class="panel stack"><h3>${esc(r.r)}</h3><dl class="dl"><dt>What they look for</dt><dd>${esc(r.they)}</dd><dt>How to prove it</dt><dd>${esc(r.prove)}</dd><dt>Likely question</dt><dd><i>${esc(r.q)}</i></dd></dl><textarea class="ivnote" data-ivn="req-${r.k}" rows="3" placeholder="Your concrete example (situation, what you did, result with numbers)">${esc(D.notes['req-'+r.k]||'')}</textarea></section>`).join('');
+  if(t==='req') body=`<p class="small muted">Typical requirements for a junior consulting role. For each one: what they look for, how to prove it, the likely question. Write your own example in the box: it stays in this browser only.</p>`+IV_REQ.map(r=>`<section class="panel stack"><h3>${esc(r.r)}</h3><dl class="dl"><dt>What they look for</dt><dd>${esc(r.they)}</dd><dt>How to prove it</dt><dd>${esc(r.prove)}</dd><dt>Likely question</dt><dd><i>${esc(r.q)}</i></dd></dl><textarea class="ivnote" data-ivn="req-${r.k}" rows="3" placeholder="Your concrete example (situation, what you did, result with numbers)">${esc(D.notes['req-'+r.k]||'')}</textarea></section>`).join('');
   else if(t==='space') body=`<p class="small muted">Facts checked in November 2026 against official sources (European Commission, EUSPA, ESA, European Court of Auditors). Before the interview, re-check the items marked <b>check</b>.</p>`+IV_SPACE.map(s=>`<section class="panel stack ivtext"><h2>${s.h}</h2>${s.b}</section>`).join('');
   else if(t==='meth') body=IV_METH.map(s=>`<section class="panel stack ivtext"><h2>${s.h}</h2>${s.b}</section>`).join('')+`<div class="row"><button class="primary" data-ivt="ex">Try the numerical exercises</button></div>`;
-  else if(t==='proj') body=`<p class="small muted">These are the projects listed in the vacancy: you may be asked how you would work on one of them.</p>`+IV_PROJ.map(p=>`<section class="panel stack"><h3>${esc(p.t)}</h3><dl class="dl"><dt>What it is</dt><dd>${esc(p.what)}</dd><dt>Your role as a junior</dt><dd>${esc(p.you)}</dd><dt>Method</dt><dd>${esc(p.m)}</dd><dt>Trap</dt><dd>${esc(p.trap)}</dd><dt>Possible question</dt><dd><i>${esc(p.q)}</i></dd></dl></section>`).join('');
+  else if(t==='proj') body=`<p class="small muted">Typical policy and market consulting projects (sector module: EU space): you may be asked how you would work on one of them.</p>`+IV_PROJ.map(p=>`<section class="panel stack"><h3>${esc(p.t)}</h3><dl class="dl"><dt>What it is</dt><dd>${esc(p.what)}</dd><dt>Your role as a junior</dt><dd>${esc(p.you)}</dd><dt>Method</dt><dd>${esc(p.m)}</dd><dt>Trap</dt><dd>${esc(p.trap)}</dd><dt>Possible question</dt><dd><i>${esc(p.q)}</i></dd></dl></section>`).join('');
   else if(t==='tq') body=`<p class="small muted">Answer out loud in 60-90 seconds, then open the model answer. Don't memorise it: take the structure.</p>`+IV_TQ.map((x,i)=>`<section class="panel stack"><h3>${i+1}. ${esc(x.q)}</h3><details><summary>Model answer</summary><p class="ivans">${esc(x.a)}</p>${x.n?`<p class="small muted">${esc(x.n)}</p>`:''}</details></section>`).join('');
   else if(t==='bq') body=`<p class="small muted">STAR structure: Situation, Task, Action (the longest part, in the first person), Result with numbers. Your answers stay in this browser only.</p>`+IV_BQ.map(x=>`<section class="panel stack"><h3>${esc(x.q)}</h3><p class="small">${esc(x.t)}</p><textarea class="ivnote" data-ivn="bq-${x.k}" rows="5" placeholder="${x.k==='ask'?'Your questions':'Situation · Task · Action · Result'}">${esc(D.notes['bq-'+x.k]||'')}</textarea></section>`).join('');
   else if(t==='ex') body=ivExHTML();
   else if(t==='quiz') body=ivQuizHTML();
-  app().innerHTML=header('EY interview · EU Space','Junior EU Consultant, Market Intelligence and Space Technology (Diegem). Requirements, technical content, questions and exercises.')+`
+  app().innerHTML=header('Business case & interview','Consulting case skills: cost-benefit analysis, market sizing, evaluation, interview questions. Sector module: EU space.')+`
   <main class="wrap stack" lang="en">
-    <p class="row spread small"><span class="muted">All the theory in one document, with worked examples.</span><a href="theory/ey-space-theory.pdf" target="_blank" rel="noopener"><b>Download the theory handbook (PDF, 32 pages)</b></a></p>
+    <p class="row spread small"><span class="muted">All the theory in one document, with worked examples.</span><a href="theory/case-theory-handbook.pdf" target="_blank" rel="noopener"><b>Download the theory handbook (PDF, 32 pages)</b></a></p>
     <nav class="ivtabs" aria-label="Sections">${IV_TABS.map(([k,l])=>`<button class="${t===k?'on':''}" data-ivt="${k}">${l}</button>`).join('')}</nav>
     ${body}
   </main>${footer()}`;
@@ -2733,17 +2775,17 @@ function ivQuizBind(){
   const r=$('#iq-restart'); if(r) r.onclick=()=>{ IVV.quiz=null; renderInterview('quiz'); };
 }
 
-// ---------- configuration from the notice EPSO/AD/427/26 ----------
+// ---------- test formats ----------
 const FMT=it=>it.fmt||it.sec;
 const SEC={
   verbal:{name:'Verbal reasoning',it:'Ragionamento verbale',n:20,sec:35*60,letters:4},
   numerical:{name:'Numerical reasoning',it:'Ragionamento numerico',n:10,sec:20*60,letters:5},
   abstract:{name:'Abstract reasoning',it:'Ragionamento astratto',n:10,sec:10*60,letters:5},
-  mind:{name:'MIND',it:'EY · MIND',n:16,sec:10*60,letters:5,ey:true},
-  crit:{name:'Basic critical thinking',it:'EY · Critical thinking',n:13,sec:8*60,letters:5,ey:true},
-  adapt:{name:'Adaptability',it:'EY · Adaptability',n:10,sec:8*60,letters:4,ey:true},
-  aipro:{name:'AI proficiency',it:'EY · AI proficiency',n:10,sec:12*60,letters:4,ey:true},
-  eyhard:{name:'EY hard formats',it:'EY · Formati difficili',n:12,sec:9*60,letters:5,ey:true}
+  mind:{name:'Mixed aptitude test',it:'Test attitudinale misto',n:16,sec:10*60,letters:5,ey:true},
+  crit:{name:'Figure reasoning',it:'Logica con figure',n:13,sec:8*60,letters:5,ey:true},
+  adapt:{name:'Situational judgement',it:'Situazioni di lavoro',n:10,sec:8*60,letters:4,ey:true},
+  aipro:{name:'AI at work',it:'Uso dell\'AI al lavoro',n:10,sec:12*60,letters:4,ey:true},
+  eyhard:{name:'Advanced formats',it:'Formati avanzati',n:12,sec:9*60,letters:5,ey:true}
 };
 const PASS={verbal:10,numabs:10};
 const KEY_BASE='epsoAD5reasoning:v1';
@@ -2905,7 +2947,7 @@ function bindPlan(){
 }
 
 // ---------- rendering ----------
-function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning${PROFILE==='guest'?' <span class="guestbadge">Profilo ospite</span>':''}</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="method">Metodo</button><button class="ghost" data-nav="manual">Manuale</button><button class="ghost" data-nav="errors">Errori</button><button class="ghost" data-nav="ey">Test EY</button><button class="ghost" data-nav="mental">Calcolo rapido</button><button class="ghost" data-nav="interview">EY interview</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button><button class="${PROFILE==='guest'?'warnbtn':'ghost'}" id="prof">${PROFILE==='guest'?'Esci da ospite':'Ospite'}</button></nav></div></header>`; }
+function header(title,sub){ const N=[['home','Home'],['logical','Logical'],['numerical','Numerical'],['verbal','Verbal'],['case','Business case'],['sims','Simulazioni'],['errors','Errori'],['stats','Statistiche'],['tools','Strumenti']]; return `<header class="top"><div class="in"><div><div class="eyebrow">Reasoning &amp; Case Prep · Logical · Numerical · Verbal · Business case${PROFILE==='guest'?' <span class="guestbadge">Profilo ospite</span>':''}</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row">${N.map(([k,l])=>`<button class="ghost" data-nav="${k}">${l}</button>`).join('')}<button class="${PROFILE==='guest'?'warnbtn':'ghost'}" id="prof">${PROFILE==='guest'?'Esci da ospite':'Ospite'}</button></nav></div></header>`; }
 function setProfile(p){
   if(S&&!S.done&&S.parts[S.pi]&&S.parts[S.pi].started){ if(!confirmLeave()) return; }
   clearInterval(TIMER); S=null; SH=null; MC=null; MAN.run=null;
@@ -2914,7 +2956,7 @@ function setProfile(p){
   DB=loadDB(); renderHome();
   toast(p==='guest'?'Profilo ospite: risultati e statistiche separati dai tuoi.':'Tornato al tuo profilo.');
 }
-function bindNav(){ const pb=$('#prof'); if(pb) pb.onclick=()=>setProfile(PROFILE==='guest'?'main':'guest'); document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; if(MAN&&MAN.run&&b.dataset.nav!=='manual'){ MAN.run=null; } ({home:renderHome,stats:renderStats,sheet:renderSheetSetup,method:renderMethod,manual:renderManual,errors:renderErrors,ey:renderEY,mental:renderMental,interview:()=>renderInterview()})[b.dataset.nav](); }); }
+function bindNav(){ const pb=$('#prof'); if(pb) pb.onclick=()=>setProfile(PROFILE==='guest'?'main':'guest'); document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; if(MAN&&MAN.run&&b.dataset.nav!=='manual'){ MAN.run=null; } ({home:renderHome,stats:renderStats,sheet:renderSheetSetup,method:renderMethod,manual:renderManual,errors:renderErrors,ey:renderSims,sims:renderSims,tools:renderTools,logical:()=>renderArea('logical'),numerical:()=>renderArea('numerical'),verbal:()=>renderArea('verbal'),case:()=>renderArea('case'),mental:renderMental,interview:()=>renderInterview()})[b.dataset.nav](); }); }
 let leaveArmed=false;
 function confirmLeave(){ if(leaveArmed){leaveArmed=false;return true} leaveArmed=true; toast('Prova in corso: premi di nuovo per uscire senza salvare.'); setTimeout(()=>leaveArmed=false,4000); return false; }
 function toast(t){ let el=$('#toast'); if(!el){el=document.createElement('div');el.id='toast';document.body.appendChild(el)} el.textContent=t; el.className='show'; clearTimeout(el._t); el._t=setTimeout(()=>el.className='',3500); }
@@ -2923,42 +2965,23 @@ function renderHome(msg){
   S=null; clearInterval(TIMER);
   const last=DB.sessions.find(s=>s.kind==='full');
   const vw=Object.keys(DB.vwrong).length, vt=verbalSources().length, vs=verbalSources().filter(s=>DB.seen[s.pid]).length;
-  app().innerHTML=header('Allenamento reasoning','Verbale, numerico e astratto con tempi, soglie e formato della prova.')+`
+  app().innerHTML=header('Reasoning & Case Prep','Preparazione a test logici, numerici, verbali e a business case, con tempi e correzione.')+`
   <main class="wrap stack">
     ${msg?`<p class="alert">${esc(msg)}</p>`:''}
-    ${planPanel()}
-    ${weakPanel(true)}
-    <section class="hero">
-      <button class="card primary-card" id="go-full">
-        <span class="eyebrow">Simulazione completa</span>
-        <b>Le tre prove in sequenza, come all'esame</b>
-        <span class="spec mono">20 dom. · 35:00 → 10 dom. · 20:00 → 10 dom. · 10:00</span>
-        <span class="muted">Esito con le soglie del bando: verbale 10/20, numerico + astratto 10/20 combinati.</span>
-      </button>
-      <div class="cards3">
-        ${['verbal','numerical','abstract'].map(s=>`<div class="card"><span class="eyebrow">${SEC[s].it}</span><b>${SEC[s].n} domande · ${fmtT(SEC[s].sec)}</b>
-          <span class="muted">${s==='verbal'?`Brano + 4 affermazioni, una sola giusta. ${vs}/${vt} brani visti.`:s==='numerical'?'Tabelle e grafici, 5 opzioni, calcolatrice a schermo. Domande sempre nuove.':'Serie di 5 figure, scegli la sesta tra 5. Domande sempre nuove.'}</span>
-          <div class="row"><button class="primary" data-single="${s}">Prova a tempo</button><button data-practice="${s}">Pratica</button></div></div>`).join('')}
-      </div>
-    </section>
+    <section class="cards4">${Object.entries(AREAS).map(([k,a])=>`<button class="card areacard" data-nav="${k}"><span class="eyebrow">Area</span><b>${a.name}</b><span class="muted small">${a.sub}</span></button>`).join('')}</section>
     <section class="row wrap-gap">
-      <button id="go-review" ${vw?'':'disabled'}>Ripassa errori verbali (${vw})</button>
+      <button class="primary" data-nav="sims">Simulazioni complete</button>
       <button id="go-drill">Pratica breve: 5 per prova</button>
-      <button id="go-method">Leggi il metodo (prima volta: 15 minuti)</button>
-      <button data-nav="ey">Test EY (Maki)</button>
       <button data-nav="mental">Calcolo rapido</button>
-      <button data-nav="interview">EY interview</button>
+      <button data-nav="tools">Metodo e strumenti</button>
     </section>
-    <section class="panel stack"><h2>Ultima simulazione completa</h2>${last?resultLines(last):'<p class="muted">Ancora nessuna. La prova generale del piano è mercoledì 11 alle 11:00.</p>'}</section>
+    ${weakPanel(true)}
+    ${planPanel()}
+    <section class="panel stack"><h2>Ultima simulazione completa</h2>${last?resultLines(last):'<p class="muted">Ancora nessuna.</p>'}</section>
     ${footer()}
   </main>`;
   bindNav();
-  $('#go-full').onclick=()=>startSession('full',{});
-  document.querySelectorAll('[data-single]').forEach(b=>b.onclick=()=>startSession('single',{sec:b.dataset.single}));
-  document.querySelectorAll('[data-practice]').forEach(b=>b.onclick=()=>startSession('practice',{sec:b.dataset.practice,n:b.dataset.practice==='verbal'?10:10}));
-  const rv=$('#go-review'); if(rv) rv.onclick=()=>startSession('review',{sec:'verbal',n:20});
   $('#go-drill').onclick=()=>{ S=null; startDrill(); };
-  $('#go-method').onclick=()=>renderMethod();
   bindPlan(); bindFocus();
 }
 function startDrill(){
@@ -2978,7 +3001,7 @@ function renderIntro(){
     numerical:['Leggi la domanda prima della tabella: individua righe, colonne e unità.','Stima prima di calcolare: spesso le opzioni sono abbastanza distanti.','Usa la calcolatrice a schermo (pulsante in alto), come all\'esame.','Percentuali: la base è il valore di partenza. Punti percentuali ≠ %.'],
     abstract:['Isola un elemento alla volta: forma, riempimento, lancetta, punti, quadratino, settori, caselle, lati.','Se una regola non torna tra figure vicine, prova a coppie: 1 + 2 = 3 e 4 + 5 = 6 (sovrapposizione).','Controlla il passo tra ogni coppia di figure, non solo tra la prima e l\'ultima.','Elimina le opzioni che violano anche una sola regola.','Un minuto a domanda: se dopo 60 secondi non vedi la regola, segna e passa oltre.']
   }[P.sec]||EY_TIPS[P.sec]||[];
-  app().innerHTML=header(c.it,S.kind==='full'?`Prova ${S.pi+1} di 3`:S.kind==='eyfull'?`Simulazione EY · attività ${S.pi+1} di 4 · puoi fare una pausa prima di iniziare`:S.kind==='focus'?`Allenamento mirato · parte ${S.pi+1} di 3 · domande scelte sui tuoi errori`:(P.timed?'Prova a tempo':'Pratica con correzione immediata'))+`
+  app().innerHTML=header(c.it,S.kind==='full'?`Prova ${S.pi+1} di 3`:S.kind==='eyfull'?`Assessment online · attività ${S.pi+1} di 4 · puoi fare una pausa prima di iniziare`:S.kind==='focus'?`Allenamento mirato · parte ${S.pi+1} di 3 · domande scelte sui tuoi errori`:(P.timed?'Prova a tempo':'Pratica con correzione immediata'))+`
   <main class="wrap stack narrow">
     <div class="panel stack">
       <div class="row spread"><h2>${c.name}</h2><span class="mono big2">${P.items.length} dom.${P.timed?' · '+fmtT(P.seconds):''}</span></div>
@@ -3075,7 +3098,7 @@ function calcEval(e){
 // ---------- results ----------
 function renderResults(){
   const rec=S.rec, v=verdict(rec);
-  app().innerHTML=header('Risultati',fmtD(rec.date)+' · '+({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato',eyfull:'Simulazione EY'}[rec.kind]))+`
+  app().innerHTML=header('Risultati',fmtD(rec.date)+' · '+({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato',eyfull:'Assessment online'}[rec.kind]))+`
   <main class="wrap stack">
     ${v.length?`<section class="verdicts big">${v.map(x=>`<div class="vd ${x.pass?'ok':'bad'}"><span>${x.label}</span><b class="mono">${x.score}</b><span class="pill ${x.pass?'ok':'bad'}">${x.pass?'Superata':'Non superata'}</span><span class="muted small">${x.rule}</span></div>`).join('')}</section>`:''}
     ${rec.parts.map((p,pi)=>partResult(p,S.parts[pi],pi)).join('')}
@@ -3148,7 +3171,7 @@ function renderStats(){
     ${weakPanel(false)}
     <section class="stack"><h2>Riepilogo di tutte le prove</h2><p class="small muted">Test del programma, simulazioni ed esercizi sul manuale, fogli risposte: tutto insieme.</p>
       <div class="cards3">${['verbal','numerical','abstract'].map(s=>overviewCard(s,by(s),ss.filter(x=>x.kind!=='sheet'||true),srcOf)).join('')}</div></section>
-    ${['mind','crit','adapt','aipro'].some(k=>by(k).length)?`<section class="stack"><h2>Test EY</h2><div class="cards4">${['mind','crit','adapt','aipro'].map(k=>overviewCard(k,by(k))).join('')}</div></section>`:''}
+    ${['mind','crit','adapt','aipro'].some(k=>by(k).length)?`<section class="stack"><h2>Test misti, logica con figure, situazioni di lavoro</h2><div class="cards4">${['mind','crit','adapt','aipro'].map(k=>overviewCard(k,by(k))).join('')}</div></section>`:''}
     ${mentalStatsPanel()}
     ${dailyTable(all)}
     ${allTestsTable(ss,srcOf)}
@@ -3206,7 +3229,7 @@ function dailyTable(all){
 }
 function allTestsTable(ss,srcOf){
   if(!ss.length) return '';
-  const kindLabel=s=>s.kind==='sheet'?(s.label||'Foglio risposte'):({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato',eyfull:'Simulazione EY'}[s.kind]||s.kind);
+  const kindLabel=s=>s.kind==='sheet'?(s.label||'Foglio risposte'):({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato',eyfull:'Assessment online'}[s.kind]||s.kind);
   const rows=[]; ss.slice(0,40).forEach(s=>s.parts.forEach(p=>rows.push({s,p})));
   return `<section class="panel stack"><h2>Tutte le prove</h2><div class="tblwrap"><table class="times"><thead><tr><th>Data</th><th>Origine</th><th>Tipo</th><th>Prova</th><th>Punteggio</th><th>Tempo</th></tr></thead><tbody>
     ${rows.map(({s,p})=>`<tr><td>${fmtD(s.date)}</td><td>${{programma:'Programma',manuale:'Manuale',foglio:'Foglio risposte'}[srcOf(s)]}</td><td>${esc(kindLabel(s))}</td><td>${SEC[p.sec]?SEC[p.sec].it.replace('Ragionamento ',''):esc(p.sec)}</td><td class="mono">${p.score}/${p.n} <span class="muted">(${p.n?Math.round(p.score/p.n*100):0}%)</span></td><td class="mono">${fmtT(p.secs||0)}${p.limit?' / '+fmtT(p.limit):''}</td></tr>`).join('')}</tbody></table></div></section>`;
@@ -3277,9 +3300,9 @@ function renderSheet(){
 }
 
 function footer(){ return `<footer class="foot">
-  <p>Formato e soglie dal bando EPSO/AD/427/26: verbale 20 domande in 35 minuti (soglia 10/20); numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Numerico e astratto sono generati al momento con dati fittizi. Il punteggio qui non predice il risultato reale.</p>
-  <p class="mono">Versione 2026-11-07i · EY: formati difficili</p>
-  <p>Verbale: 42 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO.</p>
+  <p>Domande numeriche, logiche e situazionali generate al momento con dati fittizi. Formato concorso: verbale 20 domande in 35 minuti (soglia 10/20), numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Il punteggio qui non predice il risultato reale.</p>
+  <p class="mono">Versione 2026-11-11a · Reasoning &amp; Case Prep</p>
+  <p>Verbale: 42 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO né ad alcuna azienda.</p>
 </footer>`; }
 
 document.addEventListener('keydown',e=>{

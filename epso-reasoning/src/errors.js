@@ -16,7 +16,7 @@ function renderErrors(){
   const count=t=>all.filter(e=>match(e,t)&&!DB.understood[e.uid]).length;
   app().innerHTML=header('Errori','Ogni risposta sbagliata con la spiegazione e il modo per non ripeterla.')+`
   <main class="wrap stack narrow">
-    <div class="tabs five">${[['all','Tutti'],['verbal','Verbale'],['numerical','Numerico'],['abstract','Astratto'],['ey','Test EY']].map(([k,l])=>`<button class="${ERRV.filter===k?'on':''}" data-ef="${k}">${l} (${count(k)})</button>`).join('')}</div>
+    <div class="tabs five">${[['all','Tutti'],['verbal','Verbale'],['numerical','Numerico'],['abstract','Astratto'],['ey','Altri test']].map(([k,l])=>`<button class="${ERRV.filter===k?'on':''}" data-ef="${k}">${l} (${count(k)})</button>`).join('')}</div>
     <label class="chk small"><input type="checkbox" id="ev-done" ${ERRV.showDone?'checked':''}><span>Mostra anche gli errori già segnati come capiti</span></label>
     ${list.length?list.slice(0,80).map(errorCard).join(''):`<div class="panel"><p class="muted">${all.length?'Nessun errore da rivedere in questa categoria.':'Ancora nessun errore salvato: fai una prova e torna qui.'}</p></div>`}
     ${list.length>80?`<p class="small muted">Mostro i primi 80 di ${list.length}.</p>`:''}

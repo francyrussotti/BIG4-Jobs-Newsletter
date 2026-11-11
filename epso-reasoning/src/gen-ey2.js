@@ -258,8 +258,8 @@ function eyTransformItem(sec){
 
 // ===== Practice of the harder formats only =====
 const EY_HARD_T={ds:['Sufficienza dei dati',eyDSItem],seat:['Tavolo rotondo',eySeatItem],rate:['Produttività e tempi',eyRateItem],pct:['Percentuali a catena e voti',eyPctChainItem],ser2:['Serie intrecciate e cifre invertite',eySeries2Item],pyr:['Piramidi di numeri',eyPyramidItem],mat3:['Matrici 3×3',eyLatinItem],mat2:['Matrici 2×2 con trasformazioni',eyTransformItem]};
-let EY_HARD_ONLY='';
+let EY_HARD_ONLY='', EY_HARD_SET=null;
 function buildEYHard(sec,n){
-  const keys=EY_HARD_ONLY?[EY_HARD_ONLY]:Object.keys(EY_HARD_T);
+  const keys=EY_HARD_ONLY?[EY_HARD_ONLY]:(EY_HARD_SET||Object.keys(EY_HARD_T));
   const plan=[]; while(plan.length<n) plan.push(...R.shuffle(keys)); return plan.slice(0,n).map(k=>EY_HARD_T[k][1](sec));
 }

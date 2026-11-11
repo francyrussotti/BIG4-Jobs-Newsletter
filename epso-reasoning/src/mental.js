@@ -76,7 +76,7 @@ function renderMental(){
   const hist=mcStore();
   const pref=Object.assign({mode:'op',level:2,dur:90,lim:0},DB.mentalPref||{});
   const best=(m,l,d,t)=>{const xs=hist.filter(h=>h.mode===m&&h.level===l&&h.dur===d&&(h.lim||0)===t); return xs.length?Math.max(...xs.map(h=>h.ok)):null};
-  app().innerHTML=header('Calcolo rapido','Calcolo a mente a tempo. Utile per MIND (EY) e per non perdere secondi nel numerico EPSO.')+`
+  app().innerHTML=header('Calcolo rapido','Calcolo a mente a tempo. Utile nei test misti a tempo stretto e per non perdere secondi nei test numerici.')+`
   <main class="wrap stack">
     <section class="panel stack">
       <h2>Scegli l'esercizio</h2>

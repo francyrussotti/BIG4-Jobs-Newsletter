@@ -1,14 +1,14 @@
-// ---------- configuration from the notice EPSO/AD/427/26 ----------
+// ---------- test formats ----------
 const FMT=it=>it.fmt||it.sec;
 const SEC={
   verbal:{name:'Verbal reasoning',it:'Ragionamento verbale',n:20,sec:35*60,letters:4},
   numerical:{name:'Numerical reasoning',it:'Ragionamento numerico',n:10,sec:20*60,letters:5},
   abstract:{name:'Abstract reasoning',it:'Ragionamento astratto',n:10,sec:10*60,letters:5},
-  mind:{name:'MIND',it:'EY · MIND',n:16,sec:10*60,letters:5,ey:true},
-  crit:{name:'Basic critical thinking',it:'EY · Critical thinking',n:13,sec:8*60,letters:5,ey:true},
-  adapt:{name:'Adaptability',it:'EY · Adaptability',n:10,sec:8*60,letters:4,ey:true},
-  aipro:{name:'AI proficiency',it:'EY · AI proficiency',n:10,sec:12*60,letters:4,ey:true},
-  eyhard:{name:'EY hard formats',it:'EY · Formati difficili',n:12,sec:9*60,letters:5,ey:true}
+  mind:{name:'Mixed aptitude test',it:'Test attitudinale misto',n:16,sec:10*60,letters:5,ey:true},
+  crit:{name:'Figure reasoning',it:'Logica con figure',n:13,sec:8*60,letters:5,ey:true},
+  adapt:{name:'Situational judgement',it:'Situazioni di lavoro',n:10,sec:8*60,letters:4,ey:true},
+  aipro:{name:'AI at work',it:'Uso dell\'AI al lavoro',n:10,sec:12*60,letters:4,ey:true},
+  eyhard:{name:'Advanced formats',it:'Formati avanzati',n:12,sec:9*60,letters:5,ey:true}
 };
 const PASS={verbal:10,numabs:10};
 const KEY_BASE='epsoAD5reasoning:v1';
@@ -170,7 +170,7 @@ function bindPlan(){
 }
 
 // ---------- rendering ----------
-function header(title,sub){ return `<header class="top"><div class="in"><div><div class="eyebrow">EPSO/AD/427/26 · Reasoning${PROFILE==='guest'?' <span class="guestbadge">Profilo ospite</span>':''}</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row"><button class="ghost" data-nav="home">Inizio</button><button class="ghost" data-nav="method">Metodo</button><button class="ghost" data-nav="manual">Manuale</button><button class="ghost" data-nav="errors">Errori</button><button class="ghost" data-nav="ey">Test EY</button><button class="ghost" data-nav="mental">Calcolo rapido</button><button class="ghost" data-nav="interview">EY interview</button><button class="ghost" data-nav="stats">Statistiche</button><button class="ghost" data-nav="sheet">Foglio risposte</button><button class="${PROFILE==='guest'?'warnbtn':'ghost'}" id="prof">${PROFILE==='guest'?'Esci da ospite':'Ospite'}</button></nav></div></header>`; }
+function header(title,sub){ const N=[['home','Home'],['logical','Logical'],['numerical','Numerical'],['verbal','Verbal'],['case','Business case'],['sims','Simulazioni'],['errors','Errori'],['stats','Statistiche'],['tools','Strumenti']]; return `<header class="top"><div class="in"><div><div class="eyebrow">Reasoning &amp; Case Prep · Logical · Numerical · Verbal · Business case${PROFILE==='guest'?' <span class="guestbadge">Profilo ospite</span>':''}</div><h1>${title}</h1>${sub?`<p class="muted">${sub}</p>`:''}</div><nav class="row">${N.map(([k,l])=>`<button class="ghost" data-nav="${k}">${l}</button>`).join('')}<button class="${PROFILE==='guest'?'warnbtn':'ghost'}" id="prof">${PROFILE==='guest'?'Esci da ospite':'Ospite'}</button></nav></div></header>`; }
 function setProfile(p){
   if(S&&!S.done&&S.parts[S.pi]&&S.parts[S.pi].started){ if(!confirmLeave()) return; }
   clearInterval(TIMER); S=null; SH=null; MC=null; MAN.run=null;
@@ -179,7 +179,7 @@ function setProfile(p){
   DB=loadDB(); renderHome();
   toast(p==='guest'?'Profilo ospite: risultati e statistiche separati dai tuoi.':'Tornato al tuo profilo.');
 }
-function bindNav(){ const pb=$('#prof'); if(pb) pb.onclick=()=>setProfile(PROFILE==='guest'?'main':'guest'); document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; if(MAN&&MAN.run&&b.dataset.nav!=='manual'){ MAN.run=null; } ({home:renderHome,stats:renderStats,sheet:renderSheetSetup,method:renderMethod,manual:renderManual,errors:renderErrors,ey:renderEY,mental:renderMental,interview:()=>renderInterview()})[b.dataset.nav](); }); }
+function bindNav(){ const pb=$('#prof'); if(pb) pb.onclick=()=>setProfile(PROFILE==='guest'?'main':'guest'); document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ if(S&&!S.done&&S.parts[S.pi].started){ if(!confirmLeave()) return; } S=null; clearInterval(TIMER); if(SH&&SH.phase==='run'&&!b.closest('.bar')){} SH=SH&&SH.phase==='run'?null:SH; if(MAN&&MAN.run&&b.dataset.nav!=='manual'){ MAN.run=null; } ({home:renderHome,stats:renderStats,sheet:renderSheetSetup,method:renderMethod,manual:renderManual,errors:renderErrors,ey:renderSims,sims:renderSims,tools:renderTools,logical:()=>renderArea('logical'),numerical:()=>renderArea('numerical'),verbal:()=>renderArea('verbal'),case:()=>renderArea('case'),mental:renderMental,interview:()=>renderInterview()})[b.dataset.nav](); }); }
 let leaveArmed=false;
 function confirmLeave(){ if(leaveArmed){leaveArmed=false;return true} leaveArmed=true; toast('Prova in corso: premi di nuovo per uscire senza salvare.'); setTimeout(()=>leaveArmed=false,4000); return false; }
 function toast(t){ let el=$('#toast'); if(!el){el=document.createElement('div');el.id='toast';document.body.appendChild(el)} el.textContent=t; el.className='show'; clearTimeout(el._t); el._t=setTimeout(()=>el.className='',3500); }
@@ -188,42 +188,23 @@ function renderHome(msg){
   S=null; clearInterval(TIMER);
   const last=DB.sessions.find(s=>s.kind==='full');
   const vw=Object.keys(DB.vwrong).length, vt=verbalSources().length, vs=verbalSources().filter(s=>DB.seen[s.pid]).length;
-  app().innerHTML=header('Allenamento reasoning','Verbale, numerico e astratto con tempi, soglie e formato della prova.')+`
+  app().innerHTML=header('Reasoning & Case Prep','Preparazione a test logici, numerici, verbali e a business case, con tempi e correzione.')+`
   <main class="wrap stack">
     ${msg?`<p class="alert">${esc(msg)}</p>`:''}
-    ${planPanel()}
-    ${weakPanel(true)}
-    <section class="hero">
-      <button class="card primary-card" id="go-full">
-        <span class="eyebrow">Simulazione completa</span>
-        <b>Le tre prove in sequenza, come all'esame</b>
-        <span class="spec mono">20 dom. · 35:00 → 10 dom. · 20:00 → 10 dom. · 10:00</span>
-        <span class="muted">Esito con le soglie del bando: verbale 10/20, numerico + astratto 10/20 combinati.</span>
-      </button>
-      <div class="cards3">
-        ${['verbal','numerical','abstract'].map(s=>`<div class="card"><span class="eyebrow">${SEC[s].it}</span><b>${SEC[s].n} domande · ${fmtT(SEC[s].sec)}</b>
-          <span class="muted">${s==='verbal'?`Brano + 4 affermazioni, una sola giusta. ${vs}/${vt} brani visti.`:s==='numerical'?'Tabelle e grafici, 5 opzioni, calcolatrice a schermo. Domande sempre nuove.':'Serie di 5 figure, scegli la sesta tra 5. Domande sempre nuove.'}</span>
-          <div class="row"><button class="primary" data-single="${s}">Prova a tempo</button><button data-practice="${s}">Pratica</button></div></div>`).join('')}
-      </div>
-    </section>
+    <section class="cards4">${Object.entries(AREAS).map(([k,a])=>`<button class="card areacard" data-nav="${k}"><span class="eyebrow">Area</span><b>${a.name}</b><span class="muted small">${a.sub}</span></button>`).join('')}</section>
     <section class="row wrap-gap">
-      <button id="go-review" ${vw?'':'disabled'}>Ripassa errori verbali (${vw})</button>
+      <button class="primary" data-nav="sims">Simulazioni complete</button>
       <button id="go-drill">Pratica breve: 5 per prova</button>
-      <button id="go-method">Leggi il metodo (prima volta: 15 minuti)</button>
-      <button data-nav="ey">Test EY (Maki)</button>
       <button data-nav="mental">Calcolo rapido</button>
-      <button data-nav="interview">EY interview</button>
+      <button data-nav="tools">Metodo e strumenti</button>
     </section>
-    <section class="panel stack"><h2>Ultima simulazione completa</h2>${last?resultLines(last):'<p class="muted">Ancora nessuna. La prova generale del piano è mercoledì 11 alle 11:00.</p>'}</section>
+    ${weakPanel(true)}
+    ${planPanel()}
+    <section class="panel stack"><h2>Ultima simulazione completa</h2>${last?resultLines(last):'<p class="muted">Ancora nessuna.</p>'}</section>
     ${footer()}
   </main>`;
   bindNav();
-  $('#go-full').onclick=()=>startSession('full',{});
-  document.querySelectorAll('[data-single]').forEach(b=>b.onclick=()=>startSession('single',{sec:b.dataset.single}));
-  document.querySelectorAll('[data-practice]').forEach(b=>b.onclick=()=>startSession('practice',{sec:b.dataset.practice,n:b.dataset.practice==='verbal'?10:10}));
-  const rv=$('#go-review'); if(rv) rv.onclick=()=>startSession('review',{sec:'verbal',n:20});
   $('#go-drill').onclick=()=>{ S=null; startDrill(); };
-  $('#go-method').onclick=()=>renderMethod();
   bindPlan(); bindFocus();
 }
 function startDrill(){
@@ -243,7 +224,7 @@ function renderIntro(){
     numerical:['Leggi la domanda prima della tabella: individua righe, colonne e unità.','Stima prima di calcolare: spesso le opzioni sono abbastanza distanti.','Usa la calcolatrice a schermo (pulsante in alto), come all\'esame.','Percentuali: la base è il valore di partenza. Punti percentuali ≠ %.'],
     abstract:['Isola un elemento alla volta: forma, riempimento, lancetta, punti, quadratino, settori, caselle, lati.','Se una regola non torna tra figure vicine, prova a coppie: 1 + 2 = 3 e 4 + 5 = 6 (sovrapposizione).','Controlla il passo tra ogni coppia di figure, non solo tra la prima e l\'ultima.','Elimina le opzioni che violano anche una sola regola.','Un minuto a domanda: se dopo 60 secondi non vedi la regola, segna e passa oltre.']
   }[P.sec]||EY_TIPS[P.sec]||[];
-  app().innerHTML=header(c.it,S.kind==='full'?`Prova ${S.pi+1} di 3`:S.kind==='eyfull'?`Simulazione EY · attività ${S.pi+1} di 4 · puoi fare una pausa prima di iniziare`:S.kind==='focus'?`Allenamento mirato · parte ${S.pi+1} di 3 · domande scelte sui tuoi errori`:(P.timed?'Prova a tempo':'Pratica con correzione immediata'))+`
+  app().innerHTML=header(c.it,S.kind==='full'?`Prova ${S.pi+1} di 3`:S.kind==='eyfull'?`Assessment online · attività ${S.pi+1} di 4 · puoi fare una pausa prima di iniziare`:S.kind==='focus'?`Allenamento mirato · parte ${S.pi+1} di 3 · domande scelte sui tuoi errori`:(P.timed?'Prova a tempo':'Pratica con correzione immediata'))+`
   <main class="wrap stack narrow">
     <div class="panel stack">
       <div class="row spread"><h2>${c.name}</h2><span class="mono big2">${P.items.length} dom.${P.timed?' · '+fmtT(P.seconds):''}</span></div>
@@ -340,7 +321,7 @@ function calcEval(e){
 // ---------- results ----------
 function renderResults(){
   const rec=S.rec, v=verdict(rec);
-  app().innerHTML=header('Risultati',fmtD(rec.date)+' · '+({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato',eyfull:'Simulazione EY'}[rec.kind]))+`
+  app().innerHTML=header('Risultati',fmtD(rec.date)+' · '+({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato',eyfull:'Assessment online'}[rec.kind]))+`
   <main class="wrap stack">
     ${v.length?`<section class="verdicts big">${v.map(x=>`<div class="vd ${x.pass?'ok':'bad'}"><span>${x.label}</span><b class="mono">${x.score}</b><span class="pill ${x.pass?'ok':'bad'}">${x.pass?'Superata':'Non superata'}</span><span class="muted small">${x.rule}</span></div>`).join('')}</section>`:''}
     ${rec.parts.map((p,pi)=>partResult(p,S.parts[pi],pi)).join('')}
@@ -413,7 +394,7 @@ function renderStats(){
     ${weakPanel(false)}
     <section class="stack"><h2>Riepilogo di tutte le prove</h2><p class="small muted">Test del programma, simulazioni ed esercizi sul manuale, fogli risposte: tutto insieme.</p>
       <div class="cards3">${['verbal','numerical','abstract'].map(s=>overviewCard(s,by(s),ss.filter(x=>x.kind!=='sheet'||true),srcOf)).join('')}</div></section>
-    ${['mind','crit','adapt','aipro'].some(k=>by(k).length)?`<section class="stack"><h2>Test EY</h2><div class="cards4">${['mind','crit','adapt','aipro'].map(k=>overviewCard(k,by(k))).join('')}</div></section>`:''}
+    ${['mind','crit','adapt','aipro'].some(k=>by(k).length)?`<section class="stack"><h2>Test misti, logica con figure, situazioni di lavoro</h2><div class="cards4">${['mind','crit','adapt','aipro'].map(k=>overviewCard(k,by(k))).join('')}</div></section>`:''}
     ${mentalStatsPanel()}
     ${dailyTable(all)}
     ${allTestsTable(ss,srcOf)}
@@ -471,7 +452,7 @@ function dailyTable(all){
 }
 function allTestsTable(ss,srcOf){
   if(!ss.length) return '';
-  const kindLabel=s=>s.kind==='sheet'?(s.label||'Foglio risposte'):({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato',eyfull:'Simulazione EY'}[s.kind]||s.kind);
+  const kindLabel=s=>s.kind==='sheet'?(s.label||'Foglio risposte'):({full:'Simulazione completa',single:'Prova a tempo',practice:'Pratica',review:'Ripasso errori',focus:'Allenamento mirato',eyfull:'Assessment online'}[s.kind]||s.kind);
   const rows=[]; ss.slice(0,40).forEach(s=>s.parts.forEach(p=>rows.push({s,p})));
   return `<section class="panel stack"><h2>Tutte le prove</h2><div class="tblwrap"><table class="times"><thead><tr><th>Data</th><th>Origine</th><th>Tipo</th><th>Prova</th><th>Punteggio</th><th>Tempo</th></tr></thead><tbody>
     ${rows.map(({s,p})=>`<tr><td>${fmtD(s.date)}</td><td>${{programma:'Programma',manuale:'Manuale',foglio:'Foglio risposte'}[srcOf(s)]}</td><td>${esc(kindLabel(s))}</td><td>${SEC[p.sec]?SEC[p.sec].it.replace('Ragionamento ',''):esc(p.sec)}</td><td class="mono">${p.score}/${p.n} <span class="muted">(${p.n?Math.round(p.score/p.n*100):0}%)</span></td><td class="mono">${fmtT(p.secs||0)}${p.limit?' / '+fmtT(p.limit):''}</td></tr>`).join('')}</tbody></table></div></section>`;
@@ -542,9 +523,9 @@ function renderSheet(){
 }
 
 function footer(){ return `<footer class="foot">
-  <p>Formato e soglie dal bando EPSO/AD/427/26: verbale 20 domande in 35 minuti (soglia 10/20); numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Numerico e astratto sono generati al momento con dati fittizi. Il punteggio qui non predice il risultato reale.</p>
-  <p class="mono">Versione 2026-11-07i · EY: formati difficili</p>
-  <p>Verbale: 42 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO.</p>
+  <p>Domande numeriche, logiche e situazionali generate al momento con dati fittizi. Formato concorso: verbale 20 domande in 35 minuti (soglia 10/20), numerico 10 in 20 minuti e astratto 10 in 10 minuti (soglia combinata 10/20). Il punteggio qui non predice il risultato reale.</p>
+  <p class="mono">Versione 2026-11-11a · Reasoning &amp; Case Prep</p>
+  <p>Verbale: 42 brani originali scritti per questo programma; 14 brani da atti UE con affermazioni adattate da <a href="https://github.com/Chartres/epso-kviz" target="_blank" rel="noopener">EPSO AI Field Trainer</a> (CC BY-NC-SA 4.0). Testi UE © European Union, <a href="https://eur-lex.europa.eu" target="_blank" rel="noopener">EUR-Lex</a>, riuso ai sensi della Decisione 2011/833/UE. Uso personale, non commerciale. Progetto indipendente, non affiliato a EPSO né ad alcuna azienda.</p>
 </footer>`; }
 
 document.addEventListener('keydown',e=>{
