@@ -546,6 +546,35 @@ class TestVerificaGiornaliera(ConFileTemporaneo):
         codice, _ = self.esegui(offerte)
         self.assertEqual(codice, 1)
 
+    def test_zero_ma_newsletter_ha_raccolto_di_recente_non_e_un_allarme(self):
+        """Blocco temporaneo del sito durante la verifica (es. Gartner, 403 Cloudflare)."""
+        with open(self.seen_file, "w") as f:
+            json.dump({"ids": [], "storico_conteggi": [
+                {"data": "2026-11-11", "conteggi": {"Digital360": 18}},
+                {"data": "2026-11-12", "conteggi": {"Digital360": 18}},
+                {"data": "2026-11-13", "conteggi": {"Digital360": 18}}]}, f)
+        codice, testo = self.esegui([])
+        self.assertEqual(codice, 0)
+        self.assertIn("blocco temporaneo", testo)
+
+    def test_zero_da_piu_di_tre_giorni_resta_un_allarme(self):
+        with open(self.seen_file, "w") as f:
+            json.dump({"ids": [], "storico_conteggi": [
+                {"data": "2026-11-10", "conteggi": {"Digital360": 18}},
+                {"data": "2026-11-11", "conteggi": {"Digital360": 0}},
+                {"data": "2026-11-12", "conteggi": {"Digital360": 0}},
+                {"data": "2026-11-13", "conteggi": {"Digital360": 0}}]}, f)
+        codice, _ = self.esegui([])
+        self.assertEqual(codice, 1)
+
+    def test_raccolta_recente(self):
+        import verifica_siti as vs
+        storico = [{"data": "a", "conteggi": {"X": 5}}, {"data": "b", "conteggi": {"X": 0}},
+                   {"data": "c", "conteggi": {"X": 0}}, {"data": "d", "conteggi": {"X": 0}}]
+        self.assertIsNone(vs.raccolta_recente(storico, "X"))            # l'ultima raccolta è fuori dalle ultime 3 run
+        self.assertEqual(vs.raccolta_recente(storico, "X", ultime=4), (5, "a"))
+        self.assertIsNone(vs.raccolta_recente([], "X"))
+
 
 class TestMain(ConFileTemporaneo):
     """Flusso completo con scraper finti."""

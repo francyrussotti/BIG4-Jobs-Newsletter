@@ -36,6 +36,16 @@ def esito(fonte, msg, grave=False):
     print(f"  {'🚨' if grave else '➜'} {msg}")
 
 
+def raccolta_recente(storico, nome, ultime=3):
+    """(offerte, data) dell'ultima run della newsletter, tra le ultime `ultime`, in cui la fonte ha raccolto
+    qualcosa; None se non è successo."""
+    for run in reversed(storico[-ultime:]):
+        n = (run.get("conteggi") or {}).get(nome) if isinstance(run.get("conteggi"), dict) else None
+        if isinstance(n, int) and n > 0:
+            return n, run.get("data", "?")
+    return None
+
+
 def chiavi(offerte):
     return {jn._job_id("x", o) for o in offerte}
 
@@ -288,7 +298,15 @@ def main():
             raccolte[nome] = []
             continue
         if not raccolte[nome]:
-            esito(nome, "0 offerte raccolte: lo scraper potrebbe essere rotto", grave=True)
+            recente = raccolta_recente(storico, nome)
+            if recente:
+                # Es. Gartner: il sito (Cloudflare) a volte risponde 403 a questa verifica, che chiede le pagine due volte
+                # di seguito, mentre la newsletter ne ha raccolte (ultimi 3 giorni). Se lo scraper fosse davvero rotto,
+                # la newsletter stessa lo segnala come bloccante e dopo 3 giorni senza offerte lo fa anche questa verifica.
+                esito(nome, f"0 offerte in questa verifica (possibile blocco temporaneo del sito), ma la newsletter ne ha "
+                            f"raccolte {recente[0]} il {recente[1]}")
+            else:
+                esito(nome, "0 offerte raccolte: lo scraper potrebbe essere rotto", grave=True)
     verifica_conteggi_dichiarati()
 
     for nome, fn in scrapers:
