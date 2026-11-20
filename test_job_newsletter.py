@@ -262,12 +262,62 @@ class TestNuoviPaesi(unittest.TestCase):
             {"title": "Audit Senior", "locationsText": "Belfast", "externalPath": "/job/Belfast/A_1"},
             {"title": "Tax Senior", "locationsText": "Dublin", "externalPath": "/job/Dublin/B_2",
              "postedOn": "Posted Today"}]}
-        with mock.patch.object(jn, "http_post", return_value=FintaRisposta(dati=dati)), \
+        with mock.patch.object(jn, "_workday_post", return_value=dati), \
              mock.patch.object(jn.time, "sleep"):
             out = jn._workday("deloitteie.wd3.myworkdayjobs.com", "deloitteie", "Experienced_Professionals",
                               "Deloitte Irlanda", escludi="belfast")
         self.assertEqual([o["titolo"] for o in out], ["Tax Senior"])
         self.assertTrue(out[0]["url"].startswith("https://deloitteie.wd3.myworkdayjobs.com/en-US/"))
+
+    def test_workday_429_passa_al_browser(self):
+        """20/11/2026: Workday risponde 429 a tutti i tentativi → 0 offerte.
+        Ora l'host viene segnato come bloccato e si usa il browser."""
+        host = "deloitteie.wd3.myworkdayjobs.com"
+        jn._WORKDAY_BLOCCATI.discard(host)
+        r429 = mock.Mock(status_code=429)
+        dal_browser = ([{"title": "Tax Senior", "locationsText": "Dublin", "externalPath": "/job/Dublin/B_2"}], 1, [])
+        with mock.patch.object(jn.requests, "post", return_value=r429) as post, \
+             mock.patch.object(jn, "_workday_browser", return_value=dal_browser) as browser, \
+             mock.patch.object(jn.time, "sleep"):
+            out = jn._workday(host, "deloitteie", "Early_Careers", "Deloitte Irlanda")
+            self.assertEqual(post.call_count, len(jn.WORKDAY_ATTESE))
+            self.assertIn(host, jn._WORKDAY_BLOCCATI)
+            # seconda ricerca sullo stesso host: niente più attese via requests
+            jn._workday(host, "deloitteie", "Experienced_Professionals", "Deloitte Irlanda")
+            self.assertEqual(post.call_count, len(jn.WORKDAY_ATTESE))
+        jn._WORKDAY_BLOCCATI.discard(host)
+        self.assertEqual([o["titolo"] for o in out], ["Tax Senior"])
+        self.assertEqual(browser.call_count, 2)
+        self.assertEqual(jn.COPERTURA["Deloitte Irlanda"], (1, 1))
+
+    def test_workday_raccolta_interrotta_completata_dal_browser(self):
+        host = "pwc.wd3.myworkdayjobs.com"
+        pagina = {"total": 3, "jobPostings": [{"title": "A", "externalPath": "/job/x/A_1"}]}
+        tutte = ([{"title": t, "externalPath": f"/job/x/{t}_1"} for t in "ABC"], 3, [])
+        with mock.patch.object(jn, "_workday_post", side_effect=[pagina, None]), \
+             mock.patch.object(jn, "_workday_browser", return_value=tutte), \
+             mock.patch.object(jn.time, "sleep"):
+            jobs, totale = jn._workday_tutte(host, "pwc", "Global_Campus_Careers", {"appliedFacets": {}})
+        self.assertEqual((len(jobs), totale), (3, 3))
+
+    def test_pwc_facet_letto_una_volta_per_tutti_i_paesi(self):
+        jn._WORKDAY_FACET.clear()
+        facets = [{"facetParameter": "locationMainGroup", "values": [{"facetParameter": "locations", "values": [
+            {"id": "be1", "descriptor": "Brussels"}, {"id": "ie1", "descriptor": "Dublin"}]}]}]
+        chiamate = []
+        def finto_post(host, tenant, site, body):
+            chiamate.append(body)
+            if body.get("limit") == 1:
+                return {"total": 0, "facets": facets, "jobPostings": []}
+            return {"total": 0, "jobPostings": []}
+        with mock.patch.object(jn, "_workday_post", side_effect=finto_post), \
+             mock.patch.object(jn, "_workday_browser", return_value=([], 0, None)), \
+             mock.patch.object(jn.time, "sleep"):
+            jn._pwc_belgio_workday("Belgio")
+            jn._pwc_belgio_workday("Irlanda")
+        jn._WORKDAY_FACET.clear()
+        self.assertEqual(sum(1 for b in chiamate if b.get("limit") == 1), 2)   # 2 site, non 4
+        self.assertIn({"appliedFacets": {"locations": ["ie1"]}, "searchText": "", "limit": 20, "offset": 0}, chiamate)
 
 
 class TestPortaliNazionali(unittest.TestCase):

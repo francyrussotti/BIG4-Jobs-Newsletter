@@ -843,6 +843,141 @@ def scrape_pwc_italia():
     return risultati
 
 # ============================================================
+# 🛠️  WORKDAY: chiamate API robuste ai 429
+#
+#  NOTA (novembre 2026): Workday risponde HTTP 429 (rate limit) agli IP dei
+#  runner GitHub anche per PwC (pwc.wd3) e Deloitte Irlanda (deloitteie.wd3),
+#  non solo per Accenture: il 20/11 PwC Belgio/Lussemburgo/Irlanda/Paesi Bassi e
+#  Deloitte Irlanda sono finiti a 0 offerte. Ora ogni chiamata ha poche attese
+#  crescenti e, se l'host resta bloccato, le stesse chiamate API si ripetono
+#  dentro un browser Playwright (stesso dominio, cookie reali), come per
+#  Accenture. Un host bloccato una volta va diretto al browser per il resto della
+#  run, così le 4 fonti PwC non ripetono le stesse attese.
+# ============================================================
+
+WORKDAY_ATTESE = (0, 5, 20, 45)    # secondi prima di ogni tentativo via requests
+_WORKDAY_BLOCCATI = set()          # host che hanno risposto 429 a tutti i tentativi
+_WORKDAY_FACET = {}                # (host, tenant, site) → facets (uguali per tutti i paesi)
+
+def _workday_post(host, tenant, site, body):
+    """POST all'API CXS di Workday con attese crescenti sui 429/5xx.
+    Ritorna il JSON, oppure None (host segnato come bloccato se è un 429)."""
+    if host in _WORKDAY_BLOCCATI:
+        return None
+    api = f"https://{host}/wday/cxs/{tenant}/{site}/jobs"
+    h = {**HEADERS, "Content-Type": "application/json", "Accept": "application/json",
+         "Origin": f"https://{host}", "Referer": f"https://{host}/en-US/{site}"}
+    ultimo = None
+    for attesa in WORKDAY_ATTESE:
+        time.sleep(attesa)
+        try:
+            r = requests.post(api, headers=h, json=body, timeout=20)
+        except (requests.ConnectionError, requests.Timeout) as e:
+            ultimo = str(e)
+            continue
+        if r.status_code == 429 or r.status_code >= 500:
+            ultimo = f"HTTP {r.status_code}"
+            continue
+        try:
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            print(f"    ⚠️  Workday {host}/{site} → {e}")
+            return None
+    print(f"    ⚠️  Workday {host}/{site} → {ultimo} dopo {len(WORKDAY_ATTESE)} tentativi")
+    if ultimo == "HTTP 429":
+        _WORKDAY_BLOCCATI.add(host)
+    return None
+
+_WORKDAY_JS = """async ([api, filtro, limit, soloFacet]) => {
+    let out = [], offset = 0, total = null, facets = null, tentativi = 0;
+    while (true) {
+        const r = await fetch(api, {method:'POST',
+            headers:{'Content-Type':'application/json','Accept':'application/json'},
+            body: JSON.stringify(Object.assign({}, filtro, {limit, offset}))});
+        if ((r.status === 429 || r.status >= 500) && tentativi < 4) {   // rate limit: aspetta e riprova
+            tentativi++;
+            await new Promise(res => setTimeout(res, 15000 * tentativi));
+            continue;
+        }
+        if (!r.ok) return {status: r.status, total, facets, jobs: out};
+        tentativi = 0;
+        const d = await r.json();
+        if (total === null) { total = d.total || 0; facets = d.facets || []; }
+        if (soloFacet || !d.jobPostings || !d.jobPostings.length) break;
+        out.push(...d.jobPostings);
+        offset += d.jobPostings.length;
+        if (offset >= total) break;
+        await new Promise(res => setTimeout(res, 1500));
+    }
+    return {status: 200, total, facets, jobs: out};
+}"""
+
+def _workday_browser(host, tenant, site, filtro, solo_facet=False):
+    """Le stesse chiamate API dentro un browser reale. Ritorna (jobs, total, facets)."""
+    if not PLAYWRIGHT_OK:
+        return [], None, None
+    print(f"    → Workday {host}/{site}: provo dal browser (Playwright)...")
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+            ctx  = browser.new_context(user_agent=HEADERS["User-Agent"], locale="en-US")
+            page = ctx.new_page()
+            page.goto(f"https://{host}/en-US/{site}", wait_until="domcontentloaded", timeout=45_000)
+            res = page.evaluate(_WORKDAY_JS, [f"/wday/cxs/{tenant}/{site}/jobs", filtro,
+                                              1 if solo_facet else 20, solo_facet])
+            browser.close()
+    except Exception as e:
+        print(f"    ⚠️  Playwright Workday {host}/{site}: {e}")
+        return [], None, None
+    if not isinstance(res, dict):
+        return [], None, None
+    if res.get("status") != 200:
+        print(f"    ⚠️  Workday {host}/{site} via browser → HTTP {res.get('status')}")
+    return res.get("jobs") or [], res.get("total"), res.get("facets")
+
+def _workday_facets(host, tenant, site):
+    """Facet del career site (sedi ecc.), letti una volta per run."""
+    chiave = (host, tenant, site)
+    if chiave not in _WORKDAY_FACET:
+        d = _workday_post(host, tenant, site, {"appliedFacets": {}, "limit": 1, "offset": 0, "searchText": ""})
+        facets = d.get("facets") if isinstance(d, dict) else None
+        if facets is None:
+            _, _, facets = _workday_browser(host, tenant, site, {"appliedFacets": {}, "searchText": ""},
+                                            solo_facet=True)
+        if facets:
+            _WORKDAY_FACET[chiave] = facets
+        return facets or []
+    return _WORKDAY_FACET[chiave]
+
+def _workday_tutte(host, tenant, site, filtro):
+    """Tutte le righe di una ricerca Workday (20 per pagina): (jobPostings, totale).
+    Se requests non arriva al totale dichiarato (429 a metà) si ripete dal
+    browser: le offerte saltate tornerebbero domani come false "nuove"."""
+    jobs, offset, totale = [], 0, None
+    for _ in range(MAX_PAGINE):
+        d = _workday_post(host, tenant, site, {**filtro, "limit": 20, "offset": offset})
+        if not isinstance(d, dict):
+            break
+        if totale is None:
+            totale = d.get("total") or 0
+        posts = d.get("jobPostings") or []
+        if not posts:
+            break
+        jobs += posts
+        offset += len(posts)
+        if offset >= totale:
+            break
+        time.sleep(1)
+    if totale is None or len(jobs) < totale:
+        if jobs:
+            print(f"    → Workday {host}/{site}: {len(jobs)} su {totale} via requests")
+        jobs_pw, tot_pw, _ = _workday_browser(host, tenant, site, filtro)
+        if len(jobs_pw) > len(jobs):
+            jobs, totale = jobs_pw, tot_pw
+    return jobs, totale or 0
+
+# ============================================================
 # 🏢  PwC BELGIO  —  Workday API (fallback: var jsondata su pwc.be)
 #
 #  ATS: Workday (pwc.wd3.myworkdayjobs.com).
@@ -877,63 +1012,37 @@ def _pwc_belgio_workday(paese="Belgio"):
     offerte estere (es. Brno). Ora si legge il facet "locations" e si
     selezionano gli ID delle sedi belghe: filtro esatto e completo.
     Se il facet non è leggibile si torna al vecchio filtro testuale."""
+    host, tenant = "pwc.wd3.myworkdayjobs.com", "pwc"
     out, visti = [], set()
     tot_dichiarate = 0
-    h = {**HEADERS, "Content-Type": "application/json", "Accept": "application/json"}
     sedi_re, testo_paese = PWC_SEDI[paese]
     for site in ["Global_Campus_Careers", "Global_Experienced_Careers"]:
-        api = f"https://pwc.wd3.myworkdayjobs.com/wday/cxs/pwc/{site}/jobs"
-
-        # 1) ID delle sedi del paese dal facet "locations"
-        filtro = {"appliedFacets": {}, "searchText": testo_paese}   # fallback
-        try:
-            r = SESSION.post(api, headers=h, timeout=20,
-                              json={"appliedFacets": {}, "limit": 1, "offset": 0, "searchText": ""})
-            r.raise_for_status()
-            ids = [v["id"]
-                   for f in r.json().get("facets", []) if f.get("facetParameter") == "locationMainGroup"
-                   for g in f.get("values", []) if g.get("facetParameter") == "locations"
-                   for v in g.get("values", []) if sedi_re.search(v.get("descriptor", ""))]
-            if ids:
-                filtro = {"appliedFacets": {"locations": ids}, "searchText": ""}
-            else:
-                print(f"    ⚠️  Workday {site}: nessuna sede ({paese}) nel facet, uso il filtro testuale")
-        except Exception as e:
-            print(f"    ⚠️  Workday {site} facet → {e} (uso il filtro testuale)")
+        # 1) ID delle sedi del paese dal facet "locations" (letto una volta per run)
+        ids = [v["id"]
+               for f in _workday_facets(host, tenant, site) if f.get("facetParameter") == "locationMainGroup"
+               for g in f.get("values", []) if g.get("facetParameter") == "locations"
+               for v in g.get("values", []) if sedi_re.search(v.get("descriptor", ""))]
+        if ids:
+            filtro = {"appliedFacets": {"locations": ids}, "searchText": ""}
+        else:
+            print(f"    ⚠️  Workday {site}: nessuna sede ({paese}) nel facet, uso il filtro testuale")
+            filtro = {"appliedFacets": {}, "searchText": testo_paese}
 
         # 2) Paginazione
-        offset, totale = 0, None
-        for _ in range(30):
-            try:
-                r = SESSION.post(api, headers=h, timeout=20,
-                                  json={**filtro, "limit": 20, "offset": offset})
-                r.raise_for_status()
-                d = r.json()
-            except Exception as e:
-                print(f"    ⚠️  Workday {site} offset {offset} → {e}")
-                break
-            posts = d.get("jobPostings") or []
-            if totale is None:
-                totale = d.get("total") or 0
-                tot_dichiarate += totale
-            if not posts:
-                break
-            for j in posts:
-                path = j.get("externalPath") or ""
-                if not path or path in visti:
-                    continue
-                visti.add(path)
-                url_apply = f"https://pwc.wd3.myworkdayjobs.com/{site}{path}/apply"
-                out.append({"titolo": j.get("title") or "N/D",
-                            "location": f"PwC {paese} · {j.get('locationsText')}" if paese != "Belgio" and j.get("locationsText")
-                                        else (j.get("locationsText") or paese),
-                            "url": _senza_apply(url_apply),   # pagina dell'offerta
-                            "_id_src": url_apply,             # ID invariato rispetto al passato
-                            "data": _workday_data(j.get("postedOn"))})
-            offset += len(posts)
-            if offset >= totale:
-                break
-            time.sleep(0.4)
+        jobs, totale = _workday_tutte(host, tenant, site, filtro)
+        tot_dichiarate += totale
+        for j in jobs:
+            path = j.get("externalPath") or ""
+            if not path or path in visti:
+                continue
+            visti.add(path)
+            url_apply = f"https://{host}/{site}{path}/apply"
+            out.append({"titolo": j.get("title") or "N/D",
+                        "location": f"PwC {paese} · {j.get('locationsText')}" if paese != "Belgio" and j.get("locationsText")
+                                    else (j.get("locationsText") or paese),
+                        "url": _senza_apply(url_apply),   # pagina dell'offerta
+                        "_id_src": url_apply,             # ID invariato rispetto al passato
+                        "data": _workday_data(j.get("postedOn"))})
     registra_copertura(f"PwC {paese}", len(out), tot_dichiarate)
     return out
 
@@ -1441,33 +1550,18 @@ def scrape_kpmg_paesi_bassi():
 def _workday(host, tenant, site, nome, escludi=None):
     """Tutte le offerte di un career site Workday (20 per pagina).
     escludi: regex sulle sedi da scartare."""
-    api = f"https://{host}/wday/cxs/{tenant}/{site}/jobs"
-    out, offset, totale, escluse = [], 0, None, 0
-    for _ in range(MAX_PAGINE):
-        d = _json(http_post(api, json={"appliedFacets": {}, "limit": 20, "offset": offset, "searchText": ""},
-                            headers={"Content-Type": "application/json", "Accept": "application/json"},
-                            timeout=20))
-        if not isinstance(d, dict):
-            break
-        if totale is None:
-            totale = d.get("total") or 0
-        posts = d.get("jobPostings") or []
-        if not posts:
-            break
-        for j in posts:
-            luogo = j.get("locationsText") or ""
-            if escludi and re.search(escludi, luogo, re.I):
-                escluse += 1
-                continue
-            path = j.get("externalPath") or ""
-            out.append({"titolo":   j.get("title") or "N/D",
-                        "location": nome + (f" · {luogo}" if luogo else ""),
-                        "url":      f"https://{host}/en-US/{site}{path}" if path else "",
-                        "data":     _workday_data(j.get("postedOn"))})
-        offset += len(posts)
-        if offset >= totale:
-            break
-        time.sleep(0.4)
+    jobs, totale = _workday_tutte(host, tenant, site, {"appliedFacets": {}, "searchText": ""})
+    out, escluse = [], 0
+    for j in jobs:
+        luogo = j.get("locationsText") or ""
+        if escludi and re.search(escludi, luogo, re.I):
+            escluse += 1
+            continue
+        path = j.get("externalPath") or ""
+        out.append({"titolo":   j.get("title") or "N/D",
+                    "location": nome + (f" · {luogo}" if luogo else ""),
+                    "url":      f"https://{host}/en-US/{site}{path}" if path else "",
+                    "data":     _workday_data(j.get("postedOn"))})
     if escluse:
         print(f"    → escluse {escluse} offerte fuori dal paese")
     registra_copertura(nome, len(out) + escluse, totale)
